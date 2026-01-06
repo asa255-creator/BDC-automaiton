@@ -108,6 +108,9 @@ function generateAgendaForEvent(event, client) {
   // Append to client's Google Doc
   appendAgendaToDoc(event, client, agendaContent);
 
+  // Add agenda to calendar event description
+  addAgendaToCalendarEvent(event, client, agendaContent);
+
   // Record the generation
   recordGeneratedAgenda(event, client);
 
@@ -544,6 +547,90 @@ function appendAgendaToDoc(event, client, agendaContent) {
     Logger.log(`Appended agenda to doc for: ${client.client_name}`);
   } catch (error) {
     Logger.log(`Failed to append agenda to doc: ${error.message}`);
+  }
+}
+
+/**
+ * Adds the agenda to the calendar event description.
+ * Prepends the agenda to any existing description.
+ *
+ * @param {CalendarEvent} event - The calendar event
+ * @param {Object} client - The client object
+ * @param {string} agendaContent - The generated agenda
+ */
+function addAgendaToCalendarEvent(event, client, agendaContent) {
+  try {
+    const existingDescription = event.getDescription() || '';
+
+    // Build new description with agenda
+    let newDescription = `=== MEETING AGENDA ===\n`;
+    newDescription += `Client: ${client.client_name}\n`;
+    newDescription += `Generated: ${formatDateTime(new Date())}\n\n`;
+    newDescription += agendaContent;
+    newDescription += `\n\n=== END AGENDA ===`;
+
+    // Append existing description if any
+    if (existingDescription.trim()) {
+      // Check if there's already an agenda section
+      if (existingDescription.includes('=== MEETING AGENDA ===')) {
+        // Replace existing agenda
+        newDescription = existingDescription.replace(
+          /=== MEETING AGENDA ===[\s\S]*?=== END AGENDA ===/,
+          newDescription
+        );
+      } else {
+        // Prepend new agenda to existing description
+        newDescription += `\n\n--- Original Description ---\n${existingDescription}`;
+      }
+    }
+
+    event.setDescription(newDescription);
+
+    Logger.log(`Added agenda to calendar event: ${event.getTitle()}`);
+  } catch (error) {
+    Logger.log(`Failed to update calendar event description: ${error.message}`);
+    logProcessing(
+      'CALENDAR_UPDATE_ERROR',
+      client.client_id,
+      `Failed to update calendar event: ${error.message}`,
+      'error'
+    );
+  }
+}
+
+/**
+ * Adds meeting notes to a calendar event after the meeting.
+ * Called after meeting summary is sent.
+ *
+ * @param {string} eventId - The calendar event ID
+ * @param {Object} client - The client object
+ * @param {string} meetingNotes - The meeting summary/notes
+ */
+function addNotesToCalendarEvent(eventId, client, meetingNotes) {
+  try {
+    const calendar = CalendarApp.getDefaultCalendar();
+    const event = calendar.getEventById(eventId);
+
+    if (!event) {
+      Logger.log(`Calendar event not found: ${eventId}`);
+      return;
+    }
+
+    const existingDescription = event.getDescription() || '';
+
+    // Build notes section
+    let notesSection = `\n\n=== MEETING NOTES ===\n`;
+    notesSection += `Added: ${formatDateTime(new Date())}\n\n`;
+    notesSection += meetingNotes;
+    notesSection += `\n=== END NOTES ===`;
+
+    // Append notes to existing description
+    const newDescription = existingDescription + notesSection;
+    event.setDescription(newDescription);
+
+    Logger.log(`Added meeting notes to calendar event: ${event.getTitle()}`);
+  } catch (error) {
+    Logger.log(`Failed to add notes to calendar event: ${error.message}`);
   }
 }
 

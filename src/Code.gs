@@ -87,6 +87,7 @@ function doPost(e) {
  * - Agenda generation: every 1 hour (limited to business hours in handler)
  * - Daily outlook: daily at 7:00 AM
  * - Weekly outlook: weekly on Monday at 7:00 AM
+ * - Client onboarding check: daily at 6:30 AM
  */
 function setupTriggers() {
   // First, remove any existing triggers to avoid duplicates
@@ -96,6 +97,14 @@ function setupTriggers() {
   ScriptApp.newTrigger('runLabelAndFilterCreation')
     .timeBased()
     .atHour(6)
+    .everyDays(1)
+    .create();
+
+  // Client onboarding check - daily at 6:30 AM
+  ScriptApp.newTrigger('runClientOnboarding')
+    .timeBased()
+    .atHour(6)
+    .nearMinute(30)
     .everyDays(1)
     .create();
 
@@ -153,6 +162,20 @@ function runLabelAndFilterCreation() {
     logProcessing('FILTER_SYNC', null, 'Label and filter synchronization completed', 'success');
   } catch (error) {
     logProcessing('FILTER_SYNC', null, `Error: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Handler for client onboarding trigger.
+ * Runs at 6:30 AM daily to check for new clients needing setup.
+ */
+function runClientOnboarding() {
+  try {
+    logProcessing('CLIENT_ONBOARD', null, 'Starting client onboarding check', 'processing');
+    processNewClients();
+    logProcessing('CLIENT_ONBOARD', null, 'Client onboarding check completed', 'success');
+  } catch (error) {
+    logProcessing('CLIENT_ONBOARD', null, `Error: ${error.message}`, 'error');
   }
 }
 
