@@ -1,0 +1,549 @@
+/**
+ * MeetingAutomation.gs - Fathom Webhook Handling and Post-Send Processing
+ *
+ * This module handles the meeting automation workflow:
+ * 1. Receives Fathom webhooks when meetings end
+ * 2. Creates draft meeting summary emails
+ * 3. Monitors for sent meeting summaries
+ * 4. Creates Todoist tasks from action items
+ * 5. Appends meeting notes to client Google Docs
+ */
+
+// ============================================================================
+// FATHOM WEBHOOK PROCESSING
+// ============================================================================
+
+/**
+ * Processes an incoming Fathom webhook payload.
+ *
+ * @param {Object} payload - The webhook payload from Fathom
+ * @returns {Object} Result of the processing
+ *
+ * Payload structure:
+ * - meeting_title: string
+ * - meeting_date: string (ISO date)
+ * - transcript: string
+ * - summary: string
+ * - action_items: Array<{description, assignee, due_date}>
+ * - participants: Array<{name, email}>
+ */
+function processFathomWebhook(payload) {
+  Logger.log('Processing Fathom webhook...');
+
+  // Validate payload
+  if (!payload || !payload.meeting_title) {
+    throw new Error('Invalid webhook payload: missing meeting_title');
+  }
+
+  // Extract participant emails
+  const participantEmails = (payload.participants || [])
+    .map(p => p.email)
+    .filter(e => e);
+
+  // Identify client from participants
+  const client = identifyClientFromParticipants(payload.participants);
+
+  if (!client) {
+    // Log to unmatched and exit
+    logUnmatched(
+      'meeting',
+      `Meeting: ${payload.meeting_title} on ${payload.meeting_date}`,
+      participantEmails
+    );
+
+    logProcessing(
+      'WEBHOOK_PROCESS',
+      null,
+      `No client found for meeting: ${payload.meeting_title}`,
+      'unmatched'
+    );
+
+    return {
+      status: 'unmatched',
+      message: 'No client matched for meeting participants'
+    };
+  }
+
+  Logger.log(`Client identified: ${client.client_name}`);
+
+  // Create draft email
+  const draftId = createMeetingSummaryDraft(payload, client);
+
+  // Log successful processing
+  logProcessing(
+    'WEBHOOK_PROCESS',
+    client.client_id,
+    `Created draft for meeting: ${payload.meeting_title}`,
+    'success'
+  );
+
+  return {
+    status: 'success',
+    client_id: client.client_id,
+    client_name: client.client_name,
+    draft_id: draftId
+  };
+}
+
+/**
+ * Creates a Gmail draft with the meeting summary.
+ *
+ * @param {Object} payload - The Fathom webhook payload
+ * @param {Object} client - The matched client object
+ * @returns {string} The draft ID
+ */
+function createMeetingSummaryDraft(payload, client) {
+  const meetingDate = formatDate(new Date(payload.meeting_date));
+  const subject = `Meeting Summary - ${payload.meeting_title} - ${meetingDate}`;
+
+  // Build email body
+  let body = `<h2>${payload.meeting_title}</h2>`;
+  body += `<p><strong>Date:</strong> ${meetingDate}</p>`;
+  body += `<p><strong>Client:</strong> ${client.client_name}</p>`;
+  body += `<hr/>`;
+
+  // Add summary
+  body += `<h3>Summary</h3>`;
+  body += `<p>${payload.summary || 'No summary provided.'}</p>`;
+
+  // Add action items
+  if (payload.action_items && payload.action_items.length > 0) {
+    body += `<h3>Action Items</h3>`;
+    body += `<ol>`;
+    payload.action_items.forEach((item, index) => {
+      body += `<li>`;
+      body += `${item.description}`;
+      if (item.assignee) {
+        body += ` <em>(Assigned to: ${item.assignee})</em>`;
+      }
+      if (item.due_date) {
+        body += ` <em>(Due: ${item.due_date})</em>`;
+      }
+      body += `</li>`;
+    });
+    body += `</ol>`;
+  }
+
+  // Add metadata for post-send processing
+  body += `<div style="display:none;">`;
+  body += `<!--CLIENT_ID:${client.client_id}-->`;
+  body += `<!--MEETING_TITLE:${payload.meeting_title}-->`;
+  body += `<!--ACTION_ITEMS:${JSON.stringify(payload.action_items || [])}-->`;
+  body += `</div>`;
+
+  // Get recipient emails (client contacts)
+  const recipients = parseCommaSeparatedList(client.contact_emails);
+  const toAddress = recipients.length > 0 ? recipients[0] : getCurrentUserEmail();
+
+  // Create draft
+  const draft = GmailApp.createDraft(toAddress, subject, '', {
+    htmlBody: body
+  });
+
+  Logger.log(`Created draft with ID: ${draft.getId()}`);
+
+  // Store draft info for monitoring
+  storePendingDraft(draft.getId(), client.client_id, payload);
+
+  return draft.getId();
+}
+
+/**
+ * Stores information about a pending draft for later monitoring.
+ *
+ * @param {string} draftId - The Gmail draft ID
+ * @param {string} clientId - The client ID
+ * @param {Object} payload - The original meeting payload
+ */
+function storePendingDraft(draftId, clientId, payload) {
+  const cache = CacheService.getScriptCache();
+  const key = `pending_draft_${draftId}`;
+
+  const data = {
+    draftId: draftId,
+    clientId: clientId,
+    meetingTitle: payload.meeting_title,
+    meetingDate: payload.meeting_date,
+    actionItems: payload.action_items || [],
+    summary: payload.summary,
+    createdAt: new Date().toISOString()
+  };
+
+  // Cache for 24 hours (86400 seconds)
+  cache.put(key, JSON.stringify(data), 86400);
+
+  // Also store in a list of pending drafts
+  const pendingList = getPendingDraftsList();
+  pendingList.push(draftId);
+  cache.put('pending_drafts_list', JSON.stringify(pendingList), 86400);
+}
+
+/**
+ * Gets the list of pending draft IDs from cache.
+ *
+ * @returns {string[]} Array of draft IDs
+ */
+function getPendingDraftsList() {
+  const cache = CacheService.getScriptCache();
+  const listJson = cache.get('pending_drafts_list');
+  return listJson ? JSON.parse(listJson) : [];
+}
+
+// ============================================================================
+// SENT EMAIL MONITORING
+// ============================================================================
+
+/**
+ * Monitors for sent meeting summary emails and processes them.
+ * Called by the 10-minute trigger.
+ */
+function monitorSentMeetingSummaries() {
+  Logger.log('Checking for sent meeting summaries...');
+
+  // Search for recently sent meeting summary emails
+  const query = 'from:me subject:"Meeting Summary" newer_than:1h';
+  const threads = GmailApp.search(query, 0, 20);
+
+  for (const thread of threads) {
+    const messages = thread.getMessages();
+    for (const message of messages) {
+      // Only process sent messages
+      if (message.getFrom().indexOf(getCurrentUserEmail()) === -1) {
+        continue;
+      }
+
+      // Check if already processed
+      if (isMessageProcessed(message.getId())) {
+        continue;
+      }
+
+      // Process the sent summary
+      processSentMeetingSummary(message);
+    }
+  }
+}
+
+/**
+ * Processes a sent meeting summary email.
+ *
+ * @param {GmailMessage} message - The sent Gmail message
+ */
+function processSentMeetingSummary(message) {
+  Logger.log(`Processing sent meeting summary: ${message.getSubject()}`);
+
+  // Extract metadata from email body
+  const body = message.getBody();
+  const clientId = extractMetadata(body, 'CLIENT_ID');
+  const actionItemsJson = extractMetadata(body, 'ACTION_ITEMS');
+
+  if (!clientId) {
+    Logger.log('No client ID found in email metadata');
+    return;
+  }
+
+  const client = getClientById(clientId);
+  if (!client) {
+    Logger.log(`Client not found: ${clientId}`);
+    return;
+  }
+
+  // Parse action items
+  let actionItems = [];
+  try {
+    actionItems = actionItemsJson ? JSON.parse(actionItemsJson) : [];
+  } catch (e) {
+    Logger.log('Failed to parse action items JSON');
+  }
+
+  // Create Todoist tasks
+  if (actionItems.length > 0 && client.todoist_project_id) {
+    createTodoistTasks(actionItems, client);
+  }
+
+  // Append meeting notes to client's Google Doc
+  if (client.google_doc_url) {
+    appendMeetingNotesToDoc(message, client);
+  }
+
+  // Apply sub-label to the sent email
+  applyMeetingSummaryLabel(message, client);
+
+  // Mark as processed
+  markMessageProcessed(message.getId());
+
+  logProcessing(
+    'SUMMARY_SENT',
+    clientId,
+    `Processed sent summary: ${message.getSubject()}`,
+    'success'
+  );
+}
+
+/**
+ * Extracts metadata from HTML comment tags in email body.
+ *
+ * @param {string} body - The email body HTML
+ * @param {string} key - The metadata key to extract
+ * @returns {string|null} The extracted value or null
+ */
+function extractMetadata(body, key) {
+  const regex = new RegExp(`<!--${key}:(.+?)-->`);
+  const match = body.match(regex);
+  return match ? match[1] : null;
+}
+
+/**
+ * Checks if a message has already been processed.
+ *
+ * @param {string} messageId - The Gmail message ID
+ * @returns {boolean} True if already processed
+ */
+function isMessageProcessed(messageId) {
+  const cache = CacheService.getScriptCache();
+  return cache.get(`processed_${messageId}`) !== null;
+}
+
+/**
+ * Marks a message as processed.
+ *
+ * @param {string} messageId - The Gmail message ID
+ */
+function markMessageProcessed(messageId) {
+  const cache = CacheService.getScriptCache();
+  // Cache for 7 days (604800 seconds)
+  cache.put(`processed_${messageId}`, 'true', 604800);
+}
+
+// ============================================================================
+// TODOIST INTEGRATION
+// ============================================================================
+
+/**
+ * Creates Todoist tasks for action items.
+ *
+ * @param {Object[]} actionItems - Array of action item objects
+ * @param {Object} client - The client object
+ */
+function createTodoistTasks(actionItems, client) {
+  const apiToken = PropertiesService.getScriptProperties().getProperty('TODOIST_API_TOKEN');
+
+  if (!apiToken) {
+    Logger.log('Todoist API token not configured');
+    return;
+  }
+
+  const projectId = client.todoist_project_id;
+
+  for (const item of actionItems) {
+    try {
+      createTodoistTask(apiToken, projectId, item, client.client_name);
+    } catch (error) {
+      Logger.log(`Failed to create Todoist task: ${error.message}`);
+      logProcessing(
+        'TODOIST_ERROR',
+        client.client_id,
+        `Failed to create task: ${item.description}`,
+        'error'
+      );
+    }
+  }
+}
+
+/**
+ * Creates a single Todoist task.
+ *
+ * @param {string} apiToken - Todoist API token
+ * @param {string} projectId - Todoist project ID
+ * @param {Object} item - Action item object
+ * @param {string} clientName - Client name for task content
+ */
+function createTodoistTask(apiToken, projectId, item, clientName) {
+  const url = 'https://api.todoist.com/rest/v2/tasks';
+
+  const taskContent = `[${clientName}] ${item.description}`;
+
+  const payload = {
+    content: taskContent,
+    project_id: projectId
+  };
+
+  // Add due date if provided
+  if (item.due_date) {
+    payload.due_string = item.due_date;
+  }
+
+  const options = {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiToken}`,
+      'Content-Type': 'application/json'
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const response = UrlFetchApp.fetch(url, options);
+  const responseCode = response.getResponseCode();
+
+  if (responseCode !== 200) {
+    throw new Error(`Todoist API error: ${responseCode}`);
+  }
+
+  Logger.log(`Created Todoist task: ${taskContent}`);
+}
+
+/**
+ * Fetches tasks from Todoist for a specific project.
+ *
+ * @param {string} projectId - Todoist project ID
+ * @returns {Object[]} Array of task objects
+ */
+function fetchTodoistTasks(projectId) {
+  const apiToken = PropertiesService.getScriptProperties().getProperty('TODOIST_API_TOKEN');
+
+  if (!apiToken) {
+    Logger.log('Todoist API token not configured');
+    return [];
+  }
+
+  const url = `https://api.todoist.com/rest/v2/tasks?project_id=${projectId}`;
+
+  const options = {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiToken}`
+    },
+    muteHttpExceptions: true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      Logger.log(`Todoist API error: ${responseCode}`);
+      return [];
+    }
+
+    return JSON.parse(response.getContentText());
+  } catch (error) {
+    Logger.log(`Failed to fetch Todoist tasks: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Fetches tasks due today or overdue for a project.
+ *
+ * @param {string} projectId - Todoist project ID
+ * @returns {Object[]} Array of task objects due today or overdue
+ */
+function fetchTodoistTasksDueToday(projectId) {
+  const tasks = fetchTodoistTasks(projectId);
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+
+  return tasks.filter(task => {
+    if (!task.due) return false;
+
+    const dueDate = new Date(task.due.date);
+    return dueDate <= today;
+  });
+}
+
+// ============================================================================
+// GOOGLE DOC INTEGRATION
+// ============================================================================
+
+/**
+ * Appends meeting notes to the client's running Google Doc.
+ *
+ * @param {GmailMessage} message - The sent meeting summary message
+ * @param {Object} client - The client object
+ */
+function appendMeetingNotesToDoc(message, client) {
+  if (!client.google_doc_url) {
+    Logger.log('No Google Doc URL configured for client');
+    return;
+  }
+
+  try {
+    const docId = extractDocIdFromUrl(client.google_doc_url);
+    const doc = DocumentApp.openById(docId);
+    const body = doc.getBody();
+
+    // Get meeting details from message
+    const subject = message.getSubject();
+    const date = formatDate(message.getDate());
+
+    // Add section header
+    body.appendParagraph(`Meeting Notes - ${date}`)
+      .setHeading(DocumentApp.ParagraphHeading.HEADING2);
+
+    // Convert email HTML to plain text and append
+    const emailBody = message.getPlainBody();
+    body.appendParagraph(emailBody);
+
+    // Add separator
+    body.appendParagraph('---');
+    body.appendParagraph('');
+
+    doc.saveAndClose();
+
+    Logger.log(`Appended meeting notes to doc: ${client.google_doc_url}`);
+  } catch (error) {
+    Logger.log(`Failed to append to Google Doc: ${error.message}`);
+    logProcessing(
+      'DOC_APPEND_ERROR',
+      client.client_id,
+      `Failed to append meeting notes: ${error.message}`,
+      'error'
+    );
+  }
+}
+
+/**
+ * Extracts the document ID from a Google Docs URL.
+ *
+ * @param {string} url - The Google Docs URL
+ * @returns {string} The document ID
+ */
+function extractDocIdFromUrl(url) {
+  const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (match) {
+    return match[1];
+  }
+  // Assume it's already a doc ID if not a URL
+  return url;
+}
+
+// ============================================================================
+// LABEL APPLICATION
+// ============================================================================
+
+/**
+ * Applies the Meeting Summaries sub-label to a sent message.
+ *
+ * @param {GmailMessage} message - The Gmail message
+ * @param {Object} client - The client object
+ */
+function applyMeetingSummaryLabel(message, client) {
+  const labelName = `Client: ${client.client_name}/Meeting Summaries`;
+
+  try {
+    let label = GmailApp.getUserLabelByName(labelName);
+
+    if (!label) {
+      // Create the label if it doesn't exist
+      label = GmailApp.createLabel(labelName);
+    }
+
+    // Apply label to the thread
+    const thread = message.getThread();
+    thread.addLabel(label);
+
+    Logger.log(`Applied label: ${labelName}`);
+  } catch (error) {
+    Logger.log(`Failed to apply label: ${error.message}`);
+  }
+}
