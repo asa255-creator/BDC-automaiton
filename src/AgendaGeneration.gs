@@ -47,12 +47,6 @@ function processEventForAgenda(event) {
 
   Logger.log(`Processing event: ${eventTitle}`);
 
-  // Check if agenda already generated
-  if (isAgendaGenerated(eventId)) {
-    Logger.log(`Agenda already generated for: ${eventTitle}`);
-    return;
-  }
-
   // Identify client from event guests
   const client = identifyClientFromCalendarEvent(event);
 
@@ -65,6 +59,17 @@ function processEventForAgenda(event) {
       guestEmails
     );
     Logger.log(`No client match for event: ${eventTitle}`);
+    return;
+  }
+
+  // Ensure running meeting notes doc is attached to the event
+  if (client.google_doc_url) {
+    attachDocToEventIfMissing(event, client);
+  }
+
+  // Check if agenda already generated
+  if (isAgendaGenerated(eventId)) {
+    Logger.log(`Agenda already generated for: ${eventTitle}`);
     return;
   }
 
@@ -645,4 +650,99 @@ function getWeekEvents() {
   const events = calendar.getEvents(now, endOfWeek);
 
   return events.filter(event => !event.isAllDayEvent());
+}
+
+// ============================================================================
+// CALENDAR ATTACHMENT
+// ============================================================================
+
+/**
+ * Attaches the client's running meeting notes doc to a calendar event if not already attached.
+ * Requires the Advanced Calendar Service to be enabled.
+ *
+ * @param {CalendarEvent} event - The calendar event
+ * @param {Object} client - The client object with google_doc_url
+ */
+function attachDocToEventIfMissing(event, client) {
+  if (!client.google_doc_url) {
+    return;
+  }
+
+  try {
+    const docId = extractDocIdFromUrl(client.google_doc_url);
+    const eventId = event.getId();
+    const calendarId = 'primary';
+
+    // Get existing attachments using Advanced Calendar Service
+    const calendarEvent = Calendar.Events.get(calendarId, eventId);
+    const existingAttachments = calendarEvent.attachments || [];
+
+    // Check if doc is already attached
+    const docUrl = `https://docs.google.com/document/d/${docId}`;
+    const isAlreadyAttached = existingAttachments.some(att =>
+      att.fileUrl && att.fileUrl.includes(docId)
+    );
+
+    if (isAlreadyAttached) {
+      Logger.log(`Doc already attached to event: ${event.getTitle()}`);
+      return;
+    }
+
+    // Get doc details for attachment
+    const doc = DocumentApp.openById(docId);
+    const docName = doc.getName();
+
+    // Add the attachment
+    const newAttachment = {
+      fileUrl: docUrl,
+      title: docName,
+      mimeType: 'application/vnd.google-apps.document'
+    };
+
+    // Update event with new attachment
+    const updatedAttachments = [...existingAttachments, newAttachment];
+
+    Calendar.Events.patch(
+      { attachments: updatedAttachments },
+      calendarId,
+      eventId,
+      { supportsAttachments: true }
+    );
+
+    Logger.log(`Attached "${docName}" to event: ${event.getTitle()}`);
+
+    logProcessing(
+      'DOC_ATTACHED',
+      client.client_id,
+      `Attached meeting notes to: ${event.getTitle()}`,
+      'success'
+    );
+
+  } catch (error) {
+    Logger.log(`Failed to attach doc to event: ${error.message}`);
+    // Don't log as error - Advanced Calendar Service may not be enabled
+    // This is a nice-to-have feature
+  }
+}
+
+/**
+ * Manually attaches running meeting notes to all upcoming client meetings.
+ * Useful for initial setup or bulk attachment.
+ */
+function attachDocsToAllUpcomingMeetings() {
+  Logger.log('Attaching docs to all upcoming client meetings...');
+
+  const events = getWeekEvents();
+  let attachedCount = 0;
+
+  for (const event of events) {
+    const client = identifyClientFromCalendarEvent(event);
+
+    if (client && client.google_doc_url) {
+      attachDocToEventIfMissing(event, client);
+      attachedCount++;
+    }
+  }
+
+  Logger.log(`Processed ${attachedCount} events for doc attachment`);
 }
