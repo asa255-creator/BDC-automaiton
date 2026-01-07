@@ -724,25 +724,3 @@ function attachDocToEventIfMissing(event, client) {
     // This is a nice-to-have feature
   }
 }
-
-/**
- * Manually attaches running meeting notes to all upcoming client meetings.
- * Useful for initial setup or bulk attachment.
- */
-function attachDocsToAllUpcomingMeetings() {
-  Logger.log('Attaching docs to all upcoming client meetings...');
-
-  const events = getWeekEvents();
-  let attachedCount = 0;
-
-  for (const event of events) {
-    const client = identifyClientFromCalendarEvent(event);
-
-    if (client && client.google_doc_url) {
-      attachDocToEventIfMissing(event, client);
-      attachedCount++;
-    }
-  }
-
-  Logger.log(`Processed ${attachedCount} events for doc attachment`);
-}
