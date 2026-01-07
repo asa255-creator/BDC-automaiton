@@ -93,13 +93,12 @@ function processFathomWebhook(payload) {
  * @returns {string} The draft ID
  */
 function createMeetingSummaryDraft(payload, client) {
-  const meetingDate = formatDate(new Date(payload.meeting_date));
-  const subject = `Meeting Summary - ${payload.meeting_title} - ${meetingDate}`;
+  const meetingDate = formatDateShort(new Date(payload.meeting_date));
+  const subject = `Team ${client.client_name} - Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}`;
 
   // Build email body
-  let body = `<h2>${payload.meeting_title}</h2>`;
-  body += `<p><strong>Date:</strong> ${meetingDate}</p>`;
-  body += `<p><strong>Client:</strong> ${client.client_name}</p>`;
+  let body = `<p>Team ${client.client_name} -</p>`;
+  body += `<p>Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}.</p>`;
   body += `<hr/>`;
 
   // Add summary
@@ -124,7 +123,12 @@ function createMeetingSummaryDraft(payload, client) {
     body += `</ol>`;
   }
 
-  // Add metadata for post-send processing
+  // Closing
+  body += `<hr/>`;
+  body += `<p>Did I miss anything?</p>`;
+  body += `<p>Thanks,<br/>TC</p>`;
+
+  // Add metadata for post-send processing (hidden)
   body += `<div style="display:none;">`;
   body += `<!--CLIENT_ID:${client.client_id}-->`;
   body += `<!--MEETING_TITLE:${payload.meeting_title}-->`;

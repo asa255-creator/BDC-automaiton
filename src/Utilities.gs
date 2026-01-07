@@ -43,6 +43,38 @@ function formatDateLong(date) {
 }
 
 /**
+ * Formats a date in short format with ordinal (e.g., "Jan 6th").
+ *
+ * @param {Date} date - The date to format
+ * @returns {string} Formatted date string
+ */
+function formatDateShort(date) {
+  if (!date || !(date instanceof Date)) {
+    return '';
+  }
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[date.getMonth()];
+  const day = date.getDate();
+  const ordinal = getOrdinalSuffix(day);
+
+  return `${month} ${day}${ordinal}`;
+}
+
+/**
+ * Gets the ordinal suffix for a number (st, nd, rd, th).
+ *
+ * @param {number} n - The number
+ * @returns {string} The ordinal suffix
+ */
+function getOrdinalSuffix(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}
+
+/**
  * Formats a time as HH:MM AM/PM.
  *
  * @param {Date} date - The date/time to format
