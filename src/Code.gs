@@ -15,7 +15,8 @@ const CONFIG = {
     CLIENT_REGISTRY: 'Client_Registry',
     GENERATED_AGENDAS: 'Generated_Agendas',
     PROCESSING_LOG: 'Processing_Log',
-    UNMATCHED: 'Unmatched'
+    UNMATCHED: 'Unmatched',
+    FOLDERS: 'Folders'
   },
   BUSINESS_HOURS: {
     START: 8,  // 8:00 AM
@@ -82,16 +83,25 @@ function doPost(e) {
  * Should be run once during initial setup.
  *
  * Triggers created:
+ * - Google Drive folder sync: daily at 5:30 AM
  * - Label and filter creation: daily at 6:00 AM
- * - Sent meeting summary monitor: every 10 minutes
- * - Agenda generation: every 1 hour (limited to business hours in handler)
+ * - Client onboarding check: daily at 6:30 AM
  * - Daily outlook: daily at 7:00 AM
  * - Weekly outlook: weekly on Monday at 7:00 AM
- * - Client onboarding check: daily at 6:30 AM
+ * - Sent meeting summary monitor: every 10 minutes
+ * - Agenda generation: every 1 hour (limited to business hours in handler)
  */
 function setupTriggers() {
   // First, remove any existing triggers to avoid duplicates
   removeAllTriggers();
+
+  // Google Drive folder sync - daily at 5:30 AM
+  ScriptApp.newTrigger('runFolderSync')
+    .timeBased()
+    .atHour(5)
+    .nearMinute(30)
+    .everyDays(1)
+    .create();
 
   // Label and filter creation - daily at 6:00 AM
   ScriptApp.newTrigger('runLabelAndFilterCreation')
@@ -294,10 +304,10 @@ function manualWeeklyOutlook() {
 function initializeSpreadsheet() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
 
-  // Client_Registry sheet
+  // Client_Registry sheet (includes docs_folder_path for folder selection)
   createSheetIfNotExists(ss, CONFIG.SHEETS.CLIENT_REGISTRY, [
     'client_id', 'client_name', 'email_domains', 'contact_emails',
-    'google_doc_url', 'todoist_project_id'
+    'docs_folder_path', 'google_doc_url', 'todoist_project_id'
   ]);
 
   // Generated_Agendas sheet
@@ -315,7 +325,16 @@ function initializeSpreadsheet() {
     'timestamp', 'item_type', 'item_details', 'participant_emails', 'manually_resolved'
   ]);
 
+  // Folders sheet (populated by folder sync)
+  createSheetIfNotExists(ss, CONFIG.SHEETS.FOLDERS, [
+    'folder_path', 'folder_id', 'folder_url'
+  ]);
+
   Logger.log('Spreadsheet initialization completed.');
+
+  // Run initial folder sync to populate the Folders sheet
+  Logger.log('Running initial folder sync...');
+  syncDriveFolders();
 }
 
 /**

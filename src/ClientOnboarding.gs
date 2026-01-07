@@ -63,6 +63,7 @@ function processNewClients() {
   const colIndex = {
     client_id: headers.indexOf('client_id'),
     client_name: headers.indexOf('client_name'),
+    docs_folder_path: headers.indexOf('docs_folder_path'),
     google_doc_url: headers.indexOf('google_doc_url'),
     todoist_project_id: headers.indexOf('todoist_project_id')
   };
@@ -73,6 +74,7 @@ function processNewClients() {
     const row = data[i];
     const clientId = row[colIndex.client_id];
     const clientName = row[colIndex.client_name];
+    const docsFolderPath = row[colIndex.docs_folder_path];
     const googleDocUrl = row[colIndex.google_doc_url];
     const todoistProjectId = row[colIndex.todoist_project_id];
 
@@ -84,11 +86,17 @@ function processNewClients() {
 
     // Create Google Doc if missing
     if (!googleDocUrl) {
-      const docUrl = createClientDoc(clientName);
+      // Get folder ID from the selected folder path
+      let folderId = null;
+      if (docsFolderPath) {
+        folderId = getFolderIdByPath(docsFolderPath);
+      }
+
+      const docUrl = createClientDoc(clientName, folderId);
       if (docUrl) {
         sheet.getRange(i + 1, colIndex.google_doc_url + 1).setValue(docUrl);
         updated = true;
-        Logger.log(`Created Google Doc for ${clientName}`);
+        Logger.log(`Created Google Doc for ${clientName} in folder: ${docsFolderPath || 'root'}`);
       }
     }
 
@@ -154,9 +162,10 @@ function onboardClient(clientName) {
  * Creates a Google Doc for a client using the naming schema.
  *
  * @param {string} clientName - The client name
+ * @param {string} folderId - Optional folder ID to create the doc in
  * @returns {string|null} The URL of the created doc or null
  */
-function createClientDoc(clientName) {
+function createClientDoc(clientName, folderId) {
   try {
     // Generate doc name from template
     const docName = ONBOARDING_CONFIG.DOC_NAME_TEMPLATE.replace('{client_name}', clientName);
@@ -180,9 +189,10 @@ function createClientDoc(clientName) {
 
     doc.saveAndClose();
 
-    // Move to folder if specified
-    if (ONBOARDING_CONFIG.DOCS_FOLDER_ID) {
-      moveDocToFolder(docId, ONBOARDING_CONFIG.DOCS_FOLDER_ID);
+    // Move to specified folder, or fallback to global config folder
+    const targetFolderId = folderId || ONBOARDING_CONFIG.DOCS_FOLDER_ID;
+    if (targetFolderId) {
+      moveDocToFolder(docId, targetFolderId);
     }
 
     const docUrl = doc.getUrl();
