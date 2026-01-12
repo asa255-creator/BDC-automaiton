@@ -1279,3 +1279,252 @@ function onClientRegistryEdit(e) {
     logProcessing('CLIENT_SETUP_ERROR', null, error.message, 'error');
   }
 }
+
+// ============================================================================
+// MIGRATION FROM EXISTING SYSTEM
+// ============================================================================
+
+/**
+ * Scans for existing Gmail labels and Todoist projects to pre-populate clients.
+ * Run this once during migration from an old system.
+ *
+ * Discovers:
+ * - Gmail labels matching "Client: *" pattern
+ * - Todoist projects
+ * - Attempts to match them by name similarity
+ *
+ * @returns {Object} Migration results with discovered clients
+ */
+function migrateFromExistingSystem() {
+  Logger.log('=== MIGRATION: Scanning for existing clients ===');
+
+  const discovered = {
+    gmailLabels: [],
+    todoistProjects: [],
+    matchedClients: [],
+    unmatchedLabels: [],
+    unmatchedProjects: []
+  };
+
+  // 1. Scan Gmail labels for "Client: *" pattern
+  Logger.log('Scanning Gmail labels...');
+  try {
+    const allLabels = GmailApp.getUserLabels();
+
+    for (const label of allLabels) {
+      const labelName = label.getName();
+
+      // Match "Client: ClientName" but not sublabels like "Client: Name/Meeting Summaries"
+      if (labelName.startsWith('Client: ') && !labelName.includes('/')) {
+        const clientName = labelName.replace('Client: ', '');
+        discovered.gmailLabels.push({
+          labelName: labelName,
+          clientName: clientName
+        });
+        Logger.log(`Found label: ${labelName} -> Client: ${clientName}`);
+      }
+    }
+  } catch (error) {
+    Logger.log(`Failed to scan Gmail labels: ${error.message}`);
+  }
+
+  // 2. Scan Todoist projects
+  Logger.log('Scanning Todoist projects...');
+  const todoistToken = PropertiesService.getScriptProperties().getProperty('TODOIST_API_TOKEN');
+
+  if (todoistToken) {
+    try {
+      const response = UrlFetchApp.fetch('https://api.todoist.com/rest/v2/projects', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${todoistToken}`
+        }
+      });
+
+      const projects = JSON.parse(response.getContentText());
+
+      for (const project of projects) {
+        // Skip inbox and other system projects
+        if (project.is_inbox_project) continue;
+
+        discovered.todoistProjects.push({
+          projectId: project.id,
+          projectName: project.name
+        });
+        Logger.log(`Found Todoist project: ${project.name} (${project.id})`);
+      }
+    } catch (error) {
+      Logger.log(`Failed to scan Todoist projects: ${error.message}`);
+    }
+  } else {
+    Logger.log('No Todoist API token - skipping Todoist scan');
+  }
+
+  // 3. Match Gmail labels to Todoist projects by name similarity
+  Logger.log('Matching labels to projects...');
+
+  for (const labelInfo of discovered.gmailLabels) {
+    const clientName = labelInfo.clientName;
+    let matched = false;
+
+    // Try exact match first
+    for (const projectInfo of discovered.todoistProjects) {
+      if (projectInfo.projectName.toLowerCase() === clientName.toLowerCase()) {
+        discovered.matchedClients.push({
+          client_name: clientName,
+          todoist_project_id: projectInfo.projectId,
+          source: 'exact_match'
+        });
+        matched = true;
+        Logger.log(`Exact match: ${clientName} -> Project ${projectInfo.projectId}`);
+        break;
+      }
+    }
+
+    // Try partial match if no exact match
+    if (!matched) {
+      for (const projectInfo of discovered.todoistProjects) {
+        const labelLower = clientName.toLowerCase();
+        const projectLower = projectInfo.projectName.toLowerCase();
+
+        if (labelLower.includes(projectLower) || projectLower.includes(labelLower)) {
+          discovered.matchedClients.push({
+            client_name: clientName,
+            todoist_project_id: projectInfo.projectId,
+            source: 'partial_match',
+            todoist_name: projectInfo.projectName
+          });
+          matched = true;
+          Logger.log(`Partial match: ${clientName} -> Project ${projectInfo.projectName} (${projectInfo.projectId})`);
+          break;
+        }
+      }
+    }
+
+    if (!matched) {
+      discovered.unmatchedLabels.push(labelInfo);
+      // Still add as a client, just without Todoist project
+      discovered.matchedClients.push({
+        client_name: clientName,
+        todoist_project_id: '',
+        source: 'label_only'
+      });
+    }
+  }
+
+  // Find Todoist projects without matching labels
+  for (const projectInfo of discovered.todoistProjects) {
+    const hasMatch = discovered.matchedClients.some(
+      c => c.todoist_project_id === projectInfo.projectId
+    );
+    if (!hasMatch) {
+      discovered.unmatchedProjects.push(projectInfo);
+    }
+  }
+
+  Logger.log('');
+  Logger.log('=== MIGRATION SUMMARY ===');
+  Logger.log(`Gmail labels found: ${discovered.gmailLabels.length}`);
+  Logger.log(`Todoist projects found: ${discovered.todoistProjects.length}`);
+  Logger.log(`Matched clients: ${discovered.matchedClients.length}`);
+  Logger.log(`Unmatched labels: ${discovered.unmatchedLabels.length}`);
+  Logger.log(`Unmatched projects: ${discovered.unmatchedProjects.length}`);
+
+  return discovered;
+}
+
+/**
+ * Imports discovered clients into the Client_Registry sheet.
+ * Run migrateFromExistingSystem() first to see what will be imported.
+ *
+ * @param {boolean} dryRun - If true, only logs what would be imported without making changes
+ */
+function importDiscoveredClients(dryRun = false) {
+  Logger.log(`=== IMPORT CLIENTS ${dryRun ? '(DRY RUN)' : ''} ===`);
+
+  // Run discovery
+  const discovered = migrateFromExistingSystem();
+
+  if (discovered.matchedClients.length === 0) {
+    Logger.log('No clients discovered to import.');
+    return;
+  }
+
+  // Get existing clients to avoid duplicates
+  const existingClients = getClientRegistry();
+  const existingNames = existingClients.map(c => c.client_name.toLowerCase());
+
+  // Open spreadsheet
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!spreadsheetId) {
+    Logger.log('ERROR: SPREADSHEET_ID not set');
+    return;
+  }
+
+  const ss = SpreadsheetApp.openById(spreadsheetId);
+  const sheet = ss.getSheetByName('Client_Registry');
+
+  if (!sheet) {
+    Logger.log('ERROR: Client_Registry sheet not found');
+    return;
+  }
+
+  let imported = 0;
+  let skipped = 0;
+
+  for (const client of discovered.matchedClients) {
+    // Check for duplicate
+    if (existingNames.includes(client.client_name.toLowerCase())) {
+      Logger.log(`SKIP (duplicate): ${client.client_name}`);
+      skipped++;
+      continue;
+    }
+
+    if (dryRun) {
+      Logger.log(`WOULD IMPORT: ${client.client_name} (Todoist: ${client.todoist_project_id || 'none'})`);
+    } else {
+      // Add to sheet: client_name, contact_emails, docs_folder_path, setup_complete, google_doc_url, todoist_project_id
+      sheet.appendRow([
+        client.client_name,  // client_name
+        '',                   // contact_emails (to be filled manually)
+        '',                   // docs_folder_path (to be selected)
+        false,                // setup_complete (unchecked - user needs to complete setup)
+        '',                   // google_doc_url (to be created)
+        client.todoist_project_id || ''  // todoist_project_id (if matched)
+      ]);
+      Logger.log(`IMPORTED: ${client.client_name}`);
+    }
+    imported++;
+  }
+
+  Logger.log('');
+  Logger.log(`=== IMPORT COMPLETE ===`);
+  Logger.log(`Imported: ${imported}`);
+  Logger.log(`Skipped (duplicates): ${skipped}`);
+
+  if (!dryRun && imported > 0) {
+    Logger.log('');
+    Logger.log('Next steps:');
+    Logger.log('1. Add contact_emails for each client');
+    Logger.log('2. Select docs_folder_path from dropdown');
+    Logger.log('3. Check setup_complete to create Google Docs');
+  }
+
+  // Log unmatched Todoist projects
+  if (discovered.unmatchedProjects.length > 0) {
+    Logger.log('');
+    Logger.log('Todoist projects without matching Gmail labels:');
+    for (const project of discovered.unmatchedProjects) {
+      Logger.log(`  - ${project.projectName} (${project.projectId})`);
+    }
+    Logger.log('You may want to create Gmail labels for these or add them manually.');
+  }
+}
+
+/**
+ * Preview what will be imported without making changes.
+ * Run this first before importDiscoveredClients().
+ */
+function previewMigration() {
+  importDiscoveredClients(true);
+}

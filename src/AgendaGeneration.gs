@@ -498,8 +498,6 @@ function sendAgendaEmail(event, client, agendaContent) {
   body += `<p><strong>Date/Time:</strong> ${eventDateTime}</p>`;
   body += `<hr/>`;
   body += `<div style="white-space: pre-wrap;">${agendaContent}</div>`;
-  body += `<hr/>`;
-  body += `<p><em>Please review and let me know if there are any additional topics you'd like to discuss.</em></p>`;
 
   GmailApp.sendEmail(userEmail, subject, '', {
     htmlBody: body
