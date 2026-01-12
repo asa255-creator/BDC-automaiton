@@ -656,9 +656,10 @@ function removeCached(key) {
  * 4. Prompts for your name (email signature)
  * 5. Prompts for business hours
  * 6. Prompts for doc naming template
- * 7. Creates all required sheets
- * 8. Sets up all triggers
- * 9. Syncs Google Drive folders
+ * 7. Checks for required Advanced Services (Calendar API, Gmail API)
+ * 8. Creates all required sheets
+ * 9. Sets up all triggers
+ * 10. Syncs Google Drive folders
  *
  * Just run this function and follow the prompts.
  */
@@ -774,15 +775,40 @@ function SETUP_RUN_THIS_FIRST() {
   PropertiesService.getScriptProperties().setProperty('DOC_NAME_TEMPLATE', docTemplate);
   Logger.log(`Set DOC_NAME_TEMPLATE: ${docTemplate}`);
 
-  // Step 7: Create all sheets
+  // Step 7: Check Advanced Services
+  const serviceStatus = checkAdvancedServices();
+
+  if (serviceStatus.missing.length > 0) {
+    const enableNow = ui.alert(
+      'Advanced Services Required',
+      'The following Advanced Services need to be enabled:\n\n' +
+      serviceStatus.missing.join('\n') + '\n\n' +
+      'To enable them:\n' +
+      '1. Click "Services" (+ icon) in the left sidebar\n' +
+      '2. Find each service listed above\n' +
+      '3. Click "Add" for each one\n\n' +
+      'Click OK after enabling them, or Cancel to continue without (some features will be disabled).',
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (enableNow === ui.Button.OK) {
+      // Re-check after user says they enabled
+      const recheck = checkAdvancedServices();
+      if (recheck.missing.length > 0) {
+        ui.alert('Warning', 'Some services still not detected:\n' + recheck.missing.join('\n') + '\n\nContinuing setup - some features may not work.', ui.ButtonSet.OK);
+      }
+    }
+  }
+
+  // Step 8: Create all sheets
   ui.alert('Creating Sheets', 'Creating all required sheets...', ui.ButtonSet.OK);
 
   createAllSheets(ss);
 
-  // Step 8: Set up triggers
+  // Step 9: Set up triggers
   setupAllTriggers();
 
-  // Step 9: Sync Drive folders
+  // Step 10: Sync Drive folders
   ui.alert('Syncing Folders', 'Scanning Google Drive folders (this may take a moment)...', ui.ButtonSet.OK);
 
   try {
@@ -792,16 +818,54 @@ function SETUP_RUN_THIS_FIRST() {
   }
 
   // Done!
-  ui.alert(
-    'Setup Complete!',
-    'Your Client Management Automation System is ready.\n\n' +
+  let completionMessage = 'Your Client Management Automation System is ready.\n\n' +
     'Next steps:\n' +
     '1. Add clients to the Client_Registry sheet\n' +
     '2. Select a folder from the docs_folder_path dropdown\n' +
-    '3. The system will automatically create docs and projects\n\n' +
-    'Note: Enable "Calendar API" in Services if you want doc attachments on calendar events.',
-    ui.ButtonSet.OK
-  );
+    '3. The system will automatically create docs and projects';
+
+  if (serviceStatus.missing.length > 0) {
+    completionMessage += '\n\nNote: Some Advanced Services were not enabled. Check the log for details.';
+  }
+
+  ui.alert('Setup Complete!', completionMessage, ui.ButtonSet.OK);
+}
+
+/**
+ * Checks if required Advanced Services are enabled.
+ *
+ * @returns {Object} Object with 'available' and 'missing' arrays
+ */
+function checkAdvancedServices() {
+  const status = {
+    available: [],
+    missing: []
+  };
+
+  // Check Calendar API
+  try {
+    if (typeof Calendar !== 'undefined' && Calendar.Events) {
+      status.available.push('Calendar API - for attaching docs to calendar events');
+    } else {
+      status.missing.push('• Calendar API - for attaching docs to calendar events');
+    }
+  } catch (e) {
+    status.missing.push('• Calendar API - for attaching docs to calendar events');
+  }
+
+  // Check Gmail API
+  try {
+    if (typeof Gmail !== 'undefined' && Gmail.Users) {
+      status.available.push('Gmail API - for creating email filters');
+    } else {
+      status.missing.push('• Gmail API - for creating email filters');
+    }
+  } catch (e) {
+    status.missing.push('• Gmail API - for creating email filters');
+  }
+
+  Logger.log(`Advanced Services - Available: ${status.available.length}, Missing: ${status.missing.length}`);
+  return status;
 }
 
 /**
