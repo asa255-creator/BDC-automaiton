@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Google Sans', Arial, sans-serif;
+      font-size: 14px;
+      margin: 0;
+      padding: 20px;
+      background: #f8f9fa;
+    }
+    h2 {
+      color: #202124;
+      margin-top: 0;
+      font-size: 18px;
+    }
+    .settings-container {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+    .setting-group {
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #e8eaed;
+    }
+    .setting-group:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+    .setting-label {
+      font-weight: 500;
+      color: #202124;
+      margin-bottom: 4px;
+    }
+    .setting-description {
+      font-size: 12px;
+      color: #5f6368;
+      margin-bottom: 8px;
+    }
+    input[type="text"], input[type="password"], input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    input:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+    }
+    .input-row {
+      display: flex;
+      gap: 12px;
+    }
+    .input-row .input-col {
+      flex: 1;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      margin-left: 8px;
+    }
+    .status-set {
+      background: #e8f5e9;
+      color: #1b5e20;
+    }
+    .status-not-set {
+      background: #fce8e6;
+      color: #c5221f;
+    }
+    .buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #e8eaed;
+    }
+    .btn {
+      padding: 10px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-primary {
+      background: #1a73e8;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #1557b0;
+    }
+    .btn-primary:disabled {
+      background: #dadce0;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: white;
+      border: 1px solid #dadce0;
+      color: #5f6368;
+    }
+    .btn-secondary:hover {
+      background: #f8f9fa;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #5f6368;
+    }
+    .status-message {
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .status-message.success {
+      display: block;
+      background: #e8f5e9;
+      color: #1b5e20;
+    }
+    .status-message.error {
+      display: block;
+      background: #fce8e6;
+      color: #c5221f;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #5f6368;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading">Loading settings...</div>
+
+  <div id="content" style="display: none;">
+    <div id="statusMessage" class="status-message"></div>
+
+    <div class="settings-container">
+      <div class="section-title">API Integrations</div>
+
+      <div class="setting-group">
+        <div class="setting-label">
+          Todoist API Token
+          <span id="todoistStatus" class="status-badge"></span>
+        </div>
+        <div class="setting-description">Get from Todoist Settings > Integrations > Developer</div>
+        <input type="password" id="todoist_token" placeholder="Enter Todoist API token">
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label">
+          Claude API Key
+          <span id="claudeStatus" class="status-badge"></span>
+        </div>
+        <div class="setting-description">Get from console.anthropic.com</div>
+        <input type="password" id="claude_key" placeholder="Enter Claude API key">
+      </div>
+
+      <div class="section-title" style="margin-top: 24px;">Email Settings</div>
+
+      <div class="setting-group">
+        <div class="setting-label">Your Name</div>
+        <div class="setting-description">Used in email signatures (e.g., "TC", "John")</div>
+        <input type="text" id="user_name" placeholder="Enter your name">
+      </div>
+
+      <div class="section-title" style="margin-top: 24px;">Schedule Settings</div>
+
+      <div class="setting-group">
+        <div class="setting-label">Business Hours</div>
+        <div class="setting-description">Agendas are only generated during these hours</div>
+        <div class="input-row">
+          <div class="input-col">
+            <input type="number" id="hours_start" min="0" max="23" placeholder="Start (e.g., 8)">
+          </div>
+          <div class="input-col">
+            <input type="number" id="hours_end" min="1" max="24" placeholder="End (e.g., 18)">
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 24px;">Document Settings</div>
+
+      <div class="setting-group">
+        <div class="setting-label">Document Name Template</div>
+        <div class="setting-description">Use {client_name} as placeholder</div>
+        <input type="text" id="doc_template" placeholder="Client Notes - {client_name}">
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">Save Changes</button>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', loadSettings);
+
+    function loadSettings() {
+      google.script.run
+        .withSuccessHandler(function(settings) {
+          // Populate fields
+          document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
+          document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
+          document.getElementById('user_name').value = settings.USER_NAME || '';
+          document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
+          document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
+          document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
+
+          // Update status badges
+          updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
+          updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
+
+          // Show content
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('content').style.display = 'block';
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById('loading').innerHTML = 'Error loading settings: ' + error.message;
+        })
+        .getSettingsForEditor();
+    }
+
+    function updateBadge(elementId, value) {
+      const badge = document.getElementById(elementId);
+      if (value) {
+        badge.textContent = 'SET';
+        badge.className = 'status-badge status-set';
+      } else {
+        badge.textContent = 'NOT SET';
+        badge.className = 'status-badge status-not-set';
+      }
+    }
+
+    function saveSettings() {
+      const saveBtn = document.getElementById('saveBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      const settings = {
+        TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
+        CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
+        USER_NAME: document.getElementById('user_name').value.trim(),
+        BUSINESS_HOURS_START: document.getElementById('hours_start').value.trim(),
+        BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
+        DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim()
+      };
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const msgEl = document.getElementById('statusMessage');
+          msgEl.textContent = 'Settings saved successfully!';
+          msgEl.className = 'status-message success';
+
+          // Update badges
+          updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
+          updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
+
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save Changes';
+
+          // Close after delay
+          setTimeout(function() {
+            google.script.host.close();
+          }, 1000);
+        })
+        .withFailureHandler(function(error) {
+          const msgEl = document.getElementById('statusMessage');
+          msgEl.textContent = 'Error: ' + error.message;
+          msgEl.className = 'status-message error';
+
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save Changes';
+        })
+        .saveSettingsFromEditor(settings);
+    }
+  </script>
+</body>
+</html>

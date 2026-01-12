@@ -1556,6 +1556,7 @@ function onOpen() {
       .addItem('Run Setup', 'SETUP_RUN_THIS_FIRST')
       .addItem('Import Existing Clients...', 'showMigrationWizard')
       .addSeparator()
+      .addItem('Update Settings...', 'showSettingsEditor')
       .addItem('Adjust Prompts...', 'showPromptsEditor')
       .addSeparator()
       .addItem('Sync Drive Folders', 'syncDriveFolders')
@@ -1583,6 +1584,81 @@ function showProcessingLog() {
   } else {
     ui.alert('Not Found', 'Processing_Log sheet not found. Run setup first.', ui.ButtonSet.OK);
   }
+}
+
+// ============================================================================
+// SETTINGS EDITOR
+// ============================================================================
+
+/**
+ * Shows the settings editor dialog.
+ */
+function showSettingsEditor() {
+  const html = HtmlService.createHtmlOutputFromFile('SettingsEditor')
+    .setWidth(450)
+    .setHeight(550)
+    .setTitle('Update Settings');
+
+  SpreadsheetApp.getUi().showModalDialog(html, 'Update Settings');
+}
+
+/**
+ * Gets current settings for the editor.
+ * Masks sensitive values for display.
+ *
+ * @returns {Object} Current settings
+ */
+function getSettingsForEditor() {
+  const props = PropertiesService.getScriptProperties();
+
+  return {
+    TODOIST_API_TOKEN: props.getProperty('TODOIST_API_TOKEN') || '',
+    CLAUDE_API_KEY: props.getProperty('CLAUDE_API_KEY') || '',
+    USER_NAME: props.getProperty('USER_NAME') || '',
+    BUSINESS_HOURS_START: props.getProperty('BUSINESS_HOURS_START') || '8',
+    BUSINESS_HOURS_END: props.getProperty('BUSINESS_HOURS_END') || '18',
+    DOC_NAME_TEMPLATE: props.getProperty('DOC_NAME_TEMPLATE') || 'Client Notes - {client_name}'
+  };
+}
+
+/**
+ * Saves settings from the editor.
+ * Only updates non-empty values.
+ *
+ * @param {Object} settings - Settings object from the editor
+ * @returns {Object} Result with success status
+ */
+function saveSettingsFromEditor(settings) {
+  const props = PropertiesService.getScriptProperties();
+
+  // Only update settings that have values (don't clear existing ones if left blank)
+  if (settings.TODOIST_API_TOKEN) {
+    props.setProperty('TODOIST_API_TOKEN', settings.TODOIST_API_TOKEN);
+  }
+
+  if (settings.CLAUDE_API_KEY) {
+    props.setProperty('CLAUDE_API_KEY', settings.CLAUDE_API_KEY);
+  }
+
+  if (settings.USER_NAME) {
+    props.setProperty('USER_NAME', settings.USER_NAME);
+  }
+
+  if (settings.BUSINESS_HOURS_START) {
+    props.setProperty('BUSINESS_HOURS_START', settings.BUSINESS_HOURS_START);
+  }
+
+  if (settings.BUSINESS_HOURS_END) {
+    props.setProperty('BUSINESS_HOURS_END', settings.BUSINESS_HOURS_END);
+  }
+
+  if (settings.DOC_NAME_TEMPLATE) {
+    props.setProperty('DOC_NAME_TEMPLATE', settings.DOC_NAME_TEMPLATE);
+  }
+
+  Logger.log('Settings updated via editor');
+
+  return { success: true };
 }
 
 // ============================================================================
