@@ -1167,15 +1167,24 @@ function setupAllTriggers() {
     .atHour(7)
     .create();
 
-  // onEdit trigger for checkbox-based client setup
+  // Spreadsheet-based triggers
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
   if (spreadsheetId) {
     const ss = SpreadsheetApp.openById(spreadsheetId);
+
+    // onEdit trigger for checkbox-based client setup
     ScriptApp.newTrigger('onClientRegistryEdit')
       .forSpreadsheet(ss)
       .onEdit()
       .create();
     Logger.log('Created onEdit trigger for client setup');
+
+    // onOpen trigger for custom menu
+    ScriptApp.newTrigger('onOpen')
+      .forSpreadsheet(ss)
+      .onOpen()
+      .create();
+    Logger.log('Created onOpen trigger for menu');
   }
 
   Logger.log('All triggers created.');
@@ -1527,4 +1536,277 @@ function importDiscoveredClients(dryRun = false) {
  */
 function previewMigration() {
   importDiscoveredClients(true);
+}
+
+// ============================================================================
+// ON OPEN MENU
+// ============================================================================
+
+/**
+ * Creates custom menu when the spreadsheet is opened.
+ * This is an installable trigger - set up via setupAllTriggers().
+ */
+function onOpen() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.createMenu('Client Automation')
+      .addItem('Run Setup', 'SETUP_RUN_THIS_FIRST')
+      .addItem('Import Existing Clients...', 'showMigrationWizard')
+      .addSeparator()
+      .addItem('Sync Drive Folders', 'syncDriveFolders')
+      .addItem('Sync Labels & Filters', 'runLabelAndFilterCreation')
+      .addSeparator()
+      .addItem('View Processing Log', 'showProcessingLog')
+      .addToUi();
+  } catch (e) {
+    // Not bound to a spreadsheet - skip menu creation
+    Logger.log('onOpen: Not bound to spreadsheet, skipping menu');
+  }
+}
+
+/**
+ * Shows the processing log to the user.
+ */
+function showProcessingLog() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Processing_Log');
+
+  if (sheet) {
+    ss.setActiveSheet(sheet);
+    ui.alert('Processing Log', 'Showing the Processing_Log sheet with recent activity.', ui.ButtonSet.OK);
+  } else {
+    ui.alert('Not Found', 'Processing_Log sheet not found. Run setup first.', ui.ButtonSet.OK);
+  }
+}
+
+// ============================================================================
+// MIGRATION WIZARD
+// ============================================================================
+
+/**
+ * Shows the migration wizard dialog.
+ */
+function showMigrationWizard() {
+  const html = HtmlService.createHtmlOutputFromFile('MigrationWizard')
+    .setWidth(500)
+    .setHeight(600)
+    .setTitle('Import Existing Clients');
+
+  SpreadsheetApp.getUi().showModalDialog(html, 'Import Existing Clients');
+}
+
+/**
+ * Scans for existing Gmail labels and Todoist projects.
+ * Called by the migration wizard HTML.
+ *
+ * @returns {Object} Discovered data for the wizard
+ */
+function scanForMigration() {
+  const discovered = {
+    gmailLabels: [],
+    todoistProjects: []
+  };
+
+  // Scan Gmail labels for "Client: *" pattern
+  try {
+    const allLabels = GmailApp.getUserLabels();
+
+    for (const label of allLabels) {
+      const labelName = label.getName();
+
+      // Match "Client: ClientName" but not sublabels
+      if (labelName.startsWith('Client: ') && !labelName.includes('/')) {
+        const clientName = labelName.replace('Client: ', '');
+        discovered.gmailLabels.push({
+          labelName: labelName,
+          clientName: clientName
+        });
+      }
+    }
+  } catch (error) {
+    Logger.log(`Failed to scan Gmail labels: ${error.message}`);
+  }
+
+  // Scan Todoist projects
+  const todoistToken = PropertiesService.getScriptProperties().getProperty('TODOIST_API_TOKEN');
+
+  if (todoistToken) {
+    try {
+      const response = UrlFetchApp.fetch('https://api.todoist.com/rest/v2/projects', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${todoistToken}`
+        }
+      });
+
+      const projects = JSON.parse(response.getContentText());
+
+      for (const project of projects) {
+        // Skip inbox and other system projects
+        if (project.is_inbox_project) continue;
+
+        discovered.todoistProjects.push({
+          projectId: project.id,
+          projectName: project.name
+        });
+      }
+    } catch (error) {
+      Logger.log(`Failed to scan Todoist projects: ${error.message}`);
+    }
+  }
+
+  return discovered;
+}
+
+/**
+ * Gets folders for the wizard dropdown.
+ *
+ * @returns {Object[]} Array of folder objects with folder_path
+ */
+function getFoldersForWizard() {
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!spreadsheetId) return [];
+
+  try {
+    const ss = SpreadsheetApp.openById(spreadsheetId);
+    const sheet = ss.getSheetByName('Folders');
+
+    if (!sheet) return [];
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return [];
+
+    const folders = [];
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0]) {
+        folders.push({
+          folder_path: data[i][0],
+          folder_id: data[i][1]
+        });
+      }
+    }
+
+    return folders;
+  } catch (e) {
+    Logger.log(`Error getting folders: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * Searches Google Docs by name.
+ *
+ * @param {string} query - Search query
+ * @returns {Object[]} Array of matching docs with name and url
+ */
+function searchGoogleDocs(query) {
+  if (!query || query.length < 2) return [];
+
+  try {
+    // Search for Google Docs containing the query
+    const files = DriveApp.searchFiles(
+      `mimeType='application/vnd.google-apps.document' and title contains '${query.replace(/'/g, "\\'")}'`
+    );
+
+    const results = [];
+    let count = 0;
+    const maxResults = 20;
+
+    while (files.hasNext() && count < maxResults) {
+      const file = files.next();
+      results.push({
+        name: file.getName(),
+        url: file.getUrl(),
+        id: file.getId()
+      });
+      count++;
+    }
+
+    return results;
+  } catch (e) {
+    Logger.log(`Error searching docs: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * Imports clients from the migration wizard.
+ *
+ * @param {Object[]} importData - Array of client import configurations
+ * @returns {Object} Result with imported count
+ */
+function importClientsFromWizard(importData) {
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!spreadsheetId) {
+    throw new Error('SPREADSHEET_ID not set');
+  }
+
+  const ss = SpreadsheetApp.openById(spreadsheetId);
+  const sheet = ss.getSheetByName('Client_Registry');
+
+  if (!sheet) {
+    throw new Error('Client_Registry sheet not found');
+  }
+
+  // Get existing clients to avoid duplicates
+  const existingData = sheet.getDataRange().getValues();
+  const existingNames = [];
+  for (let i = 1; i < existingData.length; i++) {
+    if (existingData[i][0]) {
+      existingNames.push(existingData[i][0].toLowerCase());
+    }
+  }
+
+  let imported = 0;
+
+  for (const client of importData) {
+    // Skip duplicates
+    if (existingNames.includes(client.client_name.toLowerCase())) {
+      Logger.log(`Skip duplicate: ${client.client_name}`);
+      continue;
+    }
+
+    let googleDocUrl = '';
+    let todoistProjectId = client.todoist_project_id || '';
+
+    // Handle doc creation/linking
+    if (client.doc_mode === 'existing' && client.existing_doc_url) {
+      googleDocUrl = client.existing_doc_url;
+    } else if (client.doc_mode === 'create') {
+      // Create new doc
+      const folderId = client.create_folder ? getFolderIdFromPath(client.create_folder) : null;
+      googleDocUrl = createClientDoc(client.client_name, folderId) || '';
+    }
+
+    // Handle Todoist project creation
+    if (client.create_todoist) {
+      todoistProjectId = createTodoistProject(client.client_name) || '';
+    }
+
+    // Add to sheet: client_name, contact_emails, docs_folder_path, setup_complete, google_doc_url, todoist_project_id
+    sheet.appendRow([
+      client.client_name,
+      '',  // contact_emails - to be filled manually
+      client.create_folder || '',
+      true,  // setup_complete - checked since we're setting up now
+      googleDocUrl,
+      todoistProjectId
+    ]);
+
+    // Create Gmail labels
+    if (client.create_gmail_label || !client.gmail_label) {
+      syncClientLabels({
+        client_name: client.client_name,
+        contact_emails: ''
+      });
+    }
+
+    Logger.log(`Imported: ${client.client_name}`);
+    imported++;
+  }
+
+  logProcessing('MIGRATION_WIZARD', null, `Imported ${imported} clients via wizard`, 'success');
+
+  return { imported: imported };
 }
