@@ -126,7 +126,8 @@ function createMeetingSummaryDraft(payload, client) {
   // Closing
   body += `<hr/>`;
   body += `<p>Did I miss anything?</p>`;
-  body += `<p>Thanks,<br/>TC</p>`;
+  const userName = PropertiesService.getScriptProperties().getProperty('USER_NAME') || 'Team';
+  body += `<p>Thanks,<br/>${userName}</p>`;
 
   // Add metadata for post-send processing (hidden)
   body += `<div style="display:none;">`;

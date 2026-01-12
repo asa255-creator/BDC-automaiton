@@ -167,8 +167,10 @@ function onboardClient(clientName) {
  */
 function createClientDoc(clientName, folderId) {
   try {
-    // Generate doc name from template
-    const docName = ONBOARDING_CONFIG.DOC_NAME_TEMPLATE.replace('{client_name}', clientName);
+    // Generate doc name from template (use Script Property if set, otherwise fall back to config)
+    const docNameTemplate = PropertiesService.getScriptProperties().getProperty('DOC_NAME_TEMPLATE')
+      || ONBOARDING_CONFIG.DOC_NAME_TEMPLATE;
+    const docName = docNameTemplate.replace('{client_name}', clientName);
 
     // Create the document
     const doc = DocumentApp.create(docName);

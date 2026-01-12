@@ -651,10 +651,14 @@ function removeCached(key) {
  *
  * This single function sets up everything:
  * 1. Detects the spreadsheet ID automatically
- * 2. Prompts for API keys via dialog
- * 3. Creates all required sheets
- * 4. Sets up all triggers
- * 5. Syncs Google Drive folders
+ * 2. Prompts for Todoist API token
+ * 3. Prompts for Claude API key
+ * 4. Prompts for your name (email signature)
+ * 5. Prompts for business hours
+ * 6. Prompts for doc naming template
+ * 7. Creates all required sheets
+ * 8. Sets up all triggers
+ * 9. Syncs Google Drive folders
  *
  * Just run this function and follow the prompts.
  */
@@ -708,15 +712,77 @@ function SETUP_RUN_THIS_FIRST() {
     Logger.log('Set CLAUDE_API_KEY');
   }
 
-  // Step 4: Create all sheets
+  // Step 4: Prompt for user's name (for email signatures)
+  const nameResponse = ui.prompt(
+    'Your Name',
+    'Enter your name/initials for email signatures (e.g., "TC", "John"):\n\nThis appears at the end of meeting summary emails.',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (nameResponse.getSelectedButton() === ui.Button.CANCEL) {
+    ui.alert('Setup cancelled.');
+    return;
+  }
+
+  const userName = nameResponse.getResponseText().trim() || 'Team';
+  PropertiesService.getScriptProperties().setProperty('USER_NAME', userName);
+  Logger.log(`Set USER_NAME: ${userName}`);
+
+  // Step 5: Prompt for business hours
+  const hoursResponse = ui.prompt(
+    'Business Hours',
+    'Enter your business hours for agenda generation (format: START-END, e.g., "8-18" for 8 AM to 6 PM):\n\nAgendas are only generated during these hours.\n\nPress OK for default (8-18) or enter custom hours:',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (hoursResponse.getSelectedButton() === ui.Button.CANCEL) {
+    ui.alert('Setup cancelled.');
+    return;
+  }
+
+  const hoursInput = hoursResponse.getResponseText().trim();
+  let startHour = 8;
+  let endHour = 18;
+
+  if (hoursInput && hoursInput.includes('-')) {
+    const parts = hoursInput.split('-');
+    const parsedStart = parseInt(parts[0], 10);
+    const parsedEnd = parseInt(parts[1], 10);
+    if (!isNaN(parsedStart) && !isNaN(parsedEnd) && parsedStart >= 0 && parsedEnd <= 24) {
+      startHour = parsedStart;
+      endHour = parsedEnd;
+    }
+  }
+
+  PropertiesService.getScriptProperties().setProperty('BUSINESS_HOURS_START', startHour.toString());
+  PropertiesService.getScriptProperties().setProperty('BUSINESS_HOURS_END', endHour.toString());
+  Logger.log(`Set business hours: ${startHour} to ${endHour}`);
+
+  // Step 6: Prompt for doc naming template
+  const docNameResponse = ui.prompt(
+    'Document Naming',
+    'Enter the naming template for client meeting notes docs:\n\nUse {client_name} as placeholder.\n\nPress OK for default or enter custom template:',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (docNameResponse.getSelectedButton() === ui.Button.CANCEL) {
+    ui.alert('Setup cancelled.');
+    return;
+  }
+
+  const docTemplate = docNameResponse.getResponseText().trim() || 'Client Notes - {client_name}';
+  PropertiesService.getScriptProperties().setProperty('DOC_NAME_TEMPLATE', docTemplate);
+  Logger.log(`Set DOC_NAME_TEMPLATE: ${docTemplate}`);
+
+  // Step 7: Create all sheets
   ui.alert('Creating Sheets', 'Creating all required sheets...', ui.ButtonSet.OK);
 
   createAllSheets(ss);
 
-  // Step 5: Set up triggers
+  // Step 8: Set up triggers
   setupAllTriggers();
 
-  // Step 6: Sync Drive folders
+  // Step 9: Sync Drive folders
   ui.alert('Syncing Folders', 'Scanning Google Drive folders (this may take a moment)...', ui.ButtonSet.OK);
 
   try {

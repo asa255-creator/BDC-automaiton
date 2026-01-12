@@ -203,14 +203,20 @@ function runSentMeetingSummaryMonitor() {
 
 /**
  * Handler for agenda generation trigger.
- * Runs every hour, but only processes during business hours (8 AM - 6 PM).
+ * Runs every hour, but only processes during business hours.
+ * Business hours are configurable via Script Properties (default 8 AM - 6 PM).
  */
 function runAgendaGeneration() {
   const currentHour = new Date().getHours();
 
+  // Read business hours from Script Properties (fall back to CONFIG defaults)
+  const props = PropertiesService.getScriptProperties();
+  const startHour = parseInt(props.getProperty('BUSINESS_HOURS_START'), 10) || CONFIG.BUSINESS_HOURS.START;
+  const endHour = parseInt(props.getProperty('BUSINESS_HOURS_END'), 10) || CONFIG.BUSINESS_HOURS.END;
+
   // Only run during business hours
-  if (currentHour < CONFIG.BUSINESS_HOURS.START || currentHour >= CONFIG.BUSINESS_HOURS.END) {
-    Logger.log(`Skipping agenda generation - outside business hours (${currentHour}:00)`);
+  if (currentHour < startHour || currentHour >= endHour) {
+    Logger.log(`Skipping agenda generation - outside business hours (${currentHour}:00, configured: ${startHour}-${endHour})`);
     return;
   }
 
