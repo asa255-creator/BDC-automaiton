@@ -649,32 +649,59 @@ function removeCached(key) {
 /**
  * MAIN SETUP FUNCTION - Run this first!
  *
- * This single function sets up everything:
- * 1. Detects the spreadsheet ID automatically
- * 2. Prompts for Todoist API token
- * 3. Prompts for Claude API key
- * 4. Prompts for your name (email signature)
- * 5. Prompts for business hours
- * 6. Prompts for doc naming template
- * 7. Checks for required Advanced Services (Calendar API, Gmail API)
- * 8. Creates all required sheets
- * 9. Sets up all triggers
- * 10. Syncs Google Drive folders
+ * Works in two modes:
  *
- * Just run this function and follow the prompts.
+ * MODE 1 - Bound to a Sheet (recommended):
+ * - Create script via Extensions > Apps Script from a Google Sheet
+ * - Run this function - it will prompt for all settings via dialogs
+ *
+ * MODE 2 - Standalone Script:
+ * - Set SPREADSHEET_ID in Script Properties first (required)
+ * - Optionally set: TODOIST_API_TOKEN, CLAUDE_API_KEY, USER_NAME,
+ *   BUSINESS_HOURS_START, BUSINESS_HOURS_END, DOC_NAME_TEMPLATE
+ * - Run this function - it will use those properties and set defaults
+ *
+ * In both modes, this function:
+ * - Checks for required Advanced Services (Calendar API, Gmail API)
+ * - Creates all required sheets
+ * - Sets up all triggers
+ * - Syncs Google Drive folders
  */
 function SETUP_RUN_THIS_FIRST() {
-  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
 
-  // Step 1: Get spreadsheet ID automatically
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) {
-    ui.alert('Error', 'Please open this script from a Google Sheet (Extensions > Apps Script)', ui.ButtonSet.OK);
-    return;
+  // Detect if we're bound to a spreadsheet (can use UI)
+  let ui = null;
+  let ss = null;
+  let isInteractive = false;
+
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (ss) {
+      ui = SpreadsheetApp.getUi();
+      isInteractive = true;
+    }
+  } catch (e) {
+    // Not bound to a spreadsheet, will use standalone mode
+    Logger.log('Running in standalone mode (no UI available)');
   }
 
+  if (isInteractive) {
+    // ========== INTERACTIVE MODE (bound to sheet) ==========
+    runInteractiveSetup(ui, ss, props);
+  } else {
+    // ========== STANDALONE MODE ==========
+    runStandaloneSetup(props);
+  }
+}
+
+/**
+ * Runs setup in interactive mode with UI prompts.
+ */
+function runInteractiveSetup(ui, ss, props) {
+  // Step 1: Get spreadsheet ID automatically
   const spreadsheetId = ss.getId();
-  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', spreadsheetId);
+  props.setProperty('SPREADSHEET_ID', spreadsheetId);
   Logger.log(`Set SPREADSHEET_ID: ${spreadsheetId}`);
 
   // Step 2: Prompt for Todoist API Token
@@ -691,7 +718,7 @@ function SETUP_RUN_THIS_FIRST() {
 
   const todoistToken = todoistResponse.getResponseText().trim();
   if (todoistToken) {
-    PropertiesService.getScriptProperties().setProperty('TODOIST_API_TOKEN', todoistToken);
+    props.setProperty('TODOIST_API_TOKEN', todoistToken);
     Logger.log('Set TODOIST_API_TOKEN');
   }
 
@@ -709,7 +736,7 @@ function SETUP_RUN_THIS_FIRST() {
 
   const claudeKey = claudeResponse.getResponseText().trim();
   if (claudeKey) {
-    PropertiesService.getScriptProperties().setProperty('CLAUDE_API_KEY', claudeKey);
+    props.setProperty('CLAUDE_API_KEY', claudeKey);
     Logger.log('Set CLAUDE_API_KEY');
   }
 
@@ -726,7 +753,7 @@ function SETUP_RUN_THIS_FIRST() {
   }
 
   const userName = nameResponse.getResponseText().trim() || 'Team';
-  PropertiesService.getScriptProperties().setProperty('USER_NAME', userName);
+  props.setProperty('USER_NAME', userName);
   Logger.log(`Set USER_NAME: ${userName}`);
 
   // Step 5: Prompt for business hours
@@ -755,8 +782,8 @@ function SETUP_RUN_THIS_FIRST() {
     }
   }
 
-  PropertiesService.getScriptProperties().setProperty('BUSINESS_HOURS_START', startHour.toString());
-  PropertiesService.getScriptProperties().setProperty('BUSINESS_HOURS_END', endHour.toString());
+  props.setProperty('BUSINESS_HOURS_START', startHour.toString());
+  props.setProperty('BUSINESS_HOURS_END', endHour.toString());
   Logger.log(`Set business hours: ${startHour} to ${endHour}`);
 
   // Step 6: Prompt for doc naming template
@@ -772,7 +799,7 @@ function SETUP_RUN_THIS_FIRST() {
   }
 
   const docTemplate = docNameResponse.getResponseText().trim() || 'Client Notes - {client_name}';
-  PropertiesService.getScriptProperties().setProperty('DOC_NAME_TEMPLATE', docTemplate);
+  props.setProperty('DOC_NAME_TEMPLATE', docTemplate);
   Logger.log(`Set DOC_NAME_TEMPLATE: ${docTemplate}`);
 
   // Step 7: Check Advanced Services
@@ -829,6 +856,137 @@ function SETUP_RUN_THIS_FIRST() {
   }
 
   ui.alert('Setup Complete!', completionMessage, ui.ButtonSet.OK);
+}
+
+/**
+ * Runs setup in standalone mode using Script Properties.
+ */
+function runStandaloneSetup(props) {
+  Logger.log('=== STANDALONE SETUP MODE ===');
+
+  // Step 1: Check for required SPREADSHEET_ID
+  const spreadsheetId = props.getProperty('SPREADSHEET_ID');
+  if (!spreadsheetId) {
+    Logger.log('ERROR: SPREADSHEET_ID not set in Script Properties.');
+    Logger.log('');
+    Logger.log('To fix this:');
+    Logger.log('1. Go to Project Settings (gear icon)');
+    Logger.log('2. Scroll to Script Properties');
+    Logger.log('3. Click "Add Script Property"');
+    Logger.log('4. Property: SPREADSHEET_ID');
+    Logger.log('5. Value: Your Google Sheet ID (from the URL)');
+    Logger.log('');
+    Logger.log('Optional properties you can also set:');
+    Logger.log('- TODOIST_API_TOKEN: Your Todoist API token');
+    Logger.log('- CLAUDE_API_KEY: Your Anthropic Claude API key');
+    Logger.log('- USER_NAME: Your name for email signatures (default: "Team")');
+    Logger.log('- BUSINESS_HOURS_START: Start hour 0-23 (default: 8)');
+    Logger.log('- BUSINESS_HOURS_END: End hour 0-24 (default: 18)');
+    Logger.log('- DOC_NAME_TEMPLATE: Doc naming template (default: "Client Notes - {client_name}")');
+    throw new Error('SPREADSHEET_ID is required. See logs for instructions.');
+  }
+
+  Logger.log(`Using SPREADSHEET_ID: ${spreadsheetId}`);
+
+  // Step 2: Apply defaults for optional properties if not set
+  if (!props.getProperty('USER_NAME')) {
+    props.setProperty('USER_NAME', 'Team');
+    Logger.log('Set default USER_NAME: Team');
+  } else {
+    Logger.log(`Using USER_NAME: ${props.getProperty('USER_NAME')}`);
+  }
+
+  if (!props.getProperty('BUSINESS_HOURS_START')) {
+    props.setProperty('BUSINESS_HOURS_START', '8');
+    Logger.log('Set default BUSINESS_HOURS_START: 8');
+  } else {
+    Logger.log(`Using BUSINESS_HOURS_START: ${props.getProperty('BUSINESS_HOURS_START')}`);
+  }
+
+  if (!props.getProperty('BUSINESS_HOURS_END')) {
+    props.setProperty('BUSINESS_HOURS_END', '18');
+    Logger.log('Set default BUSINESS_HOURS_END: 18');
+  } else {
+    Logger.log(`Using BUSINESS_HOURS_END: ${props.getProperty('BUSINESS_HOURS_END')}`);
+  }
+
+  if (!props.getProperty('DOC_NAME_TEMPLATE')) {
+    props.setProperty('DOC_NAME_TEMPLATE', 'Client Notes - {client_name}');
+    Logger.log('Set default DOC_NAME_TEMPLATE: Client Notes - {client_name}');
+  } else {
+    Logger.log(`Using DOC_NAME_TEMPLATE: ${props.getProperty('DOC_NAME_TEMPLATE')}`);
+  }
+
+  // Log optional integrations status
+  if (props.getProperty('TODOIST_API_TOKEN')) {
+    Logger.log('TODOIST_API_TOKEN: Set');
+  } else {
+    Logger.log('TODOIST_API_TOKEN: Not set (Todoist integration disabled)');
+  }
+
+  if (props.getProperty('CLAUDE_API_KEY')) {
+    Logger.log('CLAUDE_API_KEY: Set');
+  } else {
+    Logger.log('CLAUDE_API_KEY: Not set (AI agenda generation disabled)');
+  }
+
+  // Step 3: Check Advanced Services
+  Logger.log('');
+  Logger.log('Checking Advanced Services...');
+  const serviceStatus = checkAdvancedServices();
+
+  if (serviceStatus.missing.length > 0) {
+    Logger.log('WARNING: Missing Advanced Services:');
+    serviceStatus.missing.forEach(s => Logger.log(s));
+    Logger.log('');
+    Logger.log('To enable them:');
+    Logger.log('1. Click "Services" (+ icon) in the left sidebar');
+    Logger.log('2. Find each service listed above');
+    Logger.log('3. Click "Add" for each one');
+    Logger.log('');
+    Logger.log('Continuing setup - some features may not work.');
+  } else {
+    Logger.log('All Advanced Services are enabled.');
+  }
+
+  // Step 4: Open the spreadsheet and create sheets
+  Logger.log('');
+  Logger.log('Creating sheets...');
+  const ss = SpreadsheetApp.openById(spreadsheetId);
+  createAllSheets(ss);
+  Logger.log('Sheets created.');
+
+  // Step 5: Set up triggers
+  Logger.log('');
+  Logger.log('Setting up triggers...');
+  setupAllTriggers();
+  Logger.log('Triggers created.');
+
+  // Step 6: Sync Drive folders
+  Logger.log('');
+  Logger.log('Syncing Google Drive folders...');
+  try {
+    syncDriveFolders();
+    Logger.log('Folder sync complete.');
+  } catch (e) {
+    Logger.log(`Folder sync error: ${e.message}`);
+  }
+
+  // Done!
+  Logger.log('');
+  Logger.log('=== SETUP COMPLETE ===');
+  Logger.log('');
+  Logger.log('Next steps:');
+  Logger.log('1. Add clients to the Client_Registry sheet');
+  Logger.log('2. Select a folder from the docs_folder_path dropdown');
+  Logger.log('3. The system will automatically create docs and projects');
+  Logger.log('');
+  Logger.log(`Spreadsheet URL: https://docs.google.com/spreadsheets/d/${spreadsheetId}`);
+
+  if (serviceStatus.missing.length > 0) {
+    Logger.log('');
+    Logger.log('NOTE: Some Advanced Services were not enabled. See warnings above.');
+  }
 }
 
 /**
