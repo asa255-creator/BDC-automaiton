@@ -80,7 +80,7 @@ function processEventForAgenda(event) {
     Logger.log(`Failed to generate agenda for ${eventTitle}: ${error.message}`);
     logProcessing(
       'AGENDA_ERROR',
-      client.client_id,
+      client.client_name,
       `Failed to generate agenda: ${error.message}`,
       'error'
     );
@@ -118,7 +118,7 @@ function generateAgendaForEvent(event, client) {
 
   logProcessing(
     'AGENDA_GENERATED',
-    client.client_id,
+    client.client_name,
     `Generated agenda for: ${event.getTitle()}`,
     'success'
   );
@@ -174,21 +174,15 @@ function gatherAgendaContext(event, client) {
  * @returns {Object[]} Array of email summary objects
  */
 function fetchRecentClientEmails(client) {
-  const domains = parseCommaSeparatedList(client.email_domains);
   const contacts = parseCommaSeparatedList(client.contact_emails);
 
-  if (domains.length === 0 && contacts.length === 0) {
+  if (contacts.length === 0) {
     return [];
   }
 
-  // Build search query
+  // Build search query using contact emails
   const fromParts = [];
   const toParts = [];
-
-  for (const domain of domains) {
-    fromParts.push(`from:*@${domain}`);
-    toParts.push(`to:*@${domain}`);
-  }
 
   for (const contact of contacts) {
     fromParts.push(`from:${contact}`);
@@ -599,7 +593,7 @@ function recordGeneratedAgenda(event, client) {
   sheet.appendRow([
     event.getId(),
     event.getTitle(),
-    client.client_id,
+    client.client_name,
     new Date().toISOString()
   ]);
 
@@ -713,7 +707,7 @@ function attachDocToEventIfMissing(event, client) {
 
     logProcessing(
       'DOC_ATTACHED',
-      client.client_id,
+      client.client_name,
       `Attached meeting notes to: ${event.getTitle()}`,
       'success'
     );

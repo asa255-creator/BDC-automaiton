@@ -170,17 +170,16 @@ function syncFilters(clients) {
  * @param {Object} client - The client object
  */
 function createClientFilters(client) {
-  const domains = parseCommaSeparatedList(client.email_domains);
   const contacts = parseCommaSeparatedList(client.contact_emails);
 
-  if (domains.length === 0 && contacts.length === 0) {
-    Logger.log(`No email domains or contacts for client: ${client.client_name}`);
+  if (contacts.length === 0) {
+    Logger.log(`No contact emails for client: ${client.client_name}`);
     return;
   }
 
   // Build filter criteria
-  const fromCriteria = buildFromCriteria(domains, contacts);
-  const toCriteria = buildToCriteria(domains, contacts);
+  const fromCriteria = buildFromCriteria(contacts);
+  const toCriteria = buildToCriteria(contacts);
 
   // Log filter specifications (actual creation requires Gmail API)
   logFilterSpec('CLIENT_FILTER', client.client_name, {
@@ -202,16 +201,11 @@ function createClientFilters(client) {
 /**
  * Builds the 'from' criteria for Gmail filter.
  *
- * @param {string[]} domains - Array of email domains
  * @param {string[]} contacts - Array of contact emails
  * @returns {string} Gmail search query for from criteria
  */
-function buildFromCriteria(domains, contacts) {
+function buildFromCriteria(contacts) {
   const parts = [];
-
-  for (const domain of domains) {
-    parts.push(`from:*@${domain}`);
-  }
 
   for (const contact of contacts) {
     parts.push(`from:${contact}`);
@@ -231,16 +225,11 @@ function buildFromCriteria(domains, contacts) {
 /**
  * Builds the 'to' criteria for Gmail filter.
  *
- * @param {string[]} domains - Array of email domains
  * @param {string[]} contacts - Array of contact emails
  * @returns {string} Gmail search query for to criteria
  */
-function buildToCriteria(domains, contacts) {
+function buildToCriteria(contacts) {
   const parts = [];
-
-  for (const domain of domains) {
-    parts.push(`to:*@${domain}`);
-  }
 
   for (const contact of contacts) {
     parts.push(`to:${contact}`);
@@ -414,14 +403,13 @@ function deleteGmailFilter(filterId) {
  * @param {number} maxResults - Maximum number of messages to process
  */
 function retroactivelyLabelClientEmails(client, maxResults = 100) {
-  const domains = parseCommaSeparatedList(client.email_domains);
   const contacts = parseCommaSeparatedList(client.contact_emails);
 
-  if (domains.length === 0 && contacts.length === 0) {
+  if (contacts.length === 0) {
     return;
   }
 
-  const query = buildFromCriteria(domains, contacts);
+  const query = buildFromCriteria(contacts);
   const labelName = `Client: ${client.client_name}`;
   const label = createLabelIfNotExists(labelName);
 

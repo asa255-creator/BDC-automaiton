@@ -5,12 +5,9 @@
  * meeting participant emails, email sender/recipient addresses, and calendar
  * event guest lists.
  *
- * Matching Order:
- * 1. Exact match against contact_emails
- * 2. Domain match against email_domains
+ * Matching: Exact match against contact_emails
  *
- * The first match is used. If no match is found, the item is logged to the
- * Unmatched sheet and processing stops.
+ * If no match is found, the item is logged to the Unmatched sheet.
  */
 
 // ============================================================================
@@ -25,7 +22,7 @@
  *
  * @example
  * const client = identifyClient(['john@acmecorp.com', 'sarah@gmail.com']);
- * // Returns: { client_id: '1', client_name: 'Acme Corp', ... }
+ * // Returns: { client_name: 'Acme Corp', contact_emails: '...', ... }
  */
 function identifyClient(emails) {
   if (!emails || emails.length === 0) {
@@ -38,26 +35,13 @@ function identifyClient(emails) {
   // Get all clients from registry
   const clients = getClientRegistry();
 
-  // First pass: Check for exact contact email match
+  // Check for exact contact email match
   for (const client of clients) {
     const contactEmails = parseCommaSeparatedList(client.contact_emails);
 
     for (const email of normalizedEmails) {
       if (contactEmails.includes(email)) {
         Logger.log(`Client identified by contact email: ${client.client_name} (${email})`);
-        return client;
-      }
-    }
-  }
-
-  // Second pass: Check for domain match
-  for (const client of clients) {
-    const emailDomains = parseCommaSeparatedList(client.email_domains);
-
-    for (const email of normalizedEmails) {
-      const domain = extractDomain(email);
-      if (domain && emailDomains.includes(domain)) {
-        Logger.log(`Client identified by domain: ${client.client_name} (${domain})`);
         return client;
       }
     }
@@ -171,24 +155,13 @@ function getClientRegistry() {
       client[header] = row[index] || '';
     });
 
-    // Only include clients with at least a client_id and client_name
-    if (client.client_id && client.client_name) {
+    // Only include clients with a client_name
+    if (client.client_name) {
       clients.push(client);
     }
   }
 
   return clients;
-}
-
-/**
- * Retrieves a specific client by ID.
- *
- * @param {string} clientId - The client ID to look up
- * @returns {Object|null} Client object if found, null otherwise
- */
-function getClientById(clientId) {
-  const clients = getClientRegistry();
-  return clients.find(c => c.client_id === clientId) || null;
 }
 
 /**

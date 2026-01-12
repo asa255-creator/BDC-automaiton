@@ -1032,20 +1032,17 @@ function checkAdvancedServices() {
  * @param {Spreadsheet} ss - The spreadsheet object
  */
 function createAllSheets(ss) {
-  // Client_Registry
-  createSheetWithHeaders(ss, 'Client_Registry', [
-    'client_id', 'client_name', 'email_domains', 'contact_emails',
-    'docs_folder_path', 'google_doc_url', 'todoist_project_id'
-  ]);
+  // Client_Registry - with checkbox column for setup_complete
+  createClientRegistrySheet(ss);
 
   // Generated_Agendas
   createSheetWithHeaders(ss, 'Generated_Agendas', [
-    'event_id', 'event_title', 'client_id', 'generated_timestamp'
+    'event_id', 'event_title', 'client_name', 'generated_timestamp'
   ]);
 
   // Processing_Log
   createSheetWithHeaders(ss, 'Processing_Log', [
-    'timestamp', 'action_type', 'client_id', 'details', 'status'
+    'timestamp', 'action_type', 'client_name', 'details', 'status'
   ]);
 
   // Unmatched
@@ -1059,6 +1056,39 @@ function createAllSheets(ss) {
   ]);
 
   Logger.log('All sheets created.');
+}
+
+/**
+ * Creates the Client_Registry sheet with checkbox column.
+ *
+ * @param {Spreadsheet} ss - The spreadsheet object
+ */
+function createClientRegistrySheet(ss) {
+  const sheetName = 'Client_Registry';
+  const headers = [
+    'client_name', 'contact_emails', 'docs_folder_path',
+    'setup_complete', 'google_doc_url', 'todoist_project_id'
+  ];
+
+  let sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+
+    // Add checkbox data validation to setup_complete column (column 4)
+    // Apply to rows 2-1000 to cover future entries
+    const checkboxColumn = 4;
+    const checkboxRange = sheet.getRange(2, checkboxColumn, 999, 1);
+    const checkboxRule = SpreadsheetApp.newDataValidation()
+      .requireCheckbox()
+      .build();
+    checkboxRange.setDataValidation(checkboxRule);
+
+    Logger.log(`Created sheet: ${sheetName} with checkbox column`);
+  }
 }
 
 /**
@@ -1137,5 +1167,115 @@ function setupAllTriggers() {
     .atHour(7)
     .create();
 
+  // onEdit trigger for checkbox-based client setup
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (spreadsheetId) {
+    const ss = SpreadsheetApp.openById(spreadsheetId);
+    ScriptApp.newTrigger('onClientRegistryEdit')
+      .forSpreadsheet(ss)
+      .onEdit()
+      .create();
+    Logger.log('Created onEdit trigger for client setup');
+  }
+
   Logger.log('All triggers created.');
+}
+
+/**
+ * Handles edits to the Client_Registry sheet.
+ * When setup_complete checkbox is checked, creates all client resources.
+ *
+ * @param {Object} e - The edit event object
+ */
+function onClientRegistryEdit(e) {
+  try {
+    const sheet = e.source.getActiveSheet();
+    const range = e.range;
+
+    // Only process edits to Client_Registry sheet
+    if (sheet.getName() !== 'Client_Registry') {
+      return;
+    }
+
+    // Only process edits to the setup_complete column (column 4)
+    const setupCompleteCol = 4;
+    if (range.getColumn() !== setupCompleteCol) {
+      return;
+    }
+
+    // Only process if checkbox was checked (value is TRUE)
+    if (e.value !== 'TRUE' && e.value !== true) {
+      return;
+    }
+
+    const row = range.getRow();
+
+    // Skip header row
+    if (row === 1) {
+      return;
+    }
+
+    // Get the row data
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rowData = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    // Map to object
+    const client = {};
+    headers.forEach((header, index) => {
+      client[header] = rowData[index];
+    });
+
+    // Check if already set up (has google_doc_url)
+    if (client.google_doc_url) {
+      Logger.log(`Client ${client.client_name} already set up, skipping`);
+      return;
+    }
+
+    // Validate required fields
+    if (!client.client_name) {
+      Logger.log('Cannot set up client: client_name is required');
+      // Uncheck the box
+      range.setValue(false);
+      return;
+    }
+
+    Logger.log(`Setting up client: ${client.client_name}`);
+
+    // Get column indices for updating
+    const colIndex = {
+      google_doc_url: headers.indexOf('google_doc_url') + 1,
+      todoist_project_id: headers.indexOf('todoist_project_id') + 1
+    };
+
+    // 1. Create Google Doc
+    const folderId = client.docs_folder_path ? getFolderIdFromPath(client.docs_folder_path) : null;
+    const docUrl = createClientDoc(client.client_name, folderId);
+    if (docUrl && colIndex.google_doc_url > 0) {
+      sheet.getRange(row, colIndex.google_doc_url).setValue(docUrl);
+      Logger.log(`Created Google Doc: ${docUrl}`);
+    }
+
+    // 2. Create Todoist project
+    const projectId = createTodoistProject(client.client_name);
+    if (projectId && colIndex.todoist_project_id > 0) {
+      sheet.getRange(row, colIndex.todoist_project_id).setValue(projectId);
+      Logger.log(`Created Todoist project: ${projectId}`);
+    }
+
+    // 3. Create Gmail labels
+    syncClientLabels({
+      client_name: client.client_name,
+      contact_emails: client.contact_emails
+    });
+    Logger.log(`Created Gmail labels for: ${client.client_name}`);
+
+    // 4. Log success
+    logProcessing('CLIENT_SETUP', client.client_name, 'Client setup complete via checkbox', 'success');
+
+    Logger.log(`Client setup complete: ${client.client_name}`);
+
+  } catch (error) {
+    Logger.log(`Error in onClientRegistryEdit: ${error.message}`);
+    logProcessing('CLIENT_SETUP_ERROR', null, error.message, 'error');
+  }
 }

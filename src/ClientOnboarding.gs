@@ -43,7 +43,8 @@ This document contains running meeting notes and agendas for {client_name}.
 
 /**
  * Processes all clients in the registry and creates missing resources.
- * Can be run manually or on a daily schedule.
+ * This is a backup/catchup function - primary setup happens via checkbox trigger.
+ * Runs daily to catch any clients where setup_complete is checked but resources are missing.
  */
 function processNewClients() {
   Logger.log('Checking for clients needing onboarding...');
@@ -61,9 +62,10 @@ function processNewClients() {
 
   // Find column indices
   const colIndex = {
-    client_id: headers.indexOf('client_id'),
     client_name: headers.indexOf('client_name'),
+    contact_emails: headers.indexOf('contact_emails'),
     docs_folder_path: headers.indexOf('docs_folder_path'),
+    setup_complete: headers.indexOf('setup_complete'),
     google_doc_url: headers.indexOf('google_doc_url'),
     todoist_project_id: headers.indexOf('todoist_project_id')
   };
@@ -72,14 +74,19 @@ function processNewClients() {
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    const clientId = row[colIndex.client_id];
     const clientName = row[colIndex.client_name];
+    const setupComplete = row[colIndex.setup_complete];
     const docsFolderPath = row[colIndex.docs_folder_path];
     const googleDocUrl = row[colIndex.google_doc_url];
     const todoistProjectId = row[colIndex.todoist_project_id];
 
-    if (!clientId || !clientName) {
-      continue; // Skip incomplete rows
+    if (!clientName) {
+      continue; // Skip rows without client name
+    }
+
+    // Only process if setup_complete is checked but resources are missing
+    if (!setupComplete) {
+      continue; // Setup not requested yet
     }
 
     let updated = false;
@@ -112,7 +119,7 @@ function processNewClients() {
 
     if (updated) {
       clientsProcessed++;
-      logProcessing('CLIENT_ONBOARD', clientId, `Onboarded client: ${clientName}`, 'success');
+      logProcessing('CLIENT_ONBOARD', clientName, `Onboarded client: ${clientName}`, 'success');
     }
   }
 
@@ -458,7 +465,6 @@ function getClientResourceReport() {
     const validation = validateClientResources(client);
 
     report.push({
-      client_id: client.client_id,
       client_name: client.client_name,
       has_google_doc: !!client.google_doc_url,
       has_todoist_project: !!client.todoist_project_id,

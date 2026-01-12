@@ -305,36 +305,13 @@ function manualWeeklyOutlook() {
 
 /**
  * Initializes the spreadsheet with required sheets if they don't exist.
- * Should be run once during initial setup.
+ * Note: Prefer using SETUP_RUN_THIS_FIRST() in Utilities.gs for full setup.
  */
 function initializeSpreadsheet() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
 
-  // Client_Registry sheet (includes docs_folder_path for folder selection)
-  createSheetIfNotExists(ss, CONFIG.SHEETS.CLIENT_REGISTRY, [
-    'client_id', 'client_name', 'email_domains', 'contact_emails',
-    'docs_folder_path', 'google_doc_url', 'todoist_project_id'
-  ]);
-
-  // Generated_Agendas sheet
-  createSheetIfNotExists(ss, CONFIG.SHEETS.GENERATED_AGENDAS, [
-    'event_id', 'event_title', 'client_id', 'generated_timestamp'
-  ]);
-
-  // Processing_Log sheet
-  createSheetIfNotExists(ss, CONFIG.SHEETS.PROCESSING_LOG, [
-    'timestamp', 'action_type', 'client_id', 'details', 'status'
-  ]);
-
-  // Unmatched sheet
-  createSheetIfNotExists(ss, CONFIG.SHEETS.UNMATCHED, [
-    'timestamp', 'item_type', 'item_details', 'participant_emails', 'manually_resolved'
-  ]);
-
-  // Folders sheet (populated by folder sync)
-  createSheetIfNotExists(ss, CONFIG.SHEETS.FOLDERS, [
-    'folder_path', 'folder_id', 'folder_url'
-  ]);
+  // Use the createAllSheets function from Utilities.gs
+  createAllSheets(ss);
 
   Logger.log('Spreadsheet initialization completed.');
 

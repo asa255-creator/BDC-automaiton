@@ -89,14 +89,14 @@ function compileDailyData(date) {
       }
 
       // Add to client summary
-      if (!data.clientSummaries[client.client_id]) {
-        data.clientSummaries[client.client_id] = {
+      if (!data.clientSummaries[client.client_name]) {
+        data.clientSummaries[client.client_name] = {
           client: client,
           meetings: [],
           tasks: []
         };
       }
-      data.clientSummaries[client.client_id].meetings.push(eventInfo);
+      data.clientSummaries[client.client_name].meetings.push(eventInfo);
     }
 
     data.meetings.push(eventInfo);
@@ -126,14 +126,14 @@ function compileDailyData(date) {
         }
 
         // Add to client summary
-        if (!data.clientSummaries[client.client_id]) {
-          data.clientSummaries[client.client_id] = {
+        if (!data.clientSummaries[client.client_name]) {
+          data.clientSummaries[client.client_name] = {
             client: client,
             meetings: [],
             tasks: []
           };
         }
-        data.clientSummaries[client.client_id].tasks.push(taskInfo);
+        data.clientSummaries[client.client_name].tasks.push(taskInfo);
       }
     }
   }
@@ -329,14 +329,14 @@ function compileWeeklyData(startDate) {
       }
 
       // Add to client summary
-      if (!data.clientSummaries[client.client_id]) {
-        data.clientSummaries[client.client_id] = {
+      if (!data.clientSummaries[client.client_name]) {
+        data.clientSummaries[client.client_name] = {
           client: client,
           meetings: [],
           tasks: []
         };
       }
-      data.clientSummaries[client.client_id].meetings.push(eventInfo);
+      data.clientSummaries[client.client_name].meetings.push(eventInfo);
     }
 
     if (data.dayData[dayKey]) {
@@ -384,14 +384,14 @@ function compileWeeklyData(startDate) {
         data.allTasks.push(taskInfo);
 
         // Add to client summary
-        if (!data.clientSummaries[client.client_id]) {
-          data.clientSummaries[client.client_id] = {
+        if (!data.clientSummaries[client.client_name]) {
+          data.clientSummaries[client.client_name] = {
             client: client,
             meetings: [],
             tasks: []
           };
         }
-        data.clientSummaries[client.client_id].tasks.push(taskInfo);
+        data.clientSummaries[client.client_name].tasks.push(taskInfo);
       }
     }
   }

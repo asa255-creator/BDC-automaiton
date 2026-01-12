@@ -72,14 +72,13 @@ function processFathomWebhook(payload) {
   // Log successful processing
   logProcessing(
     'WEBHOOK_PROCESS',
-    client.client_id,
+    client.client_name,
     `Created draft for meeting: ${payload.meeting_title}`,
     'success'
   );
 
   return {
     status: 'success',
-    client_id: client.client_id,
     client_name: client.client_name,
     draft_id: draftId
   };
@@ -131,7 +130,7 @@ function createMeetingSummaryDraft(payload, client) {
 
   // Add metadata for post-send processing (hidden)
   body += `<div style="display:none;">`;
-  body += `<!--CLIENT_ID:${client.client_id}-->`;
+  body += `<!--CLIENT_ID:${client.client_name}-->`;
   body += `<!--MEETING_TITLE:${payload.meeting_title}-->`;
   body += `<!--ACTION_ITEMS:${JSON.stringify(payload.action_items || [])}-->`;
   body += `</div>`;
@@ -148,7 +147,7 @@ function createMeetingSummaryDraft(payload, client) {
   Logger.log(`Created draft with ID: ${draft.getId()}`);
 
   // Store draft info for monitoring
-  storePendingDraft(draft.getId(), client.client_id, payload);
+  storePendingDraft(draft.getId(), client.client_name, payload);
 
   return draft.getId();
 }
@@ -346,7 +345,7 @@ function createTodoistTasks(actionItems, client) {
       Logger.log(`Failed to create Todoist task: ${error.message}`);
       logProcessing(
         'TODOIST_ERROR',
-        client.client_id,
+        client.client_name,
         `Failed to create task: ${item.description}`,
         'error'
       );
@@ -500,7 +499,7 @@ function appendMeetingNotesToDoc(message, client) {
     Logger.log(`Failed to append to Google Doc: ${error.message}`);
     logProcessing(
       'DOC_APPEND_ERROR',
-      client.client_id,
+      client.client_name,
       `Failed to append meeting notes: ${error.message}`,
       'error'
     );
