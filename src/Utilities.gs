@@ -641,3 +641,213 @@ function removeCached(key) {
   const cache = CacheService.getScriptCache();
   cache.remove(key);
 }
+
+// ============================================================================
+// ONE-CLICK SETUP
+// ============================================================================
+
+/**
+ * MAIN SETUP FUNCTION - Run this first!
+ *
+ * This single function sets up everything:
+ * 1. Detects the spreadsheet ID automatically
+ * 2. Prompts for API keys via dialog
+ * 3. Creates all required sheets
+ * 4. Sets up all triggers
+ * 5. Syncs Google Drive folders
+ *
+ * Just run this function and follow the prompts.
+ */
+function SETUP_RUN_THIS_FIRST() {
+  const ui = SpreadsheetApp.getUi();
+
+  // Step 1: Get spreadsheet ID automatically
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    ui.alert('Error', 'Please open this script from a Google Sheet (Extensions > Apps Script)', ui.ButtonSet.OK);
+    return;
+  }
+
+  const spreadsheetId = ss.getId();
+  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', spreadsheetId);
+  Logger.log(`Set SPREADSHEET_ID: ${spreadsheetId}`);
+
+  // Step 2: Prompt for Todoist API Token
+  const todoistResponse = ui.prompt(
+    'Todoist API Token',
+    'Enter your Todoist API token (from Todoist Settings > Integrations > Developer):\n\nLeave blank to skip Todoist integration.',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (todoistResponse.getSelectedButton() === ui.Button.CANCEL) {
+    ui.alert('Setup cancelled.');
+    return;
+  }
+
+  const todoistToken = todoistResponse.getResponseText().trim();
+  if (todoistToken) {
+    PropertiesService.getScriptProperties().setProperty('TODOIST_API_TOKEN', todoistToken);
+    Logger.log('Set TODOIST_API_TOKEN');
+  }
+
+  // Step 3: Prompt for Claude API Key
+  const claudeResponse = ui.prompt(
+    'Claude API Key',
+    'Enter your Anthropic Claude API key:\n\nLeave blank to skip AI agenda generation.',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (claudeResponse.getSelectedButton() === ui.Button.CANCEL) {
+    ui.alert('Setup cancelled.');
+    return;
+  }
+
+  const claudeKey = claudeResponse.getResponseText().trim();
+  if (claudeKey) {
+    PropertiesService.getScriptProperties().setProperty('CLAUDE_API_KEY', claudeKey);
+    Logger.log('Set CLAUDE_API_KEY');
+  }
+
+  // Step 4: Create all sheets
+  ui.alert('Creating Sheets', 'Creating all required sheets...', ui.ButtonSet.OK);
+
+  createAllSheets(ss);
+
+  // Step 5: Set up triggers
+  setupAllTriggers();
+
+  // Step 6: Sync Drive folders
+  ui.alert('Syncing Folders', 'Scanning Google Drive folders (this may take a moment)...', ui.ButtonSet.OK);
+
+  try {
+    syncDriveFolders();
+  } catch (e) {
+    Logger.log(`Folder sync error: ${e.message}`);
+  }
+
+  // Done!
+  ui.alert(
+    'Setup Complete!',
+    'Your Client Management Automation System is ready.\n\n' +
+    'Next steps:\n' +
+    '1. Add clients to the Client_Registry sheet\n' +
+    '2. Select a folder from the docs_folder_path dropdown\n' +
+    '3. The system will automatically create docs and projects\n\n' +
+    'Note: Enable "Calendar API" in Services if you want doc attachments on calendar events.',
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * Creates all required sheets with headers.
+ *
+ * @param {Spreadsheet} ss - The spreadsheet object
+ */
+function createAllSheets(ss) {
+  // Client_Registry
+  createSheetWithHeaders(ss, 'Client_Registry', [
+    'client_id', 'client_name', 'email_domains', 'contact_emails',
+    'docs_folder_path', 'google_doc_url', 'todoist_project_id'
+  ]);
+
+  // Generated_Agendas
+  createSheetWithHeaders(ss, 'Generated_Agendas', [
+    'event_id', 'event_title', 'client_id', 'generated_timestamp'
+  ]);
+
+  // Processing_Log
+  createSheetWithHeaders(ss, 'Processing_Log', [
+    'timestamp', 'action_type', 'client_id', 'details', 'status'
+  ]);
+
+  // Unmatched
+  createSheetWithHeaders(ss, 'Unmatched', [
+    'timestamp', 'item_type', 'item_details', 'participant_emails', 'manually_resolved'
+  ]);
+
+  // Folders
+  createSheetWithHeaders(ss, 'Folders', [
+    'folder_path', 'folder_id', 'folder_url'
+  ]);
+
+  Logger.log('All sheets created.');
+}
+
+/**
+ * Creates a sheet with headers if it doesn't exist.
+ *
+ * @param {Spreadsheet} ss - The spreadsheet
+ * @param {string} sheetName - Name of the sheet
+ * @param {string[]} headers - Column headers
+ */
+function createSheetWithHeaders(ss, sheetName, headers) {
+  let sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    Logger.log(`Created sheet: ${sheetName}`);
+  }
+}
+
+/**
+ * Sets up all automated triggers.
+ */
+function setupAllTriggers() {
+  // Remove existing triggers
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
+
+  // Folder sync - 5:30 AM
+  ScriptApp.newTrigger('runFolderSync')
+    .timeBased()
+    .atHour(5)
+    .nearMinute(30)
+    .everyDays(1)
+    .create();
+
+  // Label/filter sync - 6:00 AM
+  ScriptApp.newTrigger('runLabelAndFilterCreation')
+    .timeBased()
+    .atHour(6)
+    .everyDays(1)
+    .create();
+
+  // Client onboarding - 6:30 AM
+  ScriptApp.newTrigger('runClientOnboarding')
+    .timeBased()
+    .atHour(6)
+    .nearMinute(30)
+    .everyDays(1)
+    .create();
+
+  // Meeting summary monitor - every 10 min
+  ScriptApp.newTrigger('runSentMeetingSummaryMonitor')
+    .timeBased()
+    .everyMinutes(10)
+    .create();
+
+  // Agenda generation - hourly
+  ScriptApp.newTrigger('runAgendaGeneration')
+    .timeBased()
+    .everyHours(1)
+    .create();
+
+  // Daily outlook - 7:00 AM
+  ScriptApp.newTrigger('runDailyOutlook')
+    .timeBased()
+    .atHour(7)
+    .everyDays(1)
+    .create();
+
+  // Weekly outlook - Monday 7:00 AM
+  ScriptApp.newTrigger('runWeeklyOutlook')
+    .timeBased()
+    .onWeekDay(ScriptApp.WeekDay.MONDAY)
+    .atHour(7)
+    .create();
+
+  Logger.log('All triggers created.');
+}
