@@ -151,38 +151,40 @@ function compileDailyData(date) {
 function formatDailyOutlookHtml(data, date) {
   let html = `<html><body style="font-family: Arial, sans-serif;">`;
 
-  html += `<h1>Daily Outlook - ${formatDate(date)}</h1>`;
+  // Get header template from sheet
+  const headerTemplate = getPrompt('DAILY_OUTLOOK_HEADER');
+  html += applyTemplate(headerTemplate, { date: formatDate(date) });
 
   // Alerts section
   if (data.conflicts.length > 0 || data.missingAgendas.length > 0 || data.overdueTasks.length > 0) {
-    html += `<div style="background-color: #fff3cd; padding: 15px; margin-bottom: 20px; border-radius: 5px;">`;
-    html += `<h2 style="margin-top: 0; color: #856404;">Alerts</h2>`;
+    let alertsContent = '';
+    const alertsTemplate = getPrompt('DAILY_OUTLOOK_ALERTS');
 
     if (data.conflicts.length > 0) {
-      html += `<h3>Schedule Conflicts</h3><ul>`;
+      alertsContent += `<h3>Schedule Conflicts</h3><ul>`;
       for (const conflict of data.conflicts) {
-        html += `<li><strong>${conflict.event1.title}</strong> overlaps with <strong>${conflict.event2.title}</strong></li>`;
+        alertsContent += `<li><strong>${conflict.event1.title}</strong> overlaps with <strong>${conflict.event2.title}</strong></li>`;
       }
-      html += `</ul>`;
+      alertsContent += `</ul>`;
     }
 
     if (data.missingAgendas.length > 0) {
-      html += `<h3>Missing Agendas</h3><ul>`;
+      alertsContent += `<h3>Missing Agendas</h3><ul>`;
       for (const meeting of data.missingAgendas) {
-        html += `<li>${meeting.title} (${formatTime(meeting.start)}) - ${meeting.clientName}</li>`;
+        alertsContent += `<li>${meeting.title} (${formatTime(meeting.start)}) - ${meeting.clientName}</li>`;
       }
-      html += `</ul>`;
+      alertsContent += `</ul>`;
     }
 
     if (data.overdueTasks.length > 0) {
-      html += `<h3>Overdue Tasks</h3><ul>`;
+      alertsContent += `<h3>Overdue Tasks</h3><ul>`;
       for (const task of data.overdueTasks) {
-        html += `<li>[${task.client.client_name}] ${task.content}</li>`;
+        alertsContent += `<li>[${task.client.client_name}] ${task.content}</li>`;
       }
-      html += `</ul>`;
+      alertsContent += `</ul>`;
     }
 
-    html += `</div>`;
+    html += applyTemplate(alertsTemplate, { alerts_content: alertsContent });
   }
 
   // Today's Schedule
@@ -409,15 +411,17 @@ function compileWeeklyData(startDate) {
 function formatWeeklyOutlookHtml(data, startDate) {
   let html = `<html><body style="font-family: Arial, sans-serif;">`;
 
-  html += `<h1>Weekly Outlook - Week of ${formatDate(startDate)}</h1>`;
+  // Get header template from sheet
+  const headerTemplate = getPrompt('WEEKLY_OUTLOOK_HEADER');
+  html += applyTemplate(headerTemplate, { date: formatDate(startDate) });
 
-  // Summary
-  html += `<div style="background-color: #e9ecef; padding: 15px; margin-bottom: 20px; border-radius: 5px;">`;
-  html += `<h2 style="margin-top: 0;">Week Summary</h2>`;
-  html += `<p><strong>Total Meetings:</strong> ${data.allMeetings.length}</p>`;
-  html += `<p><strong>Total Tasks:</strong> ${data.allTasks.length}</p>`;
-  html += `<p><strong>Clients with Activity:</strong> ${Object.keys(data.clientSummaries).length}</p>`;
-  html += `</div>`;
+  // Get summary template from sheet
+  const summaryTemplate = getPrompt('WEEKLY_OUTLOOK_SUMMARY');
+  html += applyTemplate(summaryTemplate, {
+    meeting_count: data.allMeetings.length.toString(),
+    task_count: data.allTasks.length.toString(),
+    client_count: Object.keys(data.clientSummaries).length.toString()
+  });
 
   // Alerts section
   if (data.conflicts.length > 0 || data.missingAgendas.length > 0 || data.overdueTasks.length > 0) {

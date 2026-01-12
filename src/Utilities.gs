@@ -1055,6 +1055,9 @@ function createAllSheets(ss) {
     'folder_path', 'folder_id', 'folder_url'
   ]);
 
+  // Hidden Prompts sheet
+  createPromptsSheet(ss);
+
   Logger.log('All sheets created.');
 }
 
@@ -1552,6 +1555,8 @@ function onOpen() {
     ui.createMenu('Client Automation')
       .addItem('Run Setup', 'SETUP_RUN_THIS_FIRST')
       .addItem('Import Existing Clients...', 'showMigrationWizard')
+      .addSeparator()
+      .addItem('Adjust Prompts...', 'showPromptsEditor')
       .addSeparator()
       .addItem('Sync Drive Folders', 'syncDriveFolders')
       .addItem('Sync Labels & Filters', 'runLabelAndFilterCreation')

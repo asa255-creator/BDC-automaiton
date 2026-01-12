@@ -407,61 +407,54 @@ function generateAgendaWithClaude(event, client, context) {
 function buildAgendaPrompt(event, client, context) {
   const eventDate = formatDateTime(event.getStartTime());
 
-  let prompt = `Generate a concise meeting agenda for the following meeting. Include time allocations for each agenda item.
-
-Meeting Details:
-- Title: ${event.getTitle()}
-- Client: ${client.client_name}
-- Date/Time: ${eventDate}
-- Duration: ${getEventDurationMinutes(event)} minutes
-
-`;
-
-  // Add Todoist tasks
+  // Build context sections
+  let todoistSection = '';
   if (context.todoistTasks.length > 0) {
-    prompt += `Outstanding Tasks (Due Today or Overdue):\n`;
+    todoistSection = `Outstanding Tasks (Due Today or Overdue):\n`;
     for (const task of context.todoistTasks) {
-      prompt += `- ${task.content}`;
+      todoistSection += `- ${task.content}`;
       if (task.due) {
-        prompt += ` (Due: ${task.due.date})`;
+        todoistSection += ` (Due: ${task.due.date})`;
       }
-      prompt += `\n`;
+      todoistSection += `\n`;
     }
-    prompt += `\n`;
   }
 
-  // Add recent email activity
+  let emailsSection = '';
   if (context.recentEmails.length > 0) {
-    prompt += `Recent Email Activity (Last 7 Days):\n`;
+    emailsSection = `Recent Email Activity (Last 7 Days):\n`;
     for (const email of context.recentEmails.slice(0, 5)) {
-      prompt += `- ${email.subject} (${formatDate(email.date)})\n`;
+      emailsSection += `- ${email.subject} (${formatDate(email.date)})\n`;
     }
-    prompt += `\n`;
   }
 
-  // Add previous meeting notes
+  let notesSection = '';
   if (context.previousMeetingNotes) {
-    prompt += `Previous Meeting Notes Summary:\n${context.previousMeetingNotes.substring(0, 500)}\n\n`;
+    notesSection = `Previous Meeting Notes Summary:\n${context.previousMeetingNotes.substring(0, 500)}`;
   }
 
-  // Add unmatched action items
+  let actionItemsSection = '';
   if (context.unmatchedActionItems.length > 0) {
-    prompt += `Action Items from Last Meeting Not Yet in Task List:\n`;
+    actionItemsSection = `Action Items from Last Meeting Not Yet in Task List:\n`;
     for (const item of context.unmatchedActionItems) {
-      prompt += `- ${item}\n`;
+      actionItemsSection += `- ${item}\n`;
     }
-    prompt += `\n`;
   }
 
-  prompt += `Please generate a structured agenda with:
-1. Clear agenda items with time allocations
-2. Priority items based on outstanding tasks and action items
-3. Any topics suggested by recent email activity
-4. Time for open discussion
+  // Get prompt template from sheet
+  const template = getPrompt('AGENDA_CLAUDE_PROMPT');
 
-Format the agenda professionally and keep it concise.`;
-
-  return prompt;
+  // Apply variables to template
+  return applyTemplate(template, {
+    event_title: event.getTitle(),
+    client_name: client.client_name,
+    date_time: eventDate,
+    duration: getEventDurationMinutes(event).toString(),
+    todoist_section: todoistSection,
+    emails_section: emailsSection,
+    notes_section: notesSection,
+    action_items_section: actionItemsSection
+  });
 }
 
 /**
@@ -492,12 +485,15 @@ function sendAgendaEmail(event, client, agendaContent) {
   const subject = `Agenda: ${event.getTitle()}`;
   const eventDateTime = formatDateTime(event.getStartTime());
 
-  let body = `<h2>Meeting Agenda</h2>`;
-  body += `<p><strong>Meeting:</strong> ${event.getTitle()}</p>`;
-  body += `<p><strong>Client:</strong> ${client.client_name}</p>`;
-  body += `<p><strong>Date/Time:</strong> ${eventDateTime}</p>`;
-  body += `<hr/>`;
-  body += `<div style="white-space: pre-wrap;">${agendaContent}</div>`;
+  // Get email template from sheet
+  const template = getPrompt('AGENDA_EMAIL_TEMPLATE');
+
+  const body = applyTemplate(template, {
+    event_title: event.getTitle(),
+    client_name: client.client_name,
+    date_time: eventDateTime,
+    agenda_content: agendaContent
+  });
 
   GmailApp.sendEmail(userEmail, subject, '', {
     htmlBody: body

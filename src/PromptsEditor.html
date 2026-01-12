@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Google Sans', Arial, sans-serif;
+      font-size: 14px;
+      margin: 0;
+      padding: 0;
+      background: #f8f9fa;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      background: white;
+      padding: 16px 20px;
+      border-bottom: 1px solid #e8eaed;
+      flex-shrink: 0;
+    }
+    .header h2 {
+      margin: 0 0 4px 0;
+      color: #202124;
+      font-size: 18px;
+    }
+    .header p {
+      margin: 0;
+      color: #5f6368;
+      font-size: 13px;
+    }
+    .tabs {
+      display: flex;
+      background: white;
+      border-bottom: 1px solid #e8eaed;
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+    .tab {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      color: #5f6368;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .tab:hover {
+      background: #f8f9fa;
+    }
+    .tab.active {
+      color: #1a73e8;
+      border-bottom-color: #1a73e8;
+    }
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+    .prompt-panel {
+      display: none;
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+    .prompt-panel.active {
+      display: block;
+    }
+    .prompt-label {
+      font-weight: 500;
+      color: #202124;
+      margin-bottom: 4px;
+    }
+    .prompt-description {
+      color: #5f6368;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .variables-list {
+      background: #f1f3f4;
+      padding: 10px 12px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+    .variables-list strong {
+      color: #202124;
+    }
+    .variable-tag {
+      display: inline-block;
+      background: #e8f0fe;
+      color: #1a73e8;
+      padding: 2px 8px;
+      border-radius: 3px;
+      margin: 2px 4px 2px 0;
+      font-family: monospace;
+      font-size: 11px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 200px;
+      padding: 12px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      resize: vertical;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+    }
+    .prompt-actions {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 12px;
+    }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    .btn-text {
+      background: transparent;
+      color: #5f6368;
+    }
+    .btn-text:hover {
+      background: #f1f3f4;
+    }
+    .btn-secondary {
+      background: white;
+      border: 1px solid #dadce0;
+      color: #5f6368;
+    }
+    .btn-secondary:hover {
+      background: #f8f9fa;
+    }
+    .btn-primary {
+      background: #1a73e8;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #1557b0;
+    }
+    .btn-primary:disabled {
+      background: #dadce0;
+      cursor: not-allowed;
+    }
+    .footer {
+      background: white;
+      padding: 16px 20px;
+      border-top: 1px solid #e8eaed;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .status {
+      font-size: 13px;
+      color: #5f6368;
+    }
+    .status.success {
+      color: #1e8e3e;
+    }
+    .status.error {
+      color: #d93025;
+    }
+    .footer-buttons {
+      display: flex;
+      gap: 8px;
+    }
+    .modified-badge {
+      display: inline-block;
+      background: #fef7e0;
+      color: #e37400;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .default-badge {
+      display: inline-block;
+      background: #e8f5e9;
+      color: #1b5e20;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #5f6368;
+    }
+    .loading-spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid #e8eaed;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 12px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>Adjust Prompts</h2>
+    <p>Customize the prompts and email templates used by the automation system.</p>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="content" id="content">
+    <div class="loading">
+      <div class="loading-spinner"></div>
+      <span>Loading prompts...</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="status" id="status"></div>
+    <div class="footer-buttons">
+      <button class="btn btn-secondary" onclick="resetAll()">Reset All to Defaults</button>
+      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveAll()">Save Changes</button>
+    </div>
+  </div>
+
+  <script>
+    let prompts = [];
+    let originalValues = {};
+    let currentTab = 0;
+
+    document.addEventListener('DOMContentLoaded', function() {
+      loadPrompts();
+    });
+
+    function loadPrompts() {
+      google.script.run
+        .withSuccessHandler(function(data) {
+          prompts = data;
+          // Store original values
+          prompts.forEach(function(p) {
+            originalValues[p.key] = p.value;
+          });
+          renderTabs();
+          renderContent();
+          selectTab(0);
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById('content').innerHTML =
+            '<div style="padding: 20px; color: #d93025;">Error loading prompts: ' + error.message + '</div>';
+        })
+        .getAllPromptsForEditor();
+    }
+
+    function renderTabs() {
+      const tabsContainer = document.getElementById('tabs');
+      let html = '';
+
+      prompts.forEach(function(prompt, index) {
+        html += '<div class="tab" data-index="' + index + '" onclick="selectTab(' + index + ')">';
+        html += escapeHtml(prompt.label);
+        html += '</div>';
+      });
+
+      tabsContainer.innerHTML = html;
+    }
+
+    function renderContent() {
+      const contentContainer = document.getElementById('content');
+      let html = '';
+
+      prompts.forEach(function(prompt, index) {
+        html += '<div class="prompt-panel" id="panel_' + index + '">';
+
+        // Label with badge
+        html += '<div class="prompt-label">' + escapeHtml(prompt.label);
+        if (prompt.isDefault) {
+          html += '<span class="default-badge">DEFAULT</span>';
+        } else {
+          html += '<span class="modified-badge">MODIFIED</span>';
+        }
+        html += '</div>';
+
+        // Description
+        html += '<div class="prompt-description">' + escapeHtml(prompt.description) + '</div>';
+
+        // Variables
+        if (prompt.variables && prompt.variables.length > 0) {
+          html += '<div class="variables-list">';
+          html += '<strong>Available variables:</strong><br>';
+          prompt.variables.forEach(function(v) {
+            html += '<span class="variable-tag">' + escapeHtml(v) + '</span>';
+          });
+          html += '</div>';
+        }
+
+        // Textarea
+        html += '<textarea id="prompt_' + index + '" data-key="' + prompt.key + '" onchange="markModified(' + index + ')">';
+        html += escapeHtml(prompt.value);
+        html += '</textarea>';
+
+        // Actions
+        html += '<div class="prompt-actions">';
+        html += '<button class="btn btn-text" onclick="resetToDefault(' + index + ')">Reset to Default</button>';
+        html += '</div>';
+
+        html += '</div>';
+      });
+
+      contentContainer.innerHTML = html;
+    }
+
+    function selectTab(index) {
+      currentTab = index;
+
+      // Update tab styles
+      document.querySelectorAll('.tab').forEach(function(tab, i) {
+        tab.classList.toggle('active', i === index);
+      });
+
+      // Update panel visibility
+      document.querySelectorAll('.prompt-panel').forEach(function(panel, i) {
+        panel.classList.toggle('active', i === index);
+      });
+    }
+
+    function markModified(index) {
+      const textarea = document.getElementById('prompt_' + index);
+      const prompt = prompts[index];
+      const panel = document.getElementById('panel_' + index);
+
+      // Check if value differs from original
+      const isModified = textarea.value !== originalValues[prompt.key];
+
+      // Update badge
+      const labelEl = panel.querySelector('.prompt-label');
+      const existingBadge = labelEl.querySelector('span');
+      if (existingBadge) {
+        existingBadge.remove();
+      }
+
+      if (isModified) {
+        labelEl.innerHTML += '<span class="modified-badge">MODIFIED</span>';
+      } else if (textarea.value === getDefault(prompt.key)) {
+        labelEl.innerHTML += '<span class="default-badge">DEFAULT</span>';
+      } else {
+        labelEl.innerHTML += '<span class="modified-badge">CUSTOMIZED</span>';
+      }
+    }
+
+    function getDefault(key) {
+      // This would require loading defaults from server
+      // For now, just check against original
+      return originalValues[key];
+    }
+
+    function resetToDefault(index) {
+      const prompt = prompts[index];
+
+      google.script.run
+        .withSuccessHandler(function(defaultValue) {
+          const textarea = document.getElementById('prompt_' + index);
+          textarea.value = defaultValue;
+          originalValues[prompt.key] = defaultValue;
+          markModified(index);
+          setStatus('Reset "' + prompt.label + '" to default', 'success');
+        })
+        .withFailureHandler(function(error) {
+          setStatus('Error: ' + error.message, 'error');
+        })
+        .resetPromptToDefault(prompt.key);
+    }
+
+    function resetAll() {
+      if (!confirm('Are you sure you want to reset all prompts to their default values?')) {
+        return;
+      }
+
+      setStatus('Resetting all prompts...', '');
+      document.getElementById('saveBtn').disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function() {
+          setStatus('All prompts reset to defaults', 'success');
+          document.getElementById('saveBtn').disabled = false;
+          loadPrompts(); // Reload
+        })
+        .withFailureHandler(function(error) {
+          setStatus('Error: ' + error.message, 'error');
+          document.getElementById('saveBtn').disabled = false;
+        })
+        .resetAllPromptsToDefault();
+    }
+
+    function saveAll() {
+      const updates = [];
+
+      prompts.forEach(function(prompt, index) {
+        const textarea = document.getElementById('prompt_' + index);
+        updates.push({
+          key: prompt.key,
+          value: textarea.value
+        });
+      });
+
+      setStatus('Saving...', '');
+      document.getElementById('saveBtn').disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            setStatus(result.message, 'success');
+            // Update original values
+            updates.forEach(function(u) {
+              originalValues[u.key] = u.value;
+            });
+            // Close after short delay
+            setTimeout(function() {
+              google.script.host.close();
+            }, 1000);
+          } else {
+            setStatus('Error: ' + result.message, 'error');
+          }
+          document.getElementById('saveBtn').disabled = false;
+        })
+        .withFailureHandler(function(error) {
+          setStatus('Error: ' + error.message, 'error');
+          document.getElementById('saveBtn').disabled = false;
+        })
+        .savePromptsFromEditor(updates);
+    }
+
+    function setStatus(message, type) {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = message;
+      statusEl.className = 'status ' + type;
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
