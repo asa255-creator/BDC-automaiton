@@ -46,12 +46,17 @@ function syncLabelsAndFilters() {
 // ============================================================================
 
 /**
- * Creates or verifies labels for a specific client.
+ * Creates or verifies labels and filters for a specific client.
  *
  * Labels created:
  * - Client: [client_name]
  * - Client: [client_name]/Meeting Summaries
  * - Client: [client_name]/Meeting Agendas
+ *
+ * Filters created (if Gmail API enabled):
+ * - Emails from client contacts -> Client: [client_name]
+ * - Sent meeting summaries -> Client: [client_name]/Meeting Summaries
+ * - Self-sent agendas -> Client: [client_name]/Meeting Agendas
  *
  * @param {Object} client - The client object
  */
@@ -66,6 +71,30 @@ function syncClientLabels(client) {
   createLabelIfNotExists(`${baseLabelName}/Meeting Agendas`);
 
   Logger.log(`Synced labels for client: ${client.client_name}`);
+
+  // Create filters (requires Gmail API Advanced Service)
+  const contacts = parseCommaSeparatedList(client.contact_emails);
+
+  if (contacts.length > 0) {
+    // Filter for incoming emails from client contacts
+    const fromCriteria = buildFromCriteria(contacts);
+    if (fromCriteria) {
+      createGmailApiFilter(fromCriteria, baseLabelName);
+    }
+
+    // Filter for sent meeting summaries to client
+    const toCriteria = buildToCriteria(contacts);
+    if (toCriteria) {
+      const summaryCriteria = `from:me subject:"Meeting Summary" ${toCriteria}`;
+      createGmailApiFilter(summaryCriteria, `${baseLabelName}/Meeting Summaries`);
+    }
+  }
+
+  // Filter for self-sent agendas (these are sent to yourself)
+  const agendaCriteria = `from:me to:me subject:"Agenda:"`;
+  createGmailApiFilter(agendaCriteria, `${baseLabelName}/Meeting Agendas`);
+
+  Logger.log(`Synced filters for client: ${client.client_name}`);
 }
 
 /**
@@ -292,6 +321,12 @@ function logFilterSpec(filterType, clientName, spec) {
  */
 function createGmailApiFilter(criteria, labelName) {
   try {
+    // Check if Gmail API is available
+    if (typeof Gmail === 'undefined' || !Gmail.Users) {
+      Logger.log('Gmail Advanced Service not enabled - skipping filter creation');
+      return null;
+    }
+
     // Get or create the label
     const label = createLabelIfNotExists(labelName);
     const labelId = getLabelId(labelName);
@@ -301,9 +336,16 @@ function createGmailApiFilter(criteria, labelName) {
       return null;
     }
 
-    // Note: This requires Gmail Advanced Service
-    // The following is a template for when the service is enabled:
-    /*
+    // Check if filter already exists
+    const existingFilters = listGmailFilters();
+    for (const filter of existingFilters) {
+      if (filter.criteria && filter.criteria.query === criteria) {
+        Logger.log(`Filter already exists for criteria: ${criteria}`);
+        return filter;
+      }
+    }
+
+    // Create the filter
     const filter = Gmail.Users.Settings.Filters.create({
       criteria: {
         query: criteria
@@ -313,11 +355,8 @@ function createGmailApiFilter(criteria, labelName) {
       }
     }, 'me');
 
+    Logger.log(`Created Gmail filter: ${criteria} -> ${labelName}`);
     return filter;
-    */
-
-    Logger.log(`Filter creation requires Gmail Advanced Service: ${criteria} -> ${labelName}`);
-    return null;
 
   } catch (error) {
     Logger.log(`Failed to create Gmail filter: ${error.message}`);
@@ -332,10 +371,11 @@ function createGmailApiFilter(criteria, labelName) {
  * @returns {string|null} The label ID or null
  */
 function getLabelId(labelName) {
-  // Note: This requires Gmail Advanced Service
-  // The following is a template for when the service is enabled:
-  /*
   try {
+    if (typeof Gmail === 'undefined' || !Gmail.Users) {
+      return null;
+    }
+
     const response = Gmail.Users.Labels.list('me');
     const labels = response.labels || [];
 
@@ -349,9 +389,6 @@ function getLabelId(labelName) {
     Logger.log(`Failed to get label ID: ${error.message}`);
     return null;
   }
-  */
-
-  return null;
 }
 
 /**
@@ -360,18 +397,17 @@ function getLabelId(labelName) {
  * @returns {Object[]} Array of filter objects
  */
 function listGmailFilters() {
-  // Note: This requires Gmail Advanced Service
-  /*
   try {
+    if (typeof Gmail === 'undefined' || !Gmail.Users) {
+      return [];
+    }
+
     const response = Gmail.Users.Settings.Filters.list('me');
     return response.filter || [];
   } catch (error) {
     Logger.log(`Failed to list filters: ${error.message}`);
     return [];
   }
-  */
-
-  return [];
 }
 
 /**
