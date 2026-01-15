@@ -1566,6 +1566,8 @@ function onOpen() {
       .addItem('Sync Labels & Filters', 'runLabelAndFilterCreation')
       .addSeparator()
       .addItem('View Processing Log', 'showProcessingLog')
+      .addSeparator()
+      .addItem('Disable Automation...', 'disableAutomationWithConfirmation')
       .addToUi();
   } catch (e) {
     // Not bound to a spreadsheet - skip menu creation
@@ -1586,6 +1588,71 @@ function showProcessingLog() {
     ui.alert('Processing Log', 'Showing the Processing_Log sheet with recent activity.', ui.ButtonSet.OK);
   } else {
     ui.alert('Not Found', 'Processing_Log sheet not found. Run setup first.', ui.ButtonSet.OK);
+  }
+}
+
+// ============================================================================
+// DISABLE AUTOMATION
+// ============================================================================
+
+/**
+ * Disables all automation by removing all triggers.
+ * Requires user confirmation before executing.
+ */
+function disableAutomationWithConfirmation() {
+  const ui = SpreadsheetApp.getUi();
+
+  // Get current trigger count
+  const triggers = ScriptApp.getProjectTriggers();
+  const triggerCount = triggers.length;
+
+  if (triggerCount === 0) {
+    ui.alert('No Triggers', 'Automation is already disabled. No triggers are currently active.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Show confirmation dialog
+  const response = ui.alert(
+    'Disable Automation?',
+    `This will remove all ${triggerCount} active trigger(s) and stop all automated processes:\n\n` +
+    '• Daily/Weekly outlook emails\n' +
+    '• Agenda generation\n' +
+    '• Meeting summary monitoring\n' +
+    '• Label/filter sync\n' +
+    '• Folder sync\n' +
+    '• Client onboarding\n\n' +
+    'You can re-enable by running Setup again.\n\n' +
+    'Are you sure you want to disable automation?',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (response !== ui.Button.YES) {
+    ui.alert('Cancelled', 'Automation was not disabled.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Remove all triggers
+  try {
+    for (const trigger of triggers) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+
+    logProcessing('AUTOMATION_DISABLED', null, `Removed ${triggerCount} triggers`, 'warning');
+
+    ui.alert(
+      'Automation Disabled',
+      `Successfully removed ${triggerCount} trigger(s).\n\n` +
+      'All automated processes have been stopped.\n\n' +
+      'To re-enable automation, go to:\n' +
+      'Client Automation > Run Setup',
+      ui.ButtonSet.OK
+    );
+
+    Logger.log(`Disabled automation: removed ${triggerCount} triggers`);
+
+  } catch (error) {
+    ui.alert('Error', `Failed to disable automation: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`Error disabling automation: ${error.message}`);
   }
 }
 
