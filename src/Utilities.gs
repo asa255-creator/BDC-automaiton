@@ -1895,80 +1895,97 @@ function searchGmailContacts(query) {
     const results = [];
     const seenEmails = new Set();
     const maxResults = 15;
+    const queryLower = query.toLowerCase();
 
-    // Search sent emails for matching recipients
-    const searchQuery = `in:sent to:${query}`;
-    const threads = GmailApp.search(searchQuery, 0, 50);
+    // Helper function to parse and add contacts from email headers
+    function parseAndAddContacts(headerValue) {
+      if (!headerValue) return;
 
-    for (const thread of threads) {
-      if (results.length >= maxResults) break;
+      const recipients = headerValue.split(',');
+      for (const recipient of recipients) {
+        if (results.length >= maxResults) return;
 
-      const messages = thread.getMessages();
-      for (const message of messages) {
-        if (results.length >= maxResults) break;
+        const trimmed = recipient.trim();
+        if (!trimmed) continue;
 
-        // Get To recipients
-        const toHeader = message.getTo();
-        const ccHeader = message.getCc();
+        // Parse "Name <email>" or just "email" format
+        const match = trimmed.match(/^(?:([^<]+)\s*)?<?([^\s<>]+@[^\s<>]+)>?$/);
+        if (match) {
+          const name = match[1] ? match[1].trim().replace(/"/g, '') : '';
+          const email = match[2].toLowerCase();
 
-        const allRecipients = (toHeader + ',' + (ccHeader || '')).split(',');
+          // Skip if already seen
+          if (seenEmails.has(email)) continue;
 
-        for (const recipient of allRecipients) {
-          if (results.length >= maxResults) break;
-
-          const trimmed = recipient.trim();
-          if (!trimmed) continue;
-
-          // Parse "Name <email>" or just "email" format
-          const match = trimmed.match(/^(?:([^<]+)\s*)?<?([^\s<>]+@[^\s<>]+)>?$/);
-          if (match) {
-            const name = match[1] ? match[1].trim().replace(/"/g, '') : '';
-            const email = match[2].toLowerCase();
-
-            // Skip if already seen or doesn't match query
-            if (seenEmails.has(email)) continue;
-            if (!email.includes(query.toLowerCase()) &&
-                !name.toLowerCase().includes(query.toLowerCase())) continue;
-
+          // Match if query is found in email OR name (partial match)
+          if (email.includes(queryLower) || name.toLowerCase().includes(queryLower)) {
             seenEmails.add(email);
-            results.push({
-              name: name,
-              email: email
-            });
+            results.push({ name: name, email: email });
           }
         }
       }
     }
 
-    // Also search in received emails
-    if (results.length < maxResults) {
-      const fromQuery = `from:${query}`;
-      const fromThreads = GmailApp.search(fromQuery, 0, 30);
-
-      for (const thread of fromThreads) {
+    // Strategy 1: Search sent emails with to: operator
+    try {
+      const toThreads = GmailApp.search(`in:sent to:${query}`, 0, 30);
+      for (const thread of toThreads) {
         if (results.length >= maxResults) break;
-
         const messages = thread.getMessages();
         for (const message of messages) {
           if (results.length >= maxResults) break;
-
-          const from = message.getFrom();
-          const match = from.match(/^(?:([^<]+)\s*)?<?([^\s<>]+@[^\s<>]+)>?$/);
-
-          if (match) {
-            const name = match[1] ? match[1].trim().replace(/"/g, '') : '';
-            const email = match[2].toLowerCase();
-
-            if (seenEmails.has(email)) continue;
-            seenEmails.add(email);
-
-            results.push({
-              name: name,
-              email: email
-            });
-          }
+          parseAndAddContacts(message.getTo());
+          parseAndAddContacts(message.getCc());
         }
       }
+    } catch (e) { /* continue to next strategy */ }
+
+    // Strategy 2: Search sent emails with the query as a general keyword
+    // This catches names that to: operator misses
+    if (results.length < maxResults) {
+      try {
+        const keywordThreads = GmailApp.search(`in:sent ${query}`, 0, 30);
+        for (const thread of keywordThreads) {
+          if (results.length >= maxResults) break;
+          const messages = thread.getMessages();
+          for (const message of messages) {
+            if (results.length >= maxResults) break;
+            parseAndAddContacts(message.getTo());
+            parseAndAddContacts(message.getCc());
+          }
+        }
+      } catch (e) { /* continue to next strategy */ }
+    }
+
+    // Strategy 3: Search received emails with from: operator
+    if (results.length < maxResults) {
+      try {
+        const fromThreads = GmailApp.search(`from:${query}`, 0, 30);
+        for (const thread of fromThreads) {
+          if (results.length >= maxResults) break;
+          const messages = thread.getMessages();
+          for (const message of messages) {
+            if (results.length >= maxResults) break;
+            const from = message.getFrom();
+            parseAndAddContacts(from);
+          }
+        }
+      } catch (e) { /* continue to next strategy */ }
+    }
+
+    // Strategy 4: Search received emails with keyword (catches names in body/subject)
+    if (results.length < maxResults) {
+      try {
+        const receivedThreads = GmailApp.search(`${query}`, 0, 30);
+        for (const thread of receivedThreads) {
+          if (results.length >= maxResults) break;
+          const messages = thread.getMessages();
+          for (const message of messages) {
+            if (results.length >= maxResults) break;
+            parseAndAddContacts(message.getFrom());
+          }
+        }
+      } catch (e) { /* continue */ }
     }
 
     return results;
