@@ -1882,6 +1882,104 @@ function searchGoogleDocs(query) {
 }
 
 /**
+ * Searches Gmail for contacts by name or email.
+ * Extracts unique email addresses from sent emails.
+ *
+ * @param {string} query - Search query (name or email)
+ * @returns {Object[]} Array of contact objects with name and email
+ */
+function searchGmailContacts(query) {
+  if (!query || query.length < 2) return [];
+
+  try {
+    const results = [];
+    const seenEmails = new Set();
+    const maxResults = 15;
+
+    // Search sent emails for matching recipients
+    const searchQuery = `in:sent to:${query}`;
+    const threads = GmailApp.search(searchQuery, 0, 50);
+
+    for (const thread of threads) {
+      if (results.length >= maxResults) break;
+
+      const messages = thread.getMessages();
+      for (const message of messages) {
+        if (results.length >= maxResults) break;
+
+        // Get To recipients
+        const toHeader = message.getTo();
+        const ccHeader = message.getCc();
+
+        const allRecipients = (toHeader + ',' + (ccHeader || '')).split(',');
+
+        for (const recipient of allRecipients) {
+          if (results.length >= maxResults) break;
+
+          const trimmed = recipient.trim();
+          if (!trimmed) continue;
+
+          // Parse "Name <email>" or just "email" format
+          const match = trimmed.match(/^(?:([^<]+)\s*)?<?([^\s<>]+@[^\s<>]+)>?$/);
+          if (match) {
+            const name = match[1] ? match[1].trim().replace(/"/g, '') : '';
+            const email = match[2].toLowerCase();
+
+            // Skip if already seen or doesn't match query
+            if (seenEmails.has(email)) continue;
+            if (!email.includes(query.toLowerCase()) &&
+                !name.toLowerCase().includes(query.toLowerCase())) continue;
+
+            seenEmails.add(email);
+            results.push({
+              name: name,
+              email: email
+            });
+          }
+        }
+      }
+    }
+
+    // Also search in received emails
+    if (results.length < maxResults) {
+      const fromQuery = `from:${query}`;
+      const fromThreads = GmailApp.search(fromQuery, 0, 30);
+
+      for (const thread of fromThreads) {
+        if (results.length >= maxResults) break;
+
+        const messages = thread.getMessages();
+        for (const message of messages) {
+          if (results.length >= maxResults) break;
+
+          const from = message.getFrom();
+          const match = from.match(/^(?:([^<]+)\s*)?<?([^\s<>]+@[^\s<>]+)>?$/);
+
+          if (match) {
+            const name = match[1] ? match[1].trim().replace(/"/g, '') : '';
+            const email = match[2].toLowerCase();
+
+            if (seenEmails.has(email)) continue;
+            seenEmails.add(email);
+
+            results.push({
+              name: name,
+              email: email
+            });
+          }
+        }
+      }
+    }
+
+    return results;
+
+  } catch (e) {
+    Logger.log(`Error searching contacts: ${e.message}`);
+    return [];
+  }
+}
+
+/**
  * Imports clients from the migration wizard.
  *
  * @param {Object[]} importData - Array of client import configurations
@@ -1936,20 +2034,21 @@ function importClientsFromWizard(importData) {
     }
 
     // Add to sheet: client_name, contact_emails, docs_folder_path, setup_complete, google_doc_url, todoist_project_id
+    const contactEmails = client.contact_emails || '';
     sheet.appendRow([
       client.client_name,
-      '',  // contact_emails - to be filled manually
+      contactEmails,
       client.create_folder || '',
       true,  // setup_complete - checked since we're setting up now
       googleDocUrl,
       todoistProjectId
     ]);
 
-    // Create Gmail labels
+    // Create Gmail labels and filters
     if (client.create_gmail_label || !client.gmail_label) {
       syncClientLabels({
         client_name: client.client_name,
-        contact_emails: ''
+        contact_emails: contactEmails
       });
     }
 
