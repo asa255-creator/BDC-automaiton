@@ -722,7 +722,25 @@ function runInteractiveSetup(ui, ss, props) {
     Logger.log('Set TODOIST_API_TOKEN');
   }
 
-  // Step 3: Prompt for Claude API Key
+  // Step 3: Prompt for Fathom API Key
+  const fathomResponse = ui.prompt(
+    'Fathom API Key',
+    'Enter your Fathom API key (from Fathom Settings > Integrations > API):\n\nThis enables "Load Latest Meeting" for testing.\nLeave blank to skip (webhooks will still work).',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (fathomResponse.getSelectedButton() === ui.Button.CANCEL) {
+    ui.alert('Setup cancelled.');
+    return;
+  }
+
+  const fathomKey = fathomResponse.getResponseText().trim();
+  if (fathomKey) {
+    props.setProperty('FATHOM_API_KEY', fathomKey);
+    Logger.log('Set FATHOM_API_KEY');
+  }
+
+  // Step 4: Prompt for Claude API Key
   const claudeResponse = ui.prompt(
     'Claude API Key',
     'Enter your Anthropic Claude API key:\n\nLeave blank to skip AI agenda generation.',
@@ -740,7 +758,7 @@ function runInteractiveSetup(ui, ss, props) {
     Logger.log('Set CLAUDE_API_KEY');
   }
 
-  // Step 4: Prompt for user's name (for email signatures)
+  // Step 5: Prompt for user's name (for email signatures)
   const nameResponse = ui.prompt(
     'Your Name',
     'Enter your name/initials for email signatures (e.g., "TC", "John"):\n\nThis appears at the end of meeting summary emails.',
@@ -756,7 +774,7 @@ function runInteractiveSetup(ui, ss, props) {
   props.setProperty('USER_NAME', userName);
   Logger.log(`Set USER_NAME: ${userName}`);
 
-  // Step 5: Prompt for business hours
+  // Step 6: Prompt for business hours
   const hoursResponse = ui.prompt(
     'Business Hours',
     'Enter your business hours for agenda generation (format: START-END, e.g., "8-18" for 8 AM to 6 PM):\n\nAgendas are only generated during these hours.\n\nPress OK for default (8-18) or enter custom hours:',
@@ -786,7 +804,7 @@ function runInteractiveSetup(ui, ss, props) {
   props.setProperty('BUSINESS_HOURS_END', endHour.toString());
   Logger.log(`Set business hours: ${startHour} to ${endHour}`);
 
-  // Step 6: Prompt for doc naming template
+  // Step 7: Prompt for doc naming template
   const docNameResponse = ui.prompt(
     'Document Naming',
     'Enter the naming template for client meeting notes docs:\n\nUse {client_name} as placeholder.\n\nPress OK for default or enter custom template:',
@@ -802,7 +820,7 @@ function runInteractiveSetup(ui, ss, props) {
   props.setProperty('DOC_NAME_TEMPLATE', docTemplate);
   Logger.log(`Set DOC_NAME_TEMPLATE: ${docTemplate}`);
 
-  // Step 7: Check Advanced Services
+  // Step 8: Check Advanced Services
   const serviceStatus = checkAdvancedServices();
 
   if (serviceStatus.missing.length > 0) {
@@ -827,15 +845,15 @@ function runInteractiveSetup(ui, ss, props) {
     }
   }
 
-  // Step 8: Create all sheets
+  // Step 9: Create all sheets
   ui.alert('Creating Sheets', 'Creating all required sheets...', ui.ButtonSet.OK);
 
   createAllSheets(ss);
 
-  // Step 9: Set up triggers
+  // Step 10: Set up triggers
   setupAllTriggers();
 
-  // Step 10: Sync Drive folders
+  // Step 11: Sync Drive folders
   ui.alert('Syncing Folders', 'Scanning Google Drive folders (this may take a moment)...', ui.ButtonSet.OK);
 
   try {
@@ -1558,6 +1576,7 @@ function onOpen() {
       .addItem('Import Existing Clients...', 'showMigrationWizard')
       .addSeparator()
       .addItem('Check for New Clients', 'checkForNewClients')
+      .addItem('Load Latest Meeting', 'loadLatestFathomMeeting')
       .addSeparator()
       .addItem('Update Settings...', 'showSettingsEditor')
       .addItem('Adjust Prompts...', 'showPromptsEditor')
@@ -1708,6 +1727,7 @@ function getSettingsForEditor() {
   const props = PropertiesService.getScriptProperties();
 
   return {
+    FATHOM_API_KEY: props.getProperty('FATHOM_API_KEY') || '',
     TODOIST_API_TOKEN: props.getProperty('TODOIST_API_TOKEN') || '',
     CLAUDE_API_KEY: props.getProperty('CLAUDE_API_KEY') || '',
     USER_NAME: props.getProperty('USER_NAME') || '',
@@ -1728,6 +1748,10 @@ function saveSettingsFromEditor(settings) {
   const props = PropertiesService.getScriptProperties();
 
   // Only update settings that have values (don't clear existing ones if left blank)
+  if (settings.FATHOM_API_KEY) {
+    props.setProperty('FATHOM_API_KEY', settings.FATHOM_API_KEY);
+  }
+
   if (settings.TODOIST_API_TOKEN) {
     props.setProperty('TODOIST_API_TOKEN', settings.TODOIST_API_TOKEN);
   }

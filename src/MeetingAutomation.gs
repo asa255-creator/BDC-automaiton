@@ -551,3 +551,127 @@ function applyMeetingSummaryLabel(message, client) {
     Logger.log(`Failed to apply label: ${error.message}`);
   }
 }
+
+// ============================================================================
+// FATHOM API INTEGRATION
+// ============================================================================
+
+/**
+ * Fetches the latest meeting from Fathom API.
+ * This is used for testing the webhook processing without waiting for a real meeting.
+ *
+ * @returns {Object} The latest meeting data from Fathom
+ */
+function fetchLatestFathomMeeting() {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('FATHOM_API_KEY');
+
+  if (!apiKey) {
+    throw new Error('Fathom API key not configured. Add it in Settings.');
+  }
+
+  // Fathom API endpoint for listing calls/meetings
+  // Note: Adjust this endpoint based on Fathom's actual API documentation
+  const url = 'https://api.fathom.video/v1/calls?limit=1&sort=-created_at';
+
+  const options = {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    muteHttpExceptions: true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      const errorText = response.getContentText();
+      throw new Error(`Fathom API error (${responseCode}): ${errorText}`);
+    }
+
+    const data = JSON.parse(response.getContentText());
+
+    // Return the first (latest) meeting
+    if (data.calls && data.calls.length > 0) {
+      return data.calls[0];
+    } else if (data.data && data.data.length > 0) {
+      // Alternative response structure
+      return data.data[0];
+    } else if (Array.isArray(data) && data.length > 0) {
+      return data[0];
+    }
+
+    throw new Error('No meetings found in Fathom');
+
+  } catch (error) {
+    Logger.log(`Fathom API error: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Converts Fathom API meeting data to webhook payload format.
+ * This normalizes the API response to match the expected webhook structure.
+ *
+ * @param {Object} fathomMeeting - The meeting data from Fathom API
+ * @returns {Object} Normalized payload matching webhook format
+ */
+function convertFathomMeetingToPayload(fathomMeeting) {
+  // Map Fathom API response to webhook payload format
+  // Adjust field names based on Fathom's actual API response structure
+  return {
+    meeting_title: fathomMeeting.title || fathomMeeting.name || fathomMeeting.meeting_title || 'Untitled Meeting',
+    meeting_date: fathomMeeting.created_at || fathomMeeting.date || fathomMeeting.meeting_date || new Date().toISOString(),
+    transcript: fathomMeeting.transcript || fathomMeeting.transcription || '',
+    summary: fathomMeeting.summary || fathomMeeting.ai_summary || '',
+    action_items: fathomMeeting.action_items || fathomMeeting.tasks || [],
+    participants: fathomMeeting.participants || fathomMeeting.attendees || []
+  };
+}
+
+/**
+ * Menu function to load and process the latest meeting from Fathom.
+ * This simulates receiving a webhook with the latest meeting data.
+ */
+function loadLatestFathomMeeting() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    ui.alert('Loading Meeting', 'Fetching latest meeting from Fathom...', ui.ButtonSet.OK);
+
+    // Fetch latest meeting
+    const fathomMeeting = fetchLatestFathomMeeting();
+
+    // Convert to webhook payload format
+    const payload = convertFathomMeetingToPayload(fathomMeeting);
+
+    // Show confirmation with meeting details
+    const confirmResult = ui.alert(
+      'Meeting Found',
+      `Found meeting: "${payload.meeting_title}"\n` +
+      `Date: ${payload.meeting_date}\n` +
+      `Participants: ${payload.participants.length}\n\n` +
+      'Process this meeting as if it were a webhook?',
+      ui.ButtonSet.YES_NO
+    );
+
+    if (confirmResult === ui.Button.YES) {
+      // Process the meeting using the same flow as webhooks
+      const result = processFathomWebhook(payload);
+
+      ui.alert(
+        'Processing Complete',
+        `Meeting processed successfully!\n\n` +
+        `Client: ${result.client || 'Not matched'}\n` +
+        `Draft created: ${result.draftCreated ? 'Yes' : 'No'}`,
+        ui.ButtonSet.OK
+      );
+    }
+
+  } catch (error) {
+    ui.alert('Error', `Failed to load meeting: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`loadLatestFathomMeeting error: ${error.message}`);
+  }
+}

@@ -154,6 +154,15 @@
 
       <div class="setting-group">
         <div class="setting-label">
+          Fathom API Key
+          <span id="fathomStatus" class="status-badge"></span>
+        </div>
+        <div class="setting-description">Get from Fathom Settings > Integrations > API. Used for "Load Latest Meeting" testing.</div>
+        <input type="password" id="fathom_key" placeholder="Enter Fathom API key">
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label">
           Todoist API Token
           <span id="todoistStatus" class="status-badge"></span>
         </div>
@@ -215,6 +224,7 @@
       google.script.run
         .withSuccessHandler(function(settings) {
           // Populate fields
+          document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
           document.getElementById('user_name').value = settings.USER_NAME || '';
@@ -223,6 +233,7 @@
           document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
 
           // Update status badges
+          updateBadge('fathomStatus', settings.FATHOM_API_KEY);
           updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
           updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
 
@@ -253,6 +264,7 @@
       saveBtn.textContent = 'Saving...';
 
       const settings = {
+        FATHOM_API_KEY: document.getElementById('fathom_key').value.trim(),
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
         USER_NAME: document.getElementById('user_name').value.trim(),
@@ -268,6 +280,7 @@
           msgEl.className = 'status-message success';
 
           // Update badges
+          updateBadge('fathomStatus', settings.FATHOM_API_KEY);
           updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
           updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
 
