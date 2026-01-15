@@ -36,6 +36,8 @@ function syncDriveFolders() {
     sheet.getRange(1, 1, 1, 3).setValues([['folder_path', 'folder_id', 'folder_url']]);
     sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
     sheet.setFrozenRows(1);
+    sheet.hideSheet();
+    Logger.log('Created hidden Folders sheet');
   }
 
   // Clear existing data (except header)

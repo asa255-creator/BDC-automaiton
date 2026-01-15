@@ -1124,12 +1124,10 @@ function setupAllTriggers() {
   const triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
 
-  // Folder sync - 5:30 AM
+  // Folder sync - every 15 minutes
   ScriptApp.newTrigger('runFolderSync')
     .timeBased()
-    .atHour(5)
-    .nearMinute(30)
-    .everyDays(1)
+    .everyMinutes(15)
     .create();
 
   // Label/filter sync - 6:00 AM
