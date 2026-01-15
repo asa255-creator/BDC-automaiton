@@ -163,6 +163,15 @@
 
       <div class="setting-group">
         <div class="setting-label">
+          HubSpot API Key
+          <span id="hubspotStatus" class="status-badge"></span>
+        </div>
+        <div class="setting-description">Get from HubSpot Settings > Integrations > Private Apps. For future CRM integration.</div>
+        <input type="password" id="hubspot_key" placeholder="Enter HubSpot API key">
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label">
           Todoist API Token
           <span id="todoistStatus" class="status-badge"></span>
         </div>
@@ -225,6 +234,7 @@
         .withSuccessHandler(function(settings) {
           // Populate fields
           document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
+          document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
           document.getElementById('user_name').value = settings.USER_NAME || '';
@@ -234,6 +244,7 @@
 
           // Update status badges
           updateBadge('fathomStatus', settings.FATHOM_API_KEY);
+          updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
           updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
           updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
 
@@ -265,6 +276,7 @@
 
       const settings = {
         FATHOM_API_KEY: document.getElementById('fathom_key').value.trim(),
+        HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
         USER_NAME: document.getElementById('user_name').value.trim(),
@@ -281,6 +293,7 @@
 
           // Update badges
           updateBadge('fathomStatus', settings.FATHOM_API_KEY);
+          updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
           updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
           updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
 

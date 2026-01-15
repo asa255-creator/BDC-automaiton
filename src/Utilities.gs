@@ -740,7 +740,25 @@ function runInteractiveSetup(ui, ss, props) {
     Logger.log('Set FATHOM_API_KEY');
   }
 
-  // Step 4: Prompt for Claude API Key
+  // Step 4: Prompt for HubSpot API Key
+  const hubspotResponse = ui.prompt(
+    'HubSpot API Key',
+    'Enter your HubSpot API key (from HubSpot Settings > Integrations > Private Apps):\n\nFor future CRM integration.\nLeave blank to skip.',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (hubspotResponse.getSelectedButton() === ui.Button.CANCEL) {
+    ui.alert('Setup cancelled.');
+    return;
+  }
+
+  const hubspotKey = hubspotResponse.getResponseText().trim();
+  if (hubspotKey) {
+    props.setProperty('HUBSPOT_API_KEY', hubspotKey);
+    Logger.log('Set HUBSPOT_API_KEY');
+  }
+
+  // Step 5: Prompt for Claude API Key
   const claudeResponse = ui.prompt(
     'Claude API Key',
     'Enter your Anthropic Claude API key:\n\nLeave blank to skip AI agenda generation.',
@@ -758,7 +776,7 @@ function runInteractiveSetup(ui, ss, props) {
     Logger.log('Set CLAUDE_API_KEY');
   }
 
-  // Step 5: Prompt for user's name (for email signatures)
+  // Step 6: Prompt for user's name (for email signatures)
   const nameResponse = ui.prompt(
     'Your Name',
     'Enter your name/initials for email signatures (e.g., "TC", "John"):\n\nThis appears at the end of meeting summary emails.',
@@ -774,7 +792,7 @@ function runInteractiveSetup(ui, ss, props) {
   props.setProperty('USER_NAME', userName);
   Logger.log(`Set USER_NAME: ${userName}`);
 
-  // Step 6: Prompt for business hours
+  // Step 7: Prompt for business hours
   const hoursResponse = ui.prompt(
     'Business Hours',
     'Enter your business hours for agenda generation (format: START-END, e.g., "8-18" for 8 AM to 6 PM):\n\nAgendas are only generated during these hours.\n\nPress OK for default (8-18) or enter custom hours:',
@@ -804,7 +822,7 @@ function runInteractiveSetup(ui, ss, props) {
   props.setProperty('BUSINESS_HOURS_END', endHour.toString());
   Logger.log(`Set business hours: ${startHour} to ${endHour}`);
 
-  // Step 7: Prompt for doc naming template
+  // Step 8: Prompt for doc naming template
   const docNameResponse = ui.prompt(
     'Document Naming',
     'Enter the naming template for client meeting notes docs:\n\nUse {client_name} as placeholder.\n\nPress OK for default or enter custom template:',
@@ -820,7 +838,7 @@ function runInteractiveSetup(ui, ss, props) {
   props.setProperty('DOC_NAME_TEMPLATE', docTemplate);
   Logger.log(`Set DOC_NAME_TEMPLATE: ${docTemplate}`);
 
-  // Step 8: Check Advanced Services
+  // Step 9: Check Advanced Services
   const serviceStatus = checkAdvancedServices();
 
   if (serviceStatus.missing.length > 0) {
@@ -845,15 +863,15 @@ function runInteractiveSetup(ui, ss, props) {
     }
   }
 
-  // Step 9: Create all sheets
+  // Step 10: Create all sheets
   ui.alert('Creating Sheets', 'Creating all required sheets...', ui.ButtonSet.OK);
 
   createAllSheets(ss);
 
-  // Step 10: Set up triggers
+  // Step 11: Set up triggers
   setupAllTriggers();
 
-  // Step 11: Sync Drive folders
+  // Step 12: Sync Drive folders
   ui.alert('Syncing Folders', 'Scanning Google Drive folders (this may take a moment)...', ui.ButtonSet.OK);
 
   try {
@@ -1728,6 +1746,7 @@ function getSettingsForEditor() {
 
   return {
     FATHOM_API_KEY: props.getProperty('FATHOM_API_KEY') || '',
+    HUBSPOT_API_KEY: props.getProperty('HUBSPOT_API_KEY') || '',
     TODOIST_API_TOKEN: props.getProperty('TODOIST_API_TOKEN') || '',
     CLAUDE_API_KEY: props.getProperty('CLAUDE_API_KEY') || '',
     USER_NAME: props.getProperty('USER_NAME') || '',
@@ -1750,6 +1769,10 @@ function saveSettingsFromEditor(settings) {
   // Only update settings that have values (don't clear existing ones if left blank)
   if (settings.FATHOM_API_KEY) {
     props.setProperty('FATHOM_API_KEY', settings.FATHOM_API_KEY);
+  }
+
+  if (settings.HUBSPOT_API_KEY) {
+    props.setProperty('HUBSPOT_API_KEY', settings.HUBSPOT_API_KEY);
   }
 
   if (settings.TODOIST_API_TOKEN) {
