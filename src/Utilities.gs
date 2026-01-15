@@ -1058,6 +1058,9 @@ function createAllSheets(ss) {
   // Hidden Prompts sheet
   createPromptsSheet(ss);
 
+  // Hidden JSON Formats sheet (API documentation)
+  createJsonFormatsSheet(ss);
+
   Logger.log('All sheets created.');
 }
 
