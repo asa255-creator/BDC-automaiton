@@ -1559,11 +1559,10 @@ function onOpen() {
       .addItem('Run Setup', 'SETUP_RUN_THIS_FIRST')
       .addItem('Import Existing Clients...', 'showMigrationWizard')
       .addSeparator()
+      .addItem('Check for New Clients', 'checkForNewClients')
+      .addSeparator()
       .addItem('Update Settings...', 'showSettingsEditor')
       .addItem('Adjust Prompts...', 'showPromptsEditor')
-      .addSeparator()
-      .addItem('Sync Drive Folders', 'syncDriveFolders')
-      .addItem('Sync Labels & Filters', 'runLabelAndFilterCreation')
       .addSeparator()
       .addItem('View Processing Log', 'showProcessingLog')
       .addSeparator()
@@ -1572,6 +1571,35 @@ function onOpen() {
   } catch (e) {
     // Not bound to a spreadsheet - skip menu creation
     Logger.log('onOpen: Not bound to spreadsheet, skipping menu');
+  }
+}
+
+/**
+ * Manually checks for new clients and sets up all their resources.
+ * Creates: Gmail labels & filters, Google Doc (meeting notes), Todoist project
+ */
+function checkForNewClients() {
+  const ui = SpreadsheetApp.getUi();
+
+  ui.alert('Checking for New Clients',
+    'This will set up resources for any new clients:\n' +
+    '• Gmail labels & filters\n' +
+    '• Meeting notes document (Google Doc)\n' +
+    '• Todoist project\n\n' +
+    'Processing...',
+    ui.ButtonSet.OK);
+
+  try {
+    // Sync labels and filters for all clients
+    syncLabelsAndFilters();
+
+    // Process new clients (creates Google Docs and Todoist projects)
+    processNewClients();
+
+    ui.alert('Complete', 'New client check finished. Check the Processing Log for details.', ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('Error', `An error occurred: ${e.message}`, ui.ButtonSet.OK);
+    Logger.log(`checkForNewClients error: ${e.message}`);
   }
 }
 
