@@ -16,8 +16,180 @@
  * These are stored in the hidden Prompts sheet and can be customized.
  */
 const DEFAULT_PROMPTS = {
-  // Claude prompt for meeting agenda generation
-  AGENDA_CLAUDE_PROMPT: `Generate a concise meeting agenda for the following meeting. Include time allocations for each agenda item.
+  // ============================================================================
+  // WEEKLY BRIEFING - Comprehensive AI-generated strategic briefing
+  // ============================================================================
+  WEEKLY_BRIEFING_CLAUDE_PROMPT: `You are an executive assistant creating a strategic weekly briefing for a Blue Dot co-founder.
+This briefing is a personal decision-making tool focused on client attention priorities, task ordering, fire identification, gap anticipation, time allocation, and meeting conflict resolution.
+
+Important output note:
+The final output must be the raw HTML code for the email body, returned as plain text.
+Do not render or display the HTML — just return the HTML source code itself, exactly as it should appear inside an email.
+The HTML must include proper headings, paragraphs, and bullet lists so the email displays well when sent.
+No external CSS or links should be included. Inline structure only.
+
+Here is today's date: {current_date}
+
+Here are all recent emails labeled "Action Today":
+{action_today_emails}
+
+Here are all recent emails labeled "Action This Week":
+{action_this_week_emails}
+
+Here are the undone tasks by project (from Todoist):
+{todoist_tasks}
+
+Here's a quick summary of the upcoming week's calendar:
+{calendar_summary}
+
+🎯 Executive Summary (2–3 sentences)
+Identify the highest-stakes deliverable or deadline this week (Critical Issue).
+List two or three actions that require immediate attention (Priority Focus).
+Note any client or strategic decisions required (Key Decision Points).
+
+Time Audit and Current Schedule Status
+• Today's Schedule – key meetings and time blocks
+• Schedule Efficiency Flags – overdue items, bottlenecks, or conflicts
+• Meeting Conflicts – identify and resolve scheduling issues
+
+Project Status Dashboard
+Use the following format for each active project derived from tasks and emails:
+🔴 [Project Name] – Blocked / Critical / Overdue
+🟡 [Project Name] – Attention Needed / Dependencies
+🟢 [Project Name] – On Track / Strong Momentum
+
+For each project include:
+• Status – concise summary of current state
+• Recent Activity – key developments from recent emails or updates
+• Critical Deliverables – must be completed this week
+
+Priority Actions
+Break down urgent tasks into time-boxed actions:
+• [Project] Immediate Action (time estimate)
+• [Project] Coordination (time estimate)
+• [Project] Preparation (time estimate)
+Use short bullet points with clear next steps.
+
+Upcoming Critical Events
+List the week's schedule and mark:
+• Meeting conflicts
+• Critical client deliverables
+• Prep time needed
+• Travel or location requirements
+
+Communication Priorities
+• Critical follow-ups from recent emails
+• Recent communication gaps (over 48 hours without response)
+• Client relationship temperature – concerns or opportunities
+
+Revenue and Relationship Risks
+• Immediate Risks – what could go wrong this week
+• Revenue Opportunities – new work or expansions
+• Relationship Maintenance – clients needing attention
+
+Clarifying Questions for Execution
+End with three or four strategic questions about:
+• Resource allocation
+• Priority conflicts
+• Information gaps
+• Backup plans
+
+🎯 Bottom Line
+Summarize the week's strategic focus, execution priorities, and success metrics in one concise paragraph.
+
+Prioritization Framework
+When organizing information, prioritize by:
+• Client Impact – revenue risk or opportunity
+• Timeline Urgency – hard deadlines versus flexible timing
+• Dependency Chains – what blocks other work
+• Strategic Value – long-term relationship or business impact
+
+Tone and Style
+• Decisive and strategic, not descriptive
+• Use emojis (🎯 🔴 🟡 🟢) as visual status markers
+• Highlight all client names in bold using HTML tags in the output
+• Use paragraph and list structure for clarity
+• Target approximately 1,500 to 2,000 words
+
+Automation Helpers and Output Instructions
+Use the email summaries at the top to locate follow-ups and themes.
+Use the task list to populate the project dashboard and time-boxed actions.
+Use the calendar and conflict summaries to evaluate workload and overlaps.
+
+Apply time-sensitivity flags automatically:
+🔴 Items overdue by more than three days or awaiting reply over twenty-four hours
+🟡 Items with dependencies or idle for five days
+🟢 Items showing recent progress
+
+Highlight projects with no activity in the past week.
+Note any deadlines within the next five business days.
+Exclude meeting note summaries and external document references.
+List call-time sessions if they appear, but assume attendance is not required.
+
+At the end, return one plain-text block containing the full HTML code that will produce a polished, structured email body.
+The output must start with an <h1> heading for the 🎯 Executive Summary section and include all subsequent sections as valid HTML elements.
+Return only the HTML source code, not rendered output or explanations.`,
+
+  // ============================================================================
+  // DAILY BRIEFING - AI-generated daily focus
+  // ============================================================================
+  DAILY_BRIEFING_CLAUDE_PROMPT: `You are an executive assistant creating a strategic daily briefing.
+This briefing is a personal decision-making tool focused on today's priorities, urgent tasks, and schedule optimization.
+
+Important output note:
+The final output must be the raw HTML code for the email body, returned as plain text.
+Do not render or display the HTML — just return the HTML source code itself.
+The HTML must include proper headings, paragraphs, and bullet lists.
+No external CSS or links. Inline structure only.
+
+Here is today's date: {current_date}
+
+Today's calendar events:
+{todays_calendar}
+
+Tasks due today or overdue (from Todoist):
+{todays_tasks}
+
+Recent urgent emails:
+{urgent_emails}
+
+Generate a daily briefing with these sections:
+
+🎯 Today's Focus (2-3 sentences)
+The single most important outcome needed today.
+
+📅 Schedule Overview
+• List today's meetings with times
+• Flag any conflicts or tight transitions
+• Note prep time needed
+
+✅ Priority Tasks (time-boxed)
+• [Client/Project] Task description (estimated time)
+• Maximum 5-7 items, ordered by urgency
+
+⚠️ Alerts
+• Overdue items (🔴)
+• Items needing attention (🟡)
+• Awaiting responses
+
+📧 Communication Queue
+• Must-send emails today
+• Follow-ups needed
+
+🎯 End of Day Success
+Define what "done" looks like for today in one sentence.
+
+Tone: Decisive, action-oriented, concise.
+Use emojis as visual markers.
+Bold client names.
+Target 500-800 words.
+
+Return only the HTML source code.`,
+
+  // ============================================================================
+  // MEETING AGENDA - AI-generated meeting preparation
+  // ============================================================================
+  AGENDA_CLAUDE_PROMPT: `You are an executive assistant preparing a meeting agenda.
 
 Meeting Details:
 - Title: {event_title}
@@ -25,42 +197,69 @@ Meeting Details:
 - Date/Time: {date_time}
 - Duration: {duration} minutes
 
+Outstanding Todoist tasks for this client:
 {todoist_section}
+
+Recent email activity with this client:
 {emails_section}
+
+Previous meeting notes:
 {notes_section}
+
+Action items from last meeting:
 {action_items_section}
 
-Please generate a structured agenda with:
-1. Clear agenda items with time allocations
-2. Priority items based on outstanding tasks and action items
-3. Any topics suggested by recent email activity
-4. Time for open discussion
+Generate a strategic meeting agenda with:
 
-Format the agenda professionally and keep it concise.`,
+1. 🎯 Meeting Objective (1 sentence)
+   What must be accomplished in this meeting?
 
-  // Email template for meeting agenda
-  AGENDA_EMAIL_TEMPLATE: `<h2>Meeting Agenda</h2>
-<p><strong>Meeting:</strong> {event_title}</p>
-<p><strong>Client:</strong> {client_name}</p>
-<p><strong>Date/Time:</strong> {date_time}</p>
-<hr/>
-<div style="white-space: pre-wrap;">{agenda_content}</div>`,
+2. 📋 Agenda Items (with time allocations totaling {duration} minutes)
+   • Item name (X min) - brief description
+   • Prioritize items that address outstanding tasks and action items
+   • Include time for client questions/discussion
 
-  // Daily outlook email header
-  DAILY_OUTLOOK_HEADER: `<h1>Daily Outlook - {date}</h1>`,
+3. ⚠️ Items Requiring Attention
+   • Overdue tasks to address
+   • Unanswered emails to mention
+   • Previous action items not completed
 
-  // Daily outlook alerts section template
-  DAILY_OUTLOOK_ALERTS: `<div style="background-color: #fff3cd; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
-<h2 style="margin-top: 0; color: #856404;">Alerts</h2>
+4. 📝 Preparation Notes
+   • Key points to remember
+   • Questions to ask
+   • Decisions needed
+
+5. ✅ Desired Outcomes
+   • What should be agreed upon
+   • Next steps to confirm
+   • Follow-up commitments
+
+Format as clean HTML with inline styles.
+Use bullet points and clear headings.
+Bold the client name throughout.
+Keep it actionable and focused.
+
+Return only the HTML source code.`,
+
+  // Email wrapper template for agenda (the AI content goes inside)
+  AGENDA_EMAIL_TEMPLATE: `<div style="font-family: Arial, sans-serif; max-width: 800px;">
+{agenda_content}
+</div>`,
+
+  // ============================================================================
+  // LEGACY TEMPLATES (for non-AI formatted sections if needed)
+  // ============================================================================
+  DAILY_OUTLOOK_HEADER: `<h1 style="color: #1a73e8;">📅 Daily Outlook - {date}</h1>`,
+
+  DAILY_OUTLOOK_ALERTS: `<div style="background-color: #fff3cd; padding: 15px; margin-bottom: 20px; border-radius: 5px; border-left: 4px solid #ffc107;">
+<h2 style="margin-top: 0; color: #856404;">⚠️ Alerts</h2>
 {alerts_content}
 </div>`,
 
-  // Weekly outlook email header
-  WEEKLY_OUTLOOK_HEADER: `<h1>Weekly Outlook - Week of {date}</h1>`,
+  WEEKLY_OUTLOOK_HEADER: `<h1 style="color: #1a73e8;">📊 Weekly Outlook - Week of {date}</h1>`,
 
-  // Weekly outlook summary section
-  WEEKLY_OUTLOOK_SUMMARY: `<div style="background-color: #e9ecef; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
-<h2 style="margin-top: 0;">Week Summary</h2>
+  WEEKLY_OUTLOOK_SUMMARY: `<div style="background-color: #e3f2fd; padding: 15px; margin-bottom: 20px; border-radius: 5px; border-left: 4px solid #1a73e8;">
+<h2 style="margin-top: 0; color: #1565c0;">📈 Week Summary</h2>
 <p><strong>Total Meetings:</strong> {meeting_count}</p>
 <p><strong>Total Tasks:</strong> {task_count}</p>
 <p><strong>Clients with Activity:</strong> {client_count}</p>
@@ -71,34 +270,44 @@ Format the agenda professionally and keep it concise.`,
  * Prompt metadata for the editor UI
  */
 const PROMPT_METADATA = {
+  WEEKLY_BRIEFING_CLAUDE_PROMPT: {
+    label: '📊 Weekly Briefing AI Prompt',
+    description: 'Comprehensive Claude prompt for strategic weekly briefings. This is the main prompt that generates your weekly executive summary with project dashboards, priority actions, and risk analysis.',
+    variables: ['{current_date}', '{action_today_emails}', '{action_this_week_emails}', '{todoist_tasks}', '{calendar_summary}']
+  },
+  DAILY_BRIEFING_CLAUDE_PROMPT: {
+    label: '📅 Daily Briefing AI Prompt',
+    description: 'Claude prompt for daily focus briefings. Generates your daily priorities, schedule overview, and task list.',
+    variables: ['{current_date}', '{todays_calendar}', '{todays_tasks}', '{urgent_emails}']
+  },
   AGENDA_CLAUDE_PROMPT: {
-    label: 'Meeting Agenda AI Prompt',
-    description: 'The prompt sent to Claude to generate meeting agendas.',
+    label: '📋 Meeting Agenda AI Prompt',
+    description: 'Claude prompt for meeting preparation. Generates strategic agendas with time allocations, preparation notes, and desired outcomes.',
     variables: ['{event_title}', '{client_name}', '{date_time}', '{duration}', '{todoist_section}', '{emails_section}', '{notes_section}', '{action_items_section}']
   },
   AGENDA_EMAIL_TEMPLATE: {
-    label: 'Agenda Email Template',
-    description: 'HTML template for agenda emails sent to you.',
-    variables: ['{event_title}', '{client_name}', '{date_time}', '{agenda_content}']
+    label: 'Agenda Email Wrapper',
+    description: 'HTML wrapper template for agenda emails. The AI-generated content goes inside {agenda_content}.',
+    variables: ['{agenda_content}']
   },
   DAILY_OUTLOOK_HEADER: {
-    label: 'Daily Outlook Header',
-    description: 'Header for daily outlook emails.',
+    label: 'Daily Header (Legacy)',
+    description: 'Header template for non-AI daily outlook. Used if AI generation is disabled.',
     variables: ['{date}']
   },
   DAILY_OUTLOOK_ALERTS: {
-    label: 'Daily Outlook Alerts Section',
-    description: 'Template for the alerts section in daily outlook.',
+    label: 'Daily Alerts Section (Legacy)',
+    description: 'Alerts template for non-AI daily outlook.',
     variables: ['{alerts_content}']
   },
   WEEKLY_OUTLOOK_HEADER: {
-    label: 'Weekly Outlook Header',
-    description: 'Header for weekly outlook emails.',
+    label: 'Weekly Header (Legacy)',
+    description: 'Header template for non-AI weekly outlook. Used if AI generation is disabled.',
     variables: ['{date}']
   },
   WEEKLY_OUTLOOK_SUMMARY: {
-    label: 'Weekly Outlook Summary',
-    description: 'Summary section for weekly outlook.',
+    label: 'Weekly Summary Section (Legacy)',
+    description: 'Summary template for non-AI weekly outlook.',
     variables: ['{meeting_count}', '{task_count}', '{client_count}']
   }
 };
