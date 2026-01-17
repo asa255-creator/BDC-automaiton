@@ -575,8 +575,7 @@ function fetchLatestFathomMeeting() {
   }
 
   // Fathom API endpoint - docs at https://developers.fathom.ai
-  // include_transcript and include_summary require first-party API keys
-  const url = 'https://api.fathom.ai/external/v1/meetings?include_transcript=true&include_summary=true';
+  const url = 'https://api.fathom.ai/external/v1/meetings?include_transcript=true&include_summary=true&include_action_items=true';
 
   const options = {
     method: 'GET',
@@ -627,24 +626,29 @@ function fetchLatestFathomMeeting() {
  */
 function convertFathomMeetingToPayload(fathomMeeting) {
   // Map Fathom API response to webhook payload format
-  // Fathom API returns: title, created_at, transcript, summary, action_items, calendar_invitees, recorded_by
+  // Fathom API fields: title, created_at, default_summary, transcript (array), action_items, calendar_invitees, recorded_by
 
-  // Extract transcript text - may be string or object with text property
+  // Extract transcript - Fathom returns array of {speaker: {display_name}, text, timestamp}
   let transcriptText = '';
-  if (typeof fathomMeeting.transcript === 'string') {
+  if (Array.isArray(fathomMeeting.transcript)) {
+    transcriptText = fathomMeeting.transcript
+      .map(entry => {
+        const speaker = entry.speaker?.display_name || 'Unknown';
+        return `${speaker}: ${entry.text}`;
+      })
+      .join('\n\n');
+  } else if (typeof fathomMeeting.transcript === 'string') {
     transcriptText = fathomMeeting.transcript;
-  } else if (fathomMeeting.transcript && fathomMeeting.transcript.text) {
-    transcriptText = fathomMeeting.transcript.text;
   }
 
-  // Extract summary text - may be string or object
+  // Extract summary - Fathom uses default_summary.markdown_formatted
   let summaryText = '';
-  if (typeof fathomMeeting.summary === 'string') {
+  if (fathomMeeting.default_summary && fathomMeeting.default_summary.markdown_formatted) {
+    summaryText = fathomMeeting.default_summary.markdown_formatted;
+  } else if (typeof fathomMeeting.summary === 'string') {
     summaryText = fathomMeeting.summary;
-  } else if (fathomMeeting.summary && fathomMeeting.summary.text) {
-    summaryText = fathomMeeting.summary.text;
-  } else if (fathomMeeting.summary && fathomMeeting.summary.content) {
-    summaryText = fathomMeeting.summary.content;
+  } else if (fathomMeeting.summary && fathomMeeting.summary.markdown_formatted) {
+    summaryText = fathomMeeting.summary.markdown_formatted;
   }
 
   // Fathom uses calendar_invitees for participants
@@ -668,9 +672,9 @@ function convertFathomMeetingToPayload(fathomMeeting) {
     meeting_date: fathomMeeting.created_at || fathomMeeting.scheduled_start_time || new Date().toISOString(),
     transcript: transcriptText,
     summary: summaryText,
-    action_items: fathomMeeting.action_items || fathomMeeting.tasks || [],
+    action_items: fathomMeeting.action_items || [],
     participants: participants,
-    fathom_url: fathomMeeting.url || null
+    fathom_url: fathomMeeting.url || fathomMeeting.share_url || null
   };
 }
 
