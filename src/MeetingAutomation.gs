@@ -587,34 +587,32 @@ function fetchLatestFathomMeeting() {
     const responseCode = response.getResponseCode();
     const responseText = response.getContentText();
 
-    Logger.log('Fathom API response code: ' + responseCode);
-    Logger.log('Fathom API response: ' + responseText.substring(0, 1000)); // Log first 1000 chars
-
     if (responseCode !== 200) {
+      logProcessing('FATHOM_API', null, `API error (${responseCode}): ${responseText.substring(0, 200)}`, 'error');
       throw new Error(`Fathom API error (${responseCode}): ${responseText}`);
     }
 
     const data = JSON.parse(responseText);
-
-    // Log the structure to help debug
-    Logger.log('Response keys: ' + Object.keys(data).join(', '));
+    const responseKeys = Object.keys(data).join(', ');
 
     // Fathom returns meetings array - get the first (latest) one
     if (data.meetings && data.meetings.length > 0) {
+      logProcessing('FATHOM_API', null, `Found ${data.meetings.length} meetings`, 'success');
       return data.meetings[0];
     } else if (data.data && data.data.length > 0) {
-      // Some APIs use 'data' wrapper
+      logProcessing('FATHOM_API', null, `Found ${data.data.length} meetings (data wrapper)`, 'success');
       return data.data[0];
     } else if (Array.isArray(data) && data.length > 0) {
+      logProcessing('FATHOM_API', null, `Found ${data.length} meetings (array)`, 'success');
       return data[0];
     }
 
-    // If we get here, log what we actually received
-    Logger.log('Fathom response structure: ' + JSON.stringify(data).substring(0, 500));
-    throw new Error('No meetings found in Fathom. Check Apps Script logs for API response details.');
+    // Log what we received so user can see in Processing_Log sheet
+    logProcessing('FATHOM_API', null, `No meetings found. Keys: ${responseKeys}. Response: ${JSON.stringify(data).substring(0, 300)}`, 'warning');
+    throw new Error('No meetings found in Fathom. Check Processing_Log sheet for details.');
 
   } catch (error) {
-    Logger.log(`Fathom API error: ${error.message}`);
+    logProcessing('FATHOM_API', null, error.message, 'error');
     throw error;
   }
 }
