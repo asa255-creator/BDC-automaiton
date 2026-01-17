@@ -593,22 +593,18 @@ function fetchLatestFathomMeeting() {
     }
 
     const data = JSON.parse(responseText);
-    const responseKeys = Object.keys(data).join(', ');
 
-    // Fathom returns meetings array - get the first (latest) one
-    if (data.meetings && data.meetings.length > 0) {
-      logProcessing('FATHOM_API', null, `Found ${data.meetings.length} meetings`, 'success');
-      return data.meetings[0];
-    } else if (data.data && data.data.length > 0) {
-      logProcessing('FATHOM_API', null, `Found ${data.data.length} meetings (data wrapper)`, 'success');
-      return data.data[0];
+    // Fathom API returns meetings in 'items' array
+    if (data.items && data.items.length > 0) {
+      logProcessing('FATHOM_API', null, `Found ${data.items.length} meetings`, 'success');
+      return data.items[0];
     } else if (Array.isArray(data) && data.length > 0) {
       logProcessing('FATHOM_API', null, `Found ${data.length} meetings (array)`, 'success');
       return data[0];
     }
 
     // Log what we received so user can see in Processing_Log sheet
-    logProcessing('FATHOM_API', null, `No meetings found. Keys: ${responseKeys}. Response: ${JSON.stringify(data).substring(0, 300)}`, 'warning');
+    logProcessing('FATHOM_API', null, `No meetings found. Response: ${JSON.stringify(data).substring(0, 300)}`, 'warning');
     throw new Error('No meetings found in Fathom. Check Processing_Log sheet for details.');
 
   } catch (error) {
