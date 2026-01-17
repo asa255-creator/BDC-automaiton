@@ -100,6 +100,90 @@
       font-family: monospace;
       font-size: 11px;
     }
+    .model-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .model-row label {
+      font-weight: 500;
+      color: #5f6368;
+      font-size: 12px;
+    }
+    .model-select {
+      padding: 6px 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 13px;
+      background: white;
+      cursor: pointer;
+    }
+    .model-select:focus {
+      outline: none;
+      border-color: #1a73e8;
+    }
+    .compress-btn {
+      padding: 6px 12px;
+      background: #f1f3f4;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      color: #5f6368;
+      transition: all 0.2s;
+    }
+    .compress-btn:hover {
+      background: #e8eaed;
+      color: #202124;
+    }
+    .compress-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .compress-result {
+      background: #e8f5e9;
+      border: 1px solid #c8e6c9;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 12px;
+      display: none;
+    }
+    .compress-result.visible {
+      display: block;
+    }
+    .compress-result.error {
+      background: #fce8e6;
+      border-color: #f5c6cb;
+    }
+    .compress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .compress-stats {
+      font-size: 12px;
+      color: #1b5e20;
+    }
+    .compress-result.error .compress-stats {
+      color: #c5221f;
+    }
+    .compress-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .compress-preview {
+      max-height: 150px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #c8e6c9;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+    }
     textarea {
       width: 100%;
       min-height: 400px;
@@ -248,20 +332,41 @@
 
   <script>
     let prompts = [];
+    let availableModels = [];
     let originalValues = {};
+    let originalModels = {};
     let currentTab = 0;
+    let compressionResults = {};
 
     document.addEventListener('DOMContentLoaded', function() {
-      loadPrompts();
+      loadModels();
     });
+
+    function loadModels() {
+      google.script.run
+        .withSuccessHandler(function(models) {
+          availableModels = models;
+          loadPrompts();
+        })
+        .withFailureHandler(function(error) {
+          console.error('Error loading models:', error);
+          availableModels = [
+            { value: 'haiku', label: 'Haiku (Faster, Cheaper)' },
+            { value: 'sonnet', label: 'Sonnet (Smarter, More Expensive)' }
+          ];
+          loadPrompts();
+        })
+        .getAvailableModels();
+    }
 
     function loadPrompts() {
       google.script.run
         .withSuccessHandler(function(data) {
           prompts = data;
-          // Store original values
+          // Store original values and models
           prompts.forEach(function(p) {
             originalValues[p.key] = p.value;
+            originalModels[p.key] = p.model || 'haiku';
           });
           renderTabs();
           renderContent();
@@ -305,6 +410,32 @@
 
         // Description
         html += '<div class="prompt-description">' + escapeHtml(prompt.description) + '</div>';
+
+        // Model selector row (only for AI prompts)
+        if (prompt.key.includes('CLAUDE_PROMPT')) {
+          html += '<div class="model-row">';
+          html += '<label>AI Model:</label>';
+          html += '<select class="model-select" id="model_' + index + '" data-key="' + prompt.key + '">';
+          availableModels.forEach(function(model) {
+            const selected = (prompt.model === model.value) ? ' selected' : '';
+            html += '<option value="' + model.value + '"' + selected + '>' + escapeHtml(model.label) + '</option>';
+          });
+          html += '</select>';
+          html += '<button class="compress-btn" id="compressBtn_' + index + '" onclick="compressPrompt(' + index + ')">Compress Prompt</button>';
+          html += '</div>';
+        }
+
+        // Compression result area
+        html += '<div class="compress-result" id="compressResult_' + index + '">';
+        html += '<div class="compress-header">';
+        html += '<span class="compress-stats" id="compressStats_' + index + '"></span>';
+        html += '<div class="compress-actions">';
+        html += '<button class="btn btn-text" onclick="applyCompression(' + index + ')">Apply</button>';
+        html += '<button class="btn btn-text" onclick="dismissCompression(' + index + ')">Dismiss</button>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="compress-preview" id="compressPreview_' + index + '"></div>';
+        html += '</div>';
 
         // Variables
         if (prompt.variables && prompt.variables.length > 0) {
@@ -414,14 +545,82 @@
         .resetAllPromptsToDefault();
     }
 
+    function compressPrompt(index) {
+      const textarea = document.getElementById('prompt_' + index);
+      const compressBtn = document.getElementById('compressBtn_' + index);
+      const resultDiv = document.getElementById('compressResult_' + index);
+      const statsSpan = document.getElementById('compressStats_' + index);
+      const previewDiv = document.getElementById('compressPreview_' + index);
+
+      if (!textarea.value.trim()) {
+        setStatus('Nothing to compress', 'error');
+        return;
+      }
+
+      compressBtn.disabled = true;
+      compressBtn.textContent = 'Compressing...';
+      setStatus('Compressing prompt with AI...', '');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          compressBtn.disabled = false;
+          compressBtn.textContent = 'Compress Prompt';
+
+          if (result.success) {
+            compressionResults[index] = result.compressed;
+            statsSpan.textContent = 'Reduced from ' + result.originalLength + ' to ' + result.compressedLength + ' chars (' + result.estimatedSavings + ')';
+            previewDiv.textContent = result.compressed;
+            resultDiv.classList.remove('error');
+            resultDiv.classList.add('visible');
+            setStatus('Compression complete. Review below and click Apply to use.', 'success');
+          } else {
+            statsSpan.textContent = 'Error: ' + result.error;
+            previewDiv.textContent = '';
+            resultDiv.classList.add('error', 'visible');
+            setStatus('Compression failed: ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          compressBtn.disabled = false;
+          compressBtn.textContent = 'Compress Prompt';
+          statsSpan.textContent = 'Error: ' + error.message;
+          previewDiv.textContent = '';
+          resultDiv.classList.add('error', 'visible');
+          setStatus('Compression failed: ' + error.message, 'error');
+        })
+        .compressPromptWithAI(textarea.value);
+    }
+
+    function applyCompression(index) {
+      const textarea = document.getElementById('prompt_' + index);
+      const resultDiv = document.getElementById('compressResult_' + index);
+
+      if (compressionResults[index]) {
+        textarea.value = compressionResults[index];
+        markModified(index);
+        setStatus('Compressed prompt applied. Review and save when ready.', 'success');
+      }
+
+      dismissCompression(index);
+    }
+
+    function dismissCompression(index) {
+      const resultDiv = document.getElementById('compressResult_' + index);
+      resultDiv.classList.remove('visible', 'error');
+      delete compressionResults[index];
+    }
+
     function saveAll() {
       const updates = [];
 
       prompts.forEach(function(prompt, index) {
         const textarea = document.getElementById('prompt_' + index);
+        const modelSelect = document.getElementById('model_' + index);
+
         updates.push({
           key: prompt.key,
-          value: textarea.value
+          value: textarea.value,
+          model: modelSelect ? modelSelect.value : 'haiku'
         });
       });
 
@@ -432,9 +631,10 @@
         .withSuccessHandler(function(result) {
           if (result.success) {
             setStatus(result.message, 'success');
-            // Update original values
+            // Update original values and models
             updates.forEach(function(u) {
               originalValues[u.key] = u.value;
+              originalModels[u.key] = u.model;
             });
             // Close after short delay
             setTimeout(function() {

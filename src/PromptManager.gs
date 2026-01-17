@@ -317,6 +317,26 @@ const PROMPT_METADATA = {
 // ============================================================================
 
 /**
+ * Model tier mapping - maps generic names to current model IDs.
+ * Update these when new Claude versions are released.
+ */
+const MODEL_TIERS = {
+  haiku: 'claude-3-5-haiku-20241022',
+  sonnet: 'claude-sonnet-4-20250514'
+};
+
+/**
+ * Gets the current model ID for a tier name.
+ * This allows prompts to use generic names that don't need updating.
+ *
+ * @param {string} tierName - 'haiku' or 'sonnet'
+ * @returns {string} The current model ID
+ */
+function getModelIdForTier(tierName) {
+  return MODEL_TIERS[tierName] || MODEL_TIERS.haiku;
+}
+
+/**
  * Creates the hidden Prompts sheet if it doesn't exist.
  * Called during setup.
  *
@@ -329,27 +349,44 @@ function createPromptsSheet(ss) {
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
 
-    // Set up headers
-    sheet.getRange(1, 1, 1, 2).setValues([['prompt_key', 'prompt_value']]);
-    sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
+    // Set up headers (now includes model_preference column)
+    sheet.getRange(1, 1, 1, 3).setValues([['prompt_key', 'prompt_value', 'model_preference']]);
+    sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
     sheet.setFrozenRows(1);
 
-    // Add default prompts
+    // Add default prompts with haiku as default model
     const promptKeys = Object.keys(DEFAULT_PROMPTS);
-    const rows = promptKeys.map(key => [key, DEFAULT_PROMPTS[key]]);
+    const rows = promptKeys.map(key => [key, DEFAULT_PROMPTS[key], 'haiku']);
 
     if (rows.length > 0) {
-      sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+      sheet.getRange(2, 1, rows.length, 3).setValues(rows);
     }
 
     // Set column widths
     sheet.setColumnWidth(1, 200);
     sheet.setColumnWidth(2, 800);
+    sheet.setColumnWidth(3, 100);
 
     // Hide the sheet
     sheet.hideSheet();
 
     Logger.log('Created hidden Prompts sheet with defaults');
+  } else {
+    // Check if model_preference column exists, add if not
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (!headers.includes('model_preference')) {
+      const lastCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, lastCol).setValue('model_preference');
+      sheet.getRange(1, lastCol).setFontWeight('bold');
+      // Set default model for existing rows
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        const defaults = Array(lastRow - 1).fill(['haiku']);
+        sheet.getRange(2, lastCol, lastRow - 1, 1).setValues(defaults);
+      }
+      sheet.setColumnWidth(lastCol, 100);
+      Logger.log('Added model_preference column to existing Prompts sheet');
+    }
   }
 }
 
@@ -390,12 +427,58 @@ function getPrompt(promptKey) {
 }
 
 /**
+ * Gets the model preference for a prompt.
+ *
+ * @param {string} promptKey - The prompt key
+ * @returns {string} The model tier ('haiku' or 'sonnet'), defaults to 'haiku'
+ */
+function getPromptModel(promptKey) {
+  try {
+    const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+    if (!spreadsheetId) return 'haiku';
+
+    const ss = SpreadsheetApp.openById(spreadsheetId);
+    const sheet = ss.getSheetByName('Prompts');
+    if (!sheet) return 'haiku';
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const modelCol = headers.indexOf('model_preference');
+
+    if (modelCol === -1) return 'haiku';
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === promptKey) {
+        return data[i][modelCol] || 'haiku';
+      }
+    }
+
+    return 'haiku';
+  } catch (e) {
+    Logger.log(`Error getting model for ${promptKey}: ${e.message}`);
+    return 'haiku';
+  }
+}
+
+/**
+ * Gets the full model ID for a prompt (resolves tier to actual model ID).
+ *
+ * @param {string} promptKey - The prompt key
+ * @returns {string} The actual model ID to use
+ */
+function getModelForPrompt(promptKey) {
+  const tier = getPromptModel(promptKey);
+  return getModelIdForTier(tier);
+}
+
+/**
  * Sets a prompt value in the Prompts sheet.
  *
  * @param {string} promptKey - The prompt key
  * @param {string} promptValue - The new prompt value
+ * @param {string} modelPreference - Optional model preference ('haiku' or 'sonnet')
  */
-function setPrompt(promptKey, promptValue) {
+function setPrompt(promptKey, promptValue, modelPreference) {
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
   if (!spreadsheetId) {
     throw new Error('SPREADSHEET_ID not set');
@@ -410,38 +493,46 @@ function setPrompt(promptKey, promptValue) {
   }
 
   const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const modelCol = headers.indexOf('model_preference');
   let found = false;
 
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === promptKey) {
       sheet.getRange(i + 1, 2).setValue(promptValue);
+      // Update model preference if provided and column exists
+      if (modelPreference && modelCol !== -1) {
+        sheet.getRange(i + 1, modelCol + 1).setValue(modelPreference);
+      }
       found = true;
       break;
     }
   }
 
   if (!found) {
-    sheet.appendRow([promptKey, promptValue]);
+    sheet.appendRow([promptKey, promptValue, modelPreference || 'haiku']);
   }
 
-  Logger.log(`Updated prompt: ${promptKey}`);
+  Logger.log(`Updated prompt: ${promptKey} (model: ${modelPreference || 'unchanged'})`);
 }
 
 /**
  * Gets all prompts for the editor.
  *
- * @returns {Object[]} Array of prompt objects with key, value, label, description, variables
+ * @returns {Object[]} Array of prompt objects with key, value, label, description, variables, model
  */
 function getAllPromptsForEditor() {
   const prompts = [];
 
   for (const key of Object.keys(DEFAULT_PROMPTS)) {
     const value = getPrompt(key);
+    const model = getPromptModel(key);
     const metadata = PROMPT_METADATA[key] || {};
 
     prompts.push({
       key: key,
       value: value,
+      model: model,
       label: metadata.label || key,
       description: metadata.description || '',
       variables: metadata.variables || [],
@@ -453,16 +544,28 @@ function getAllPromptsForEditor() {
 }
 
 /**
+ * Gets available model tiers for the editor dropdown.
+ *
+ * @returns {Object[]} Array of {value, label} for dropdown
+ */
+function getAvailableModels() {
+  return [
+    { value: 'haiku', label: 'Haiku (Faster, Cheaper)' },
+    { value: 'sonnet', label: 'Sonnet (Smarter, More Expensive)' }
+  ];
+}
+
+/**
  * Saves multiple prompts from the editor.
  *
- * @param {Object[]} prompts - Array of {key, value} objects
+ * @param {Object[]} prompts - Array of {key, value, model} objects
  * @returns {Object} Result with success status
  */
 function savePromptsFromEditor(prompts) {
   try {
     for (const prompt of prompts) {
       if (prompt.key && prompt.value !== undefined) {
-        setPrompt(prompt.key, prompt.value);
+        setPrompt(prompt.key, prompt.value, prompt.model);
       }
     }
 
@@ -470,6 +573,91 @@ function savePromptsFromEditor(prompts) {
   } catch (e) {
     Logger.log(`Error saving prompts: ${e.message}`);
     return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Compresses a prompt using Claude AI while preserving all requirements.
+ * Uses Haiku for cost efficiency.
+ *
+ * @param {string} promptText - The original prompt text to compress
+ * @returns {Object} Result with compressed text or error
+ */
+function compressPromptWithAI(promptText) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+
+  if (!apiKey) {
+    return { success: false, error: 'Claude API key not configured. Add it in Settings.' };
+  }
+
+  const compressionPrompt = `You are a prompt compression expert. Your task is to rewrite the following prompt to use fewer tokens while preserving ALL requirements, instructions, sections, and formatting rules.
+
+Rules for compression:
+1. Keep ALL sections and requirements - do not remove anything
+2. Use concise language - remove redundant words and phrases
+3. Use bullet points and short syntax where possible
+4. Preserve all variable placeholders like {variable_name} exactly as-is
+5. Keep all emojis and formatting markers
+6. Maintain the same tone and intent
+7. The compressed version must produce identical output when used
+
+Original prompt to compress:
+---
+${promptText}
+---
+
+Return ONLY the compressed prompt text, nothing else. Do not add explanations or commentary.`;
+
+  try {
+    const url = 'https://api.anthropic.com/v1/messages';
+
+    const payload = {
+      model: MODEL_TIERS.haiku,
+      max_tokens: 4096,
+      messages: [
+        { role: 'user', content: compressionPrompt }
+      ]
+    };
+
+    const options = {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      const errorText = response.getContentText();
+      Logger.log(`Claude API error: ${responseCode} - ${errorText}`);
+      return { success: false, error: `API error (${responseCode}): ${errorText}` };
+    }
+
+    const result = JSON.parse(response.getContentText());
+    const compressedText = result.content[0].text;
+
+    // Calculate token savings estimate (rough: 4 chars per token)
+    const originalTokens = Math.ceil(promptText.length / 4);
+    const compressedTokens = Math.ceil(compressedText.length / 4);
+    const savings = Math.round((1 - compressedTokens / originalTokens) * 100);
+
+    return {
+      success: true,
+      compressed: compressedText,
+      originalLength: promptText.length,
+      compressedLength: compressedText.length,
+      estimatedSavings: `~${savings}% fewer tokens`
+    };
+
+  } catch (e) {
+    Logger.log(`Error compressing prompt: ${e.message}`);
+    return { success: false, error: e.message };
   }
 }
 
