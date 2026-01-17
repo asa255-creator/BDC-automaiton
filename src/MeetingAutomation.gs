@@ -15,6 +15,7 @@
 
 /**
  * Processes an incoming Fathom webhook payload.
+ * ALWAYS creates a draft email - client matching happens when email is sent.
  *
  * @param {Object} payload - The webhook payload from Fathom
  * @returns {Object} Result of the processing
@@ -26,6 +27,7 @@
  * - summary: string
  * - action_items: Array<{description, assignee, due_date}>
  * - participants: Array<{name, email}>
+ * - fathom_url: string (optional)
  */
 function processFathomWebhook(payload) {
   Logger.log('Processing Fathom webhook...');
@@ -35,69 +37,64 @@ function processFathomWebhook(payload) {
     throw new Error('Invalid webhook payload: missing meeting_title');
   }
 
-  // Extract participant emails
+  // Extract participant emails for logging
   const participantEmails = (payload.participants || [])
     .map(p => p.email)
     .filter(e => e);
 
-  // Identify client from participants
+  // Try to identify client from participants (optional - for pre-filling recipient)
   const client = identifyClientFromParticipants(payload.participants);
 
-  if (!client) {
-    // Log to unmatched and exit
-    logUnmatched(
-      'meeting',
-      `Meeting: ${payload.meeting_title} on ${payload.meeting_date}`,
-      participantEmails
-    );
-
-    logProcessing(
-      'WEBHOOK_PROCESS',
-      null,
-      `No client found for meeting: ${payload.meeting_title}`,
-      'unmatched'
-    );
-
-    return {
-      status: 'unmatched',
-      message: 'No client matched for meeting participants'
-    };
+  if (client) {
+    Logger.log(`Client identified: ${client.client_name}`);
+  } else {
+    Logger.log('No client matched - draft will be created without recipient');
   }
 
-  Logger.log(`Client identified: ${client.client_name}`);
-
-  // Create draft email
+  // ALWAYS create draft email (user will add recipient if needed)
   const draftId = createMeetingSummaryDraft(payload, client);
 
-  // Log successful processing
-  logProcessing(
-    'WEBHOOK_PROCESS',
-    client.client_name,
-    `Created draft for meeting: ${payload.meeting_title}`,
-    'success'
-  );
+  // Log processing result
+  const clientName = client ? client.client_name : null;
+  const status = client ? 'success' : 'draft_created';
+  const message = client
+    ? `Created draft for meeting: ${payload.meeting_title} (client: ${client.client_name})`
+    : `Created draft for meeting: ${payload.meeting_title} (no client matched - add recipient manually)`;
+
+  logProcessing('WEBHOOK_PROCESS', clientName, message, status);
 
   return {
-    status: 'success',
-    client_name: client.client_name,
-    draft_id: draftId
+    status: status,
+    client_name: clientName,
+    draft_id: draftId,
+    participants: participantEmails.length
   };
 }
 
 /**
  * Creates a Gmail draft with the meeting summary.
+ * Works with or without a matched client.
  *
  * @param {Object} payload - The Fathom webhook payload
- * @param {Object} client - The matched client object
+ * @param {Object|null} client - The matched client object (or null if no match)
  * @returns {string} The draft ID
  */
 function createMeetingSummaryDraft(payload, client) {
   const meetingDate = formatDateShort(new Date(payload.meeting_date));
-  const subject = `Team ${client.client_name} - Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}`;
+
+  // Build subject and greeting based on whether we have a client
+  const clientName = client ? client.client_name : '[ADD CLIENT NAME]';
+  const subject = `Team ${clientName} - Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}`;
 
   // Build email body
-  let body = `<p>Team ${client.client_name} -</p>`;
+  let body = `<p>Team ${clientName} -</p>`;
   body += `<p>Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}.</p>`;
+
+  // Add Fathom link if available
+  if (payload.fathom_url) {
+    body += `<p><a href="${payload.fathom_url}">View full meeting recording</a></p>`;
+  }
+
   body += `<hr/>`;
 
   // Add summary
@@ -110,7 +107,7 @@ function createMeetingSummaryDraft(payload, client) {
     body += `<ol>`;
     payload.action_items.forEach((item, index) => {
       body += `<li>`;
-      body += `${item.description}`;
+      body += `${item.description || item.text || item}`;
       if (item.assignee) {
         body += ` <em>(Assigned to: ${item.assignee})</em>`;
       }
@@ -129,15 +126,23 @@ function createMeetingSummaryDraft(payload, client) {
   body += `<p>Thanks,<br/>${userName}</p>`;
 
   // Add metadata for post-send processing (hidden)
+  // Client matching will happen when email is sent based on recipient
   body += `<div style="display:none;">`;
-  body += `<!--CLIENT_ID:${client.client_name}-->`;
   body += `<!--MEETING_TITLE:${payload.meeting_title}-->`;
+  body += `<!--MEETING_DATE:${payload.meeting_date}-->`;
   body += `<!--ACTION_ITEMS:${JSON.stringify(payload.action_items || [])}-->`;
+  if (payload.fathom_url) {
+    body += `<!--FATHOM_URL:${payload.fathom_url}-->`;
+  }
   body += `</div>`;
 
-  // Get recipient emails (client contacts)
-  const recipients = parseCommaSeparatedList(client.contact_emails);
-  const toAddress = recipients.length > 0 ? recipients[0] : getCurrentUserEmail();
+  // Determine recipient
+  let toAddress = '';
+  if (client) {
+    const recipients = parseCommaSeparatedList(client.contact_emails);
+    toAddress = recipients.length > 0 ? recipients[0] : '';
+  }
+  // If no client or no contact email, leave To: empty so user must fill it in
 
   // Create draft
   const draft = GmailApp.createDraft(toAddress, subject, '', {
@@ -146,8 +151,8 @@ function createMeetingSummaryDraft(payload, client) {
 
   Logger.log(`Created draft with ID: ${draft.getId()}`);
 
-  // Store draft info for monitoring
-  storePendingDraft(draft.getId(), client.client_name, payload);
+  // Store draft info for monitoring (client may be null)
+  storePendingDraft(draft.getId(), client ? client.client_name : null, payload);
 
   return draft.getId();
 }
@@ -622,7 +627,7 @@ function fetchLatestFathomMeeting() {
  */
 function convertFathomMeetingToPayload(fathomMeeting) {
   // Map Fathom API response to webhook payload format
-  // Fathom API typically returns: id, title, created_at, transcript, summary, action_items, attendees
+  // Fathom API returns: title, created_at, transcript, summary, action_items, calendar_invitees, recorded_by
 
   // Extract transcript text - may be string or object with text property
   let transcriptText = '';
@@ -642,13 +647,30 @@ function convertFathomMeetingToPayload(fathomMeeting) {
     summaryText = fathomMeeting.summary.content;
   }
 
+  // Fathom uses calendar_invitees for participants
+  // Each has: name, email, is_external
+  const participants = fathomMeeting.calendar_invitees || fathomMeeting.attendees || fathomMeeting.participants || [];
+
+  // Include recorded_by as a participant if available
+  if (fathomMeeting.recorded_by && fathomMeeting.recorded_by.email) {
+    const recorderExists = participants.some(p => p.email === fathomMeeting.recorded_by.email);
+    if (!recorderExists) {
+      participants.push({
+        name: fathomMeeting.recorded_by.name,
+        email: fathomMeeting.recorded_by.email,
+        is_external: false
+      });
+    }
+  }
+
   return {
-    meeting_title: fathomMeeting.title || fathomMeeting.name || 'Untitled Meeting',
-    meeting_date: fathomMeeting.created_at || fathomMeeting.started_at || new Date().toISOString(),
+    meeting_title: fathomMeeting.title || fathomMeeting.meeting_title || 'Untitled Meeting',
+    meeting_date: fathomMeeting.created_at || fathomMeeting.scheduled_start_time || new Date().toISOString(),
     transcript: transcriptText,
     summary: summaryText,
     action_items: fathomMeeting.action_items || fathomMeeting.tasks || [],
-    participants: fathomMeeting.attendees || fathomMeeting.participants || []
+    participants: participants,
+    fathom_url: fathomMeeting.url || null
   };
 }
 
