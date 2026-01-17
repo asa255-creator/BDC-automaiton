@@ -130,16 +130,18 @@ function createMeetingSummaryDraft(payload, client) {
   }
   body += `</div>`;
 
-  // Determine recipient - use client contact or user's own email as placeholder
-  let toAddress = '';
-  if (client) {
-    const recipients = parseCommaSeparatedList(client.contact_emails);
-    toAddress = recipients.length > 0 ? recipients[0] : '';
-  }
-  // If no recipient, use current user's email as placeholder (they'll change it)
-  if (!toAddress) {
-    toAddress = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
-  }
+  // Get current user's email to exclude from recipients
+  const myEmail = (Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || '').toLowerCase();
+
+  // Get all participant emails from the meeting, excluding the current user
+  const participantEmails = (payload.participants || [])
+    .map(p => p.email)
+    .filter(email => email && email.toLowerCase() !== myEmail);
+
+  // Use participant emails as recipients (comma-separated if multiple)
+  const toAddress = participantEmails.length > 0
+    ? participantEmails.join(', ')
+    : myEmail; // Fallback to own email if no other participants
 
   // Create draft
   const draft = GmailApp.createDraft(toAddress, subject, '', {
