@@ -133,13 +133,16 @@ function createMeetingSummaryDraft(payload, client) {
   }
   body += `</div>`;
 
-  // Determine recipient
+  // Determine recipient - use client contact or user's own email as placeholder
   let toAddress = '';
   if (client) {
     const recipients = parseCommaSeparatedList(client.contact_emails);
     toAddress = recipients.length > 0 ? recipients[0] : '';
   }
-  // If no client or no contact email, leave To: empty so user must fill it in
+  // If no recipient, use current user's email as placeholder (they'll change it)
+  if (!toAddress) {
+    toAddress = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+  }
 
   // Create draft
   const draft = GmailApp.createDraft(toAddress, subject, '', {
@@ -737,8 +740,8 @@ function loadLatestFathomMeeting() {
       ui.alert(
         'Processing Complete',
         `Meeting processed successfully!\n\n` +
-        `Client: ${result.client || 'Not matched'}\n` +
-        `Draft created: ${result.draftCreated ? 'Yes' : 'No'}`,
+        `Client: ${result.client_name || 'Not matched'}\n` +
+        `Draft created: ${result.draft_id ? 'Yes' : 'No'}`,
         ui.ButtonSet.OK
       );
     }
