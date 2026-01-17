@@ -585,22 +585,33 @@ function fetchLatestFathomMeeting() {
   try {
     const response = UrlFetchApp.fetch(url, options);
     const responseCode = response.getResponseCode();
+    const responseText = response.getContentText();
+
+    Logger.log('Fathom API response code: ' + responseCode);
+    Logger.log('Fathom API response: ' + responseText.substring(0, 1000)); // Log first 1000 chars
 
     if (responseCode !== 200) {
-      const errorText = response.getContentText();
-      throw new Error(`Fathom API error (${responseCode}): ${errorText}`);
+      throw new Error(`Fathom API error (${responseCode}): ${responseText}`);
     }
 
-    const data = JSON.parse(response.getContentText());
+    const data = JSON.parse(responseText);
+
+    // Log the structure to help debug
+    Logger.log('Response keys: ' + Object.keys(data).join(', '));
 
     // Fathom returns meetings array - get the first (latest) one
     if (data.meetings && data.meetings.length > 0) {
       return data.meetings[0];
+    } else if (data.data && data.data.length > 0) {
+      // Some APIs use 'data' wrapper
+      return data.data[0];
     } else if (Array.isArray(data) && data.length > 0) {
       return data[0];
     }
 
-    throw new Error('No meetings found in Fathom');
+    // If we get here, log what we actually received
+    Logger.log('Fathom response structure: ' + JSON.stringify(data).substring(0, 500));
+    throw new Error('No meetings found in Fathom. Check Apps Script logs for API response details.');
 
   } catch (error) {
     Logger.log(`Fathom API error: ${error.message}`);
