@@ -1297,7 +1297,7 @@ function onClientRegistryEdit(e) {
     };
 
     // 1. Create Google Doc
-    const folderId = client.docs_folder_path ? getFolderIdFromPath(client.docs_folder_path) : null;
+    const folderId = client.docs_folder_path ? getFolderIdByPath(client.docs_folder_path) : null;
     const docUrl = createClientDoc(client.client_name, folderId);
     if (docUrl && colIndex.google_doc_url > 0) {
       sheet.getRange(row, colIndex.google_doc_url).setValue(docUrl);
