@@ -43,8 +43,16 @@ This document contains running meeting notes and agendas for {client_name}.
 
 /**
  * Processes all clients in the registry and creates missing resources.
- * This is a backup/catchup function - primary setup happens via checkbox trigger.
- * Runs daily to catch any clients where setup_complete is checked but resources are missing.
+ * Scans for clients with a name but missing Google Doc or Todoist project.
+ * Creates all resources, and only checks setup_complete if ALL succeed.
+ *
+ * Flow:
+ * 1. User adds client row with name (leaves setup_complete unchecked)
+ * 2. This function runs via trigger or "Check for New Clients" menu
+ * 3. Creates Google Doc in specified folder
+ * 4. Creates Todoist project
+ * 5. If ALL succeed with no errors → checks setup_complete checkbox
+ * 6. If any fail → leaves checkbox unchecked so you know to investigate
  */
 function processNewClients() {
   Logger.log('Checking for clients needing onboarding...');
@@ -84,16 +92,18 @@ function processNewClients() {
       continue; // Skip rows without client name
     }
 
-    // Only process if setup_complete is checked but resources are missing
-    if (!setupComplete) {
-      continue; // Setup not requested yet
+    // Skip if already fully set up
+    if (setupComplete && googleDocUrl && todoistProjectId) {
+      continue;
     }
 
-    let updated = false;
+    // Track what we create and any errors
+    let createdDoc = googleDocUrl; // Use existing if present
+    let createdProject = todoistProjectId; // Use existing if present
+    let hasErrors = false;
 
     // Create Google Doc if missing
     if (!googleDocUrl) {
-      // Get folder ID from the selected folder path
       let folderId = null;
       if (docsFolderPath) {
         folderId = getFolderIdByPath(docsFolderPath);
@@ -102,8 +112,11 @@ function processNewClients() {
       const docUrl = createClientDoc(clientName, folderId);
       if (docUrl) {
         sheet.getRange(i + 1, colIndex.google_doc_url + 1).setValue(docUrl);
-        updated = true;
+        createdDoc = docUrl;
         Logger.log(`Created Google Doc for ${clientName} in folder: ${docsFolderPath || 'root'}`);
+      } else {
+        hasErrors = true;
+        Logger.log(`Failed to create Google Doc for ${clientName}`);
       }
     }
 
@@ -112,14 +125,27 @@ function processNewClients() {
       const projectId = createTodoistProject(clientName);
       if (projectId) {
         sheet.getRange(i + 1, colIndex.todoist_project_id + 1).setValue(projectId);
-        updated = true;
+        createdProject = projectId;
         Logger.log(`Created Todoist project for ${clientName}`);
+      } else {
+        hasErrors = true;
+        Logger.log(`Failed to create Todoist project for ${clientName}`);
       }
     }
 
-    if (updated) {
+    // Only check setup_complete if ALL resources were created successfully
+    if (!hasErrors && createdDoc && createdProject && !setupComplete) {
+      sheet.getRange(i + 1, colIndex.setup_complete + 1).setValue(true);
+      Logger.log(`Marked setup_complete for ${clientName}`);
+    }
+
+    if (createdDoc || createdProject) {
       clientsProcessed++;
-      logProcessing('CLIENT_ONBOARD', clientName, `Onboarded client: ${clientName}`, 'success');
+      const status = hasErrors ? 'warning' : 'success';
+      const message = hasErrors
+        ? `Partially onboarded client: ${clientName} (some resources failed)`
+        : `Fully onboarded client: ${clientName}`;
+      logProcessing('CLIENT_ONBOARD', clientName, message, status);
     }
   }
 

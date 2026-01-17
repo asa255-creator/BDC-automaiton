@@ -1232,96 +1232,31 @@ function setupAllTriggers() {
 
 /**
  * Handles edits to the Client_Registry sheet.
- * When setup_complete checkbox is checked, creates all client resources.
+ * When a new client row is added (has client_name), triggers onboarding scan.
+ * The scan creates missing resources and checks setup_complete when ALL succeed.
  *
  * @param {Object} e - The edit event object
  */
 function onClientRegistryEdit(e) {
   try {
     const sheet = e.source.getActiveSheet();
-    const range = e.range;
 
     // Only process edits to Client_Registry sheet
     if (sheet.getName() !== 'Client_Registry') {
       return;
     }
 
-    // Only process edits to the setup_complete column (column 4)
-    const setupCompleteCol = 4;
-    if (range.getColumn() !== setupCompleteCol) {
+    // Skip header row edits
+    if (e.range.getRow() === 1) {
       return;
     }
 
-    // Only process if checkbox was checked (value is TRUE)
-    if (e.value !== 'TRUE' && e.value !== true) {
-      return;
-    }
+    // Run the onboarding scan to pick up any new clients
+    // This will create resources and check the box only if all succeed
+    processNewClients();
 
-    const row = range.getRow();
-
-    // Skip header row
-    if (row === 1) {
-      return;
-    }
-
-    // Get the row data
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const rowData = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
-
-    // Map to object
-    const client = {};
-    headers.forEach((header, index) => {
-      client[header] = rowData[index];
-    });
-
-    // Check if already set up (has google_doc_url)
-    if (client.google_doc_url) {
-      Logger.log(`Client ${client.client_name} already set up, skipping`);
-      return;
-    }
-
-    // Validate required fields
-    if (!client.client_name) {
-      Logger.log('Cannot set up client: client_name is required');
-      // Uncheck the box
-      range.setValue(false);
-      return;
-    }
-
-    Logger.log(`Setting up client: ${client.client_name}`);
-
-    // Get column indices for updating
-    const colIndex = {
-      google_doc_url: headers.indexOf('google_doc_url') + 1,
-      todoist_project_id: headers.indexOf('todoist_project_id') + 1
-    };
-
-    // 1. Create Google Doc
-    const folderId = client.docs_folder_path ? getFolderIdByPath(client.docs_folder_path) : null;
-    const docUrl = createClientDoc(client.client_name, folderId);
-    if (docUrl && colIndex.google_doc_url > 0) {
-      sheet.getRange(row, colIndex.google_doc_url).setValue(docUrl);
-      Logger.log(`Created Google Doc: ${docUrl}`);
-    }
-
-    // 2. Create Todoist project
-    const projectId = createTodoistProject(client.client_name);
-    if (projectId && colIndex.todoist_project_id > 0) {
-      sheet.getRange(row, colIndex.todoist_project_id).setValue(projectId);
-      Logger.log(`Created Todoist project: ${projectId}`);
-    }
-
-    // 3. Create Gmail labels
-    syncClientLabels({
-      client_name: client.client_name,
-      contact_emails: client.contact_emails
-    });
-    Logger.log(`Created Gmail labels for: ${client.client_name}`);
-
-    // 4. Log success
-    logProcessing('CLIENT_SETUP', client.client_name, 'Client setup complete via checkbox', 'success');
-
-    Logger.log(`Client setup complete: ${client.client_name}`);
+    // Also sync labels/filters for any new clients
+    syncLabelsAndFilters();
 
   } catch (error) {
     Logger.log(`Error in onClientRegistryEdit: ${error.message}`);
