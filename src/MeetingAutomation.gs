@@ -91,12 +91,9 @@ function createMeetingSummaryDraft(payload, client) {
   body += `<p>Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}.</p>`;
   body += `<hr/>`;
 
-  // Add summary - convert newlines to HTML for proper formatting
-  body += `<h3>Summary</h3>`;
-  const summaryHtml = (payload.summary || 'No summary provided.')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br/>');
-  body += `<p>${summaryHtml}</p>`;
+  // Add summary - convert markdown to HTML preserving formatting (headings, bold, lists)
+  const summaryHtml = markdownToHtml(payload.summary || 'No summary provided.');
+  body += summaryHtml;
 
   // Add action items
   if (payload.action_items && payload.action_items.length > 0) {
@@ -618,31 +615,77 @@ function fetchLatestFathomMeeting() {
 }
 
 /**
- * Strips markdown links and cleans up formatting from Fathom summaries.
- * Converts [text](url) to just text, and cleans up markdown headings.
+ * Strips hyperlinks from markdown but preserves formatting.
+ * Converts [text](url) to just text, removes standalone URLs.
+ * Keeps headings, bold, italics, lists intact.
  *
  * @param {string} markdown - The markdown text to clean
- * @returns {string} Plain text without links
+ * @returns {string} Markdown without links
  */
 function stripMarkdownLinks(markdown) {
   if (!markdown) return '';
 
   let text = markdown;
 
-  // Remove markdown links: [text](url) -> text
+  // Remove markdown links: [text](url) -> text (keep the text, remove the link)
   text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
-  // Convert markdown headings to plain text with colon
-  // ## Heading -> Heading:
-  text = text.replace(/^#{1,6}\s+(.+)$/gm, '$1:');
-
-  // Remove any remaining URLs that might be standalone
+  // Remove any standalone URLs
   text = text.replace(/https?:\/\/[^\s)]+/g, '');
 
   // Clean up extra whitespace
   text = text.replace(/\n{3,}/g, '\n\n');
 
   return text.trim();
+}
+
+/**
+ * Converts markdown to HTML for email display.
+ * Handles headings, bold, italics, lists, and line breaks.
+ *
+ * @param {string} markdown - The markdown text
+ * @returns {string} HTML formatted text
+ */
+function markdownToHtml(markdown) {
+  if (!markdown) return '';
+
+  let html = markdown;
+
+  // Convert headings: ## Heading -> <h3>Heading</h3>
+  html = html.replace(/^#{1,2}\s+(.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^#{3,6}\s+(.+)$/gm, '<h4>$1</h4>');
+
+  // Convert bold: **text** or __text__ -> <strong>text</strong>
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+  // Convert italics: *text* or _text_ -> <em>text</em>
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+
+  // Convert unordered list items: - item -> <li>item</li>
+  html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
+
+  // Wrap consecutive <li> items in <ul>
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+  // Convert double newlines to paragraph breaks
+  html = html.replace(/\n\n/g, '</p><p>');
+
+  // Convert single newlines to <br>
+  html = html.replace(/\n/g, '<br/>');
+
+  // Wrap in paragraph tags
+  html = '<p>' + html + '</p>';
+
+  // Clean up empty paragraphs
+  html = html.replace(/<p><\/p>/g, '');
+  html = html.replace(/<p>(<h[34]>)/g, '$1');
+  html = html.replace(/(<\/h[34]>)<\/p>/g, '$1');
+  html = html.replace(/<p>(<ul>)/g, '$1');
+  html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+
+  return html;
 }
 
 /**
