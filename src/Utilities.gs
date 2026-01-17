@@ -1594,6 +1594,7 @@ function onOpen() {
       .addItem('Import Existing Clients...', 'showMigrationWizard')
       .addSeparator()
       .addItem('Check for New Clients', 'checkForNewClients')
+      .addItem('Update Folders', 'manualUpdateFolders')
       .addItem('Load Latest Meeting', 'loadLatestFathomMeeting')
       .addSeparator()
       .addItem('Update Settings...', 'showSettingsEditor')
@@ -1610,26 +1611,45 @@ function onOpen() {
 }
 
 /**
+ * Manually updates the Folders sheet with latest Google Drive folders.
+ * Use this after creating new folders to make them available in client setup.
+ */
+function manualUpdateFolders() {
+  const ui = SpreadsheetApp.getUi();
+
+  ui.alert('Updating Folders', 'Scanning Google Drive for folders...\nThis may take a moment.', ui.ButtonSet.OK);
+
+  try {
+    syncDriveFolders();
+    ui.alert('Complete', 'Folder list has been updated. New folders are now available in client setup.', ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('Error', `Failed to update folders: ${e.message}`, ui.ButtonSet.OK);
+    Logger.log(`manualUpdateFolders error: ${e.message}`);
+  }
+}
+
+/**
  * Manually checks for new clients and sets up all their resources.
- * Creates: Gmail labels & filters, Google Doc (meeting notes), Todoist project
+ * Order: 1) Google Doc, 2) Todoist project, 3) Gmail labels & filters (LAST)
+ * Labels are created last to ensure all other resources exist first.
  */
 function checkForNewClients() {
   const ui = SpreadsheetApp.getUi();
 
   ui.alert('Checking for New Clients',
-    'This will set up resources for any new clients:\n' +
-    '• Gmail labels & filters\n' +
-    '• Meeting notes document (Google Doc)\n' +
-    '• Todoist project\n\n' +
+    'This will set up resources for any new clients (with setup_complete checked):\n' +
+    '1. Meeting notes document (Google Doc)\n' +
+    '2. Todoist project\n' +
+    '3. Gmail labels & filters (last)\n\n' +
     'Processing...',
     ui.ButtonSet.OK);
 
   try {
-    // Sync labels and filters for all clients
-    syncLabelsAndFilters();
-
-    // Process new clients (creates Google Docs and Todoist projects)
+    // Process new clients FIRST (creates Google Docs and Todoist projects)
     processNewClients();
+
+    // Sync labels and filters LAST (only for setup_complete clients)
+    syncLabelsAndFilters();
 
     ui.alert('Complete', 'New client check finished. Check the Processing Log for details.', ui.ButtonSet.OK);
   } catch (e) {

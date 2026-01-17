@@ -15,17 +15,23 @@
 /**
  * Synchronizes all Gmail labels and filters based on Client_Registry.
  * Called daily at 6:00 AM by trigger.
+ * Only processes clients where setup_complete is TRUE.
  */
 function syncLabelsAndFilters() {
   Logger.log('Starting label and filter synchronization...');
 
   // Get all clients
-  const clients = getClientRegistry();
+  const allClients = getClientRegistry();
+
+  // Filter to only clients with setup_complete = true
+  const clients = allClients.filter(client => client.setup_complete === true);
 
   if (clients.length === 0) {
-    Logger.log('No clients found in registry');
+    Logger.log('No clients with setup_complete found');
     return;
   }
+
+  Logger.log(`Processing ${clients.length} clients with setup_complete=true (${allClients.length - clients.length} skipped)`);
 
   // Create/update labels for each client
   for (const client of clients) {
@@ -35,7 +41,7 @@ function syncLabelsAndFilters() {
   // Create briefing labels
   createBriefingLabels();
 
-  // Sync filters
+  // Sync filters (only for setup_complete clients)
   syncFilters(clients);
 
   Logger.log('Label and filter synchronization completed.');
