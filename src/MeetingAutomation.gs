@@ -89,17 +89,14 @@ function createMeetingSummaryDraft(payload, client) {
   // Build email body
   let body = `<p>Team ${clientName} -</p>`;
   body += `<p>Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}.</p>`;
-
-  // Add Fathom link if available
-  if (payload.fathom_url) {
-    body += `<p><a href="${payload.fathom_url}">View full meeting recording</a></p>`;
-  }
-
   body += `<hr/>`;
 
-  // Add summary
+  // Add summary - convert newlines to HTML for proper formatting
   body += `<h3>Summary</h3>`;
-  body += `<p>${payload.summary || 'No summary provided.'}</p>`;
+  const summaryHtml = (payload.summary || 'No summary provided.')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br/>');
+  body += `<p>${summaryHtml}</p>`;
 
   // Add action items
   if (payload.action_items && payload.action_items.length > 0) {
@@ -618,6 +615,34 @@ function fetchLatestFathomMeeting() {
 }
 
 /**
+ * Strips markdown links and cleans up formatting from Fathom summaries.
+ * Converts [text](url) to just text, and cleans up markdown headings.
+ *
+ * @param {string} markdown - The markdown text to clean
+ * @returns {string} Plain text without links
+ */
+function stripMarkdownLinks(markdown) {
+  if (!markdown) return '';
+
+  let text = markdown;
+
+  // Remove markdown links: [text](url) -> text
+  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+  // Convert markdown headings to plain text with colon
+  // ## Heading -> Heading:
+  text = text.replace(/^#{1,6}\s+(.+)$/gm, '$1:');
+
+  // Remove any remaining URLs that might be standalone
+  text = text.replace(/https?:\/\/[^\s)]+/g, '');
+
+  // Clean up extra whitespace
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  return text.trim();
+}
+
+/**
  * Converts Fathom API meeting data to webhook payload format.
  * This normalizes the API response to match the expected webhook structure.
  *
@@ -642,13 +667,14 @@ function convertFathomMeetingToPayload(fathomMeeting) {
   }
 
   // Extract summary - Fathom uses default_summary.markdown_formatted
+  // Strip markdown links and formatting for cleaner email
   let summaryText = '';
   if (fathomMeeting.default_summary && fathomMeeting.default_summary.markdown_formatted) {
-    summaryText = fathomMeeting.default_summary.markdown_formatted;
+    summaryText = stripMarkdownLinks(fathomMeeting.default_summary.markdown_formatted);
   } else if (typeof fathomMeeting.summary === 'string') {
-    summaryText = fathomMeeting.summary;
+    summaryText = stripMarkdownLinks(fathomMeeting.summary);
   } else if (fathomMeeting.summary && fathomMeeting.summary.markdown_formatted) {
-    summaryText = fathomMeeting.summary.markdown_formatted;
+    summaryText = stripMarkdownLinks(fathomMeeting.summary.markdown_formatted);
   }
 
   // Fathom uses calendar_invitees for participants
