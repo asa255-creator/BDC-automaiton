@@ -163,6 +163,15 @@
 
       <div class="setting-group">
         <div class="setting-label">
+          Fathom Webhook Secret
+          <span id="fathomWebhookStatus" class="status-badge"></span>
+        </div>
+        <div class="setting-description">Get from Fathom when creating a webhook. Used to verify incoming meeting data is from Fathom.</div>
+        <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret">
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label">
           HubSpot API Key
           <span id="hubspotStatus" class="status-badge"></span>
         </div>
@@ -234,6 +243,7 @@
         .withSuccessHandler(function(settings) {
           // Populate fields
           document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
+          document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
           document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
@@ -244,6 +254,7 @@
 
           // Update status badges
           updateBadge('fathomStatus', settings.FATHOM_API_KEY);
+          updateBadge('fathomWebhookStatus', settings.FATHOM_WEBHOOK_SECRET);
           updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
           updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
           updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
@@ -276,6 +287,7 @@
 
       const settings = {
         FATHOM_API_KEY: document.getElementById('fathom_key').value.trim(),
+        FATHOM_WEBHOOK_SECRET: document.getElementById('fathom_webhook_secret').value.trim(),
         HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
@@ -293,6 +305,7 @@
 
           // Update badges
           updateBadge('fathomStatus', settings.FATHOM_API_KEY);
+          updateBadge('fathomWebhookStatus', settings.FATHOM_WEBHOOK_SECRET);
           updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
           updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
           updateBadge('claudeStatus', settings.CLAUDE_API_KEY);

@@ -56,6 +56,19 @@ function doGet(e) {
  */
 function doPost(e) {
   try {
+    // Verify webhook signature if secret is configured
+    const webhookSecret = PropertiesService.getScriptProperties().getProperty('FATHOM_WEBHOOK_SECRET');
+
+    if (webhookSecret) {
+      const isValid = verifyFathomWebhookSignature(e, webhookSecret);
+      if (!isValid) {
+        logProcessing('WEBHOOK_INVALID_SIGNATURE', null, 'Webhook signature verification failed', 'error');
+        return ContentService
+          .createTextOutput(JSON.stringify({ status: 'error', message: 'Invalid signature' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
     const payload = JSON.parse(e.postData.contents);
 
     // Process the Fathom webhook
@@ -71,6 +84,60 @@ function doPost(e) {
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'error', message: error.message }))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Verifies the Fathom webhook signature.
+ * Fathom signs webhooks using HMAC SHA-256 with the webhook secret.
+ *
+ * @param {Object} e - The event object containing POST data and headers
+ * @param {string} secret - The webhook secret
+ * @returns {boolean} True if signature is valid
+ */
+function verifyFathomWebhookSignature(e, secret) {
+  try {
+    // Get signature from header - Fathom uses 'webhook-signature' or 'x-fathom-signature'
+    const signatureHeader = e.parameter['webhook-signature'] ||
+                           e.parameter['x-fathom-signature'] ||
+                           (e.headers && (e.headers['webhook-signature'] || e.headers['x-fathom-signature']));
+
+    if (!signatureHeader) {
+      Logger.log('No webhook signature header found');
+      return false;
+    }
+
+    // Get raw body
+    const rawBody = e.postData.contents;
+
+    // Fathom signature format: "v1,<base64-signature> <base64-signature2>..."
+    // Extract signatures after the version prefix
+    const parts = signatureHeader.split(',');
+    if (parts.length < 2) {
+      Logger.log('Invalid signature header format');
+      return false;
+    }
+
+    const signatures = parts[1].trim().split(' ');
+
+    // Compute expected signature using HMAC SHA-256
+    const expectedSignature = Utilities.base64Encode(
+      Utilities.computeHmacSha256Signature(rawBody, secret)
+    );
+
+    // Check if any of the provided signatures match
+    for (const sig of signatures) {
+      if (sig === expectedSignature) {
+        return true;
+      }
+    }
+
+    Logger.log('Webhook signature mismatch');
+    return false;
+
+  } catch (error) {
+    Logger.log('Webhook verification error: ' + error.message);
+    return false;
   }
 }
 
