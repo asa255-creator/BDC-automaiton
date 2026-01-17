@@ -569,14 +569,14 @@ function fetchLatestFathomMeeting() {
     throw new Error('Fathom API key not configured. Add it in Settings.');
   }
 
-  // Fathom API endpoint for listing calls/meetings
-  // Note: Adjust this endpoint based on Fathom's actual API documentation
-  const url = 'https://api.fathom.video/v1/calls?limit=1&sort=-created_at';
+  // Fathom API endpoint - docs at https://developers.fathom.ai
+  // include_transcript and include_summary require first-party API keys
+  const url = 'https://api.fathom.ai/external/v1/meetings?include_transcript=true&include_summary=true';
 
   const options = {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      'X-Api-Key': apiKey,
       'Content-Type': 'application/json'
     },
     muteHttpExceptions: true
@@ -593,12 +593,9 @@ function fetchLatestFathomMeeting() {
 
     const data = JSON.parse(response.getContentText());
 
-    // Return the first (latest) meeting
-    if (data.calls && data.calls.length > 0) {
-      return data.calls[0];
-    } else if (data.data && data.data.length > 0) {
-      // Alternative response structure
-      return data.data[0];
+    // Fathom returns meetings array - get the first (latest) one
+    if (data.meetings && data.meetings.length > 0) {
+      return data.meetings[0];
     } else if (Array.isArray(data) && data.length > 0) {
       return data[0];
     }
@@ -620,14 +617,33 @@ function fetchLatestFathomMeeting() {
  */
 function convertFathomMeetingToPayload(fathomMeeting) {
   // Map Fathom API response to webhook payload format
-  // Adjust field names based on Fathom's actual API response structure
+  // Fathom API typically returns: id, title, created_at, transcript, summary, action_items, attendees
+
+  // Extract transcript text - may be string or object with text property
+  let transcriptText = '';
+  if (typeof fathomMeeting.transcript === 'string') {
+    transcriptText = fathomMeeting.transcript;
+  } else if (fathomMeeting.transcript && fathomMeeting.transcript.text) {
+    transcriptText = fathomMeeting.transcript.text;
+  }
+
+  // Extract summary text - may be string or object
+  let summaryText = '';
+  if (typeof fathomMeeting.summary === 'string') {
+    summaryText = fathomMeeting.summary;
+  } else if (fathomMeeting.summary && fathomMeeting.summary.text) {
+    summaryText = fathomMeeting.summary.text;
+  } else if (fathomMeeting.summary && fathomMeeting.summary.content) {
+    summaryText = fathomMeeting.summary.content;
+  }
+
   return {
-    meeting_title: fathomMeeting.title || fathomMeeting.name || fathomMeeting.meeting_title || 'Untitled Meeting',
-    meeting_date: fathomMeeting.created_at || fathomMeeting.date || fathomMeeting.meeting_date || new Date().toISOString(),
-    transcript: fathomMeeting.transcript || fathomMeeting.transcription || '',
-    summary: fathomMeeting.summary || fathomMeeting.ai_summary || '',
+    meeting_title: fathomMeeting.title || fathomMeeting.name || 'Untitled Meeting',
+    meeting_date: fathomMeeting.created_at || fathomMeeting.started_at || new Date().toISOString(),
+    transcript: transcriptText,
+    summary: summaryText,
     action_items: fathomMeeting.action_items || fathomMeeting.tasks || [],
-    participants: fathomMeeting.participants || fathomMeeting.attendees || []
+    participants: fathomMeeting.attendees || fathomMeeting.participants || []
   };
 }
 
