@@ -10,14 +10,46 @@
       font-family: 'Google Sans', Arial, sans-serif;
       font-size: 14px;
       margin: 0;
-      padding: 20px;
+      padding: 0;
       background: #f8f9fa;
     }
-    h2 {
-      color: #202124;
-      margin-top: 0;
-      font-size: 18px;
+
+    /* Tab Navigation */
+    .tab-nav {
+      display: flex;
+      background: white;
+      border-bottom: 1px solid #e8eaed;
+      padding: 0 16px;
     }
+    .tab-btn {
+      padding: 14px 20px;
+      border: none;
+      background: none;
+      font-size: 14px;
+      font-weight: 500;
+      color: #5f6368;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .tab-btn:hover {
+      color: #1a73e8;
+    }
+    .tab-btn.active {
+      color: #1a73e8;
+      border-bottom-color: #1a73e8;
+    }
+
+    /* Tab Content */
+    .tab-content {
+      display: none;
+      padding: 20px;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
     .settings-container {
       background: white;
       border-radius: 8px;
@@ -101,8 +133,8 @@
       display: flex;
       justify-content: flex-end;
       gap: 8px;
-      margin-top: 20px;
-      padding-top: 16px;
+      padding: 16px 20px;
+      background: white;
       border-top: 1px solid #e8eaed;
     }
     .btn {
@@ -139,7 +171,7 @@
     .status-message {
       padding: 12px;
       border-radius: 4px;
-      margin-bottom: 16px;
+      margin: 16px 20px 0;
       display: none;
     }
     .status-message.success {
@@ -158,7 +190,11 @@
       color: #5f6368;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin-bottom: 12px;
+      margin-bottom: 16px;
+      margin-top: 8px;
+    }
+    .section-title:first-child {
+      margin-top: 0;
     }
   </style>
 </head>
@@ -168,109 +204,155 @@
   <div id="content" style="display: none;">
     <div id="statusMessage" class="status-message"></div>
 
-    <div class="settings-container">
-      <div class="section-title">API Integrations</div>
+    <!-- Tab Navigation -->
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="showTab('general')">General</button>
+      <button class="tab-btn" onclick="showTab('email')">Email Templates</button>
+      <button class="tab-btn" onclick="showTab('integrations')">Integrations</button>
+      <button class="tab-btn" onclick="showTab('schedule')">Schedule</button>
+    </div>
 
-      <div class="setting-group">
-        <div class="setting-label">
-          Fathom API Key
-          <span id="fathomStatus" class="status-badge"></span>
+    <!-- General Tab -->
+    <div id="tab-general" class="tab-content active">
+      <div class="settings-container">
+        <div class="section-title">User Settings</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Your Name</div>
+          <div class="setting-description">Used in email signatures (e.g., "TC", "John")</div>
+          <input type="text" id="user_name" placeholder="Enter your name">
         </div>
-        <div class="setting-description">Get from Fathom Settings > Integrations > API. Used for "Load Latest Meeting" testing.</div>
-        <input type="password" id="fathom_key" placeholder="Enter Fathom API key">
-      </div>
 
-      <div class="setting-group">
-        <div class="setting-label">
-          Fathom Webhook Secret
-          <span id="fathomWebhookStatus" class="status-badge"></span>
+        <div class="section-title">Document Settings</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Document Name Template</div>
+          <div class="setting-description">Template for client meeting notes Google Docs</div>
+          <input type="text" id="doc_template" placeholder="Client Notes - {client_name}">
+          <div class="placeholder-hint">Placeholders: {client_name}</div>
         </div>
-        <div class="setting-description">Get from Fathom when creating a webhook. Used to verify incoming meeting data is from Fathom.</div>
-        <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret">
       </div>
+    </div>
 
-      <div class="setting-group">
-        <div class="setting-label">
-          HubSpot API Key
-          <span id="hubspotStatus" class="status-badge"></span>
+    <!-- Email Templates Tab -->
+    <div id="tab-email" class="tab-content">
+      <div class="settings-container">
+        <div class="section-title">Meeting Summary Emails</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Subject Line</div>
+          <div class="setting-description">Subject format for meeting summary emails sent after Fathom meetings</div>
+          <input type="text" id="meeting_subject_template" placeholder="Team {client_name} - Meeting notes from &quot;{meeting_title}&quot; {date}">
+          <div class="placeholder-hint">Placeholders: {client_name}, {meeting_title}, {date}</div>
         </div>
-        <div class="setting-description">Get from HubSpot Settings > Integrations > Private Apps. For future CRM integration.</div>
-        <input type="password" id="hubspot_key" placeholder="Enter HubSpot API key">
-      </div>
 
-      <div class="setting-group">
-        <div class="setting-label">
-          Todoist API Token
-          <span id="todoistStatus" class="status-badge"></span>
-        </div>
-        <div class="setting-description">Get from Todoist Settings > Integrations > Developer</div>
-        <input type="password" id="todoist_token" placeholder="Enter Todoist API token">
-      </div>
-
-      <div class="setting-group">
-        <div class="setting-label">
-          Claude API Key
-          <span id="claudeStatus" class="status-badge"></span>
-        </div>
-        <div class="setting-description">Get from console.anthropic.com</div>
-        <input type="password" id="claude_key" placeholder="Enter Claude API key">
-      </div>
-
-      <div class="section-title" style="margin-top: 24px;">Email Settings</div>
-
-      <div class="setting-group">
-        <div class="setting-label">Your Name</div>
-        <div class="setting-description">Used in email signatures (e.g., "TC", "John")</div>
-        <input type="text" id="user_name" placeholder="Enter your name">
-      </div>
-
-      <div class="section-title" style="margin-top: 24px;">Email Automation</div>
-
-      <div class="setting-group">
-        <div class="setting-label">Meeting Summary Subject</div>
-        <div class="setting-description">Subject line format for meeting summary emails. Changing this will update Gmail filters.</div>
-        <input type="text" id="meeting_subject_template" placeholder="Team {client_name} - Meeting notes from &quot;{meeting_title}&quot; {date}">
-        <div class="placeholder-hint">Placeholders: {client_name}, {meeting_title}, {date}</div>
-      </div>
-
-      <div class="setting-group">
-        <div class="setting-label">Meeting Summary Signature</div>
-        <div class="setting-description">Closing text for meeting summary emails</div>
-        <textarea id="meeting_signature" placeholder="Did I miss anything?
+        <div class="setting-group">
+          <div class="setting-label">Signature</div>
+          <div class="setting-description">Closing text for meeting summary emails</div>
+          <textarea id="meeting_signature" placeholder="Did I miss anything?
 
 Thanks,
 {user_name}"></textarea>
-        <div class="placeholder-hint">Placeholders: {user_name}</div>
-      </div>
+          <div class="placeholder-hint">Placeholders: {user_name}</div>
+        </div>
 
-      <div class="setting-group">
-        <div class="setting-label">Gmail Filters</div>
-        <div class="setting-description">Filters auto-update when you change the subject template. Click below to manually refresh all meeting summary filters.</div>
-        <button class="btn btn-secondary" id="updateFiltersBtn" onclick="updateFilters()" style="margin-top: 8px;">Update Filters Now</button>
-        <div id="filterStatus" class="setting-description" style="margin-top: 8px; color: #666;"></div>
-      </div>
+        <div class="section-title">Meeting Agenda Emails</div>
 
-      <div class="section-title" style="margin-top: 24px;">Schedule Settings</div>
+        <div class="setting-group">
+          <div class="setting-label">Subject Line</div>
+          <div class="setting-description">Subject format for pre-meeting agenda emails sent to yourself</div>
+          <input type="text" id="agenda_subject_template" placeholder="Agenda: {client_name} - {meeting_title} ({date})">
+          <div class="placeholder-hint">Placeholders: {client_name}, {meeting_title}, {date}</div>
+        </div>
 
-      <div class="setting-group">
-        <div class="setting-label">Business Hours</div>
-        <div class="setting-description">Agendas are only generated during these hours</div>
-        <div class="input-row">
-          <div class="input-col">
-            <input type="number" id="hours_start" min="0" max="23" placeholder="Start (e.g., 8)">
-          </div>
-          <div class="input-col">
-            <input type="number" id="hours_end" min="1" max="24" placeholder="End (e.g., 18)">
-          </div>
+        <div class="section-title">Gmail Filters</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Update Filters</div>
+          <div class="setting-description">Filters auto-update when you save changes. Click below to manually refresh all email filters.</div>
+          <button class="btn btn-secondary" id="updateFiltersBtn" onclick="updateFilters()" style="margin-top: 8px;">Update Filters Now</button>
+          <div id="filterStatus" class="setting-description" style="margin-top: 8px; color: #666;"></div>
         </div>
       </div>
+    </div>
 
-      <div class="section-title" style="margin-top: 24px;">Document Settings</div>
+    <!-- Integrations Tab -->
+    <div id="tab-integrations" class="tab-content">
+      <div class="settings-container">
+        <div class="section-title">Fathom (Meeting Recording)</div>
 
-      <div class="setting-group">
-        <div class="setting-label">Document Name Template</div>
-        <div class="setting-description">Use {client_name} as placeholder</div>
-        <input type="text" id="doc_template" placeholder="Client Notes - {client_name}">
+        <div class="setting-group">
+          <div class="setting-label">
+            API Key
+            <span id="fathomStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from Fathom Settings > Integrations > API. Used for "Load Latest Meeting" testing.</div>
+          <input type="password" id="fathom_key" placeholder="Enter Fathom API key">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            Webhook Secret
+            <span id="fathomWebhookStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from Fathom when creating a webhook. Used to verify incoming meeting data.</div>
+          <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret">
+        </div>
+
+        <div class="section-title">Todoist (Task Management)</div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            API Token
+            <span id="todoistStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from Todoist Settings > Integrations > Developer</div>
+          <input type="password" id="todoist_token" placeholder="Enter Todoist API token">
+        </div>
+
+        <div class="section-title">Claude AI (Content Generation)</div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            API Key
+            <span id="claudeStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from console.anthropic.com. Used for AI-generated content.</div>
+          <input type="password" id="claude_key" placeholder="Enter Claude API key">
+        </div>
+
+        <div class="section-title">HubSpot (CRM - Future)</div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            API Key
+            <span id="hubspotStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from HubSpot Settings > Integrations > Private Apps. For future CRM integration.</div>
+          <input type="password" id="hubspot_key" placeholder="Enter HubSpot API key">
+        </div>
+      </div>
+    </div>
+
+    <!-- Schedule Tab -->
+    <div id="tab-schedule" class="tab-content">
+      <div class="settings-container">
+        <div class="section-title">Business Hours</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Active Hours</div>
+          <div class="setting-description">Agendas are only generated during these hours (24-hour format)</div>
+          <div class="input-row">
+            <div class="input-col">
+              <div class="setting-description">Start Hour</div>
+              <input type="number" id="hours_start" min="0" max="23" placeholder="8">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">End Hour</div>
+              <input type="number" id="hours_end" min="1" max="24" placeholder="18">
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -283,21 +365,42 @@ Thanks,
   <script>
     document.addEventListener('DOMContentLoaded', loadSettings);
 
+    function showTab(tabName) {
+      // Hide all tabs
+      document.querySelectorAll('.tab-content').forEach(function(tab) {
+        tab.classList.remove('active');
+      });
+      document.querySelectorAll('.tab-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+      });
+
+      // Show selected tab
+      document.getElementById('tab-' + tabName).classList.add('active');
+      event.target.classList.add('active');
+    }
+
     function loadSettings() {
       google.script.run
         .withSuccessHandler(function(settings) {
-          // Populate fields
+          // General tab
+          document.getElementById('user_name').value = settings.USER_NAME || '';
+          document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
+
+          // Email Templates tab
+          document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+          document.getElementById('meeting_signature').value = settings.MEETING_SIGNATURE || 'Did I miss anything?\n\nThanks,\n{user_name}';
+          document.getElementById('agenda_subject_template').value = settings.AGENDA_SUBJECT_TEMPLATE || 'Agenda: {client_name} - {meeting_title} ({date})';
+
+          // Integrations tab
           document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
           document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
           document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
-          document.getElementById('user_name').value = settings.USER_NAME || '';
-          document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
-          document.getElementById('meeting_signature').value = settings.MEETING_SIGNATURE || 'Did I miss anything?\n\nThanks,\n{user_name}';
+
+          // Schedule tab
           document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
           document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
-          document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
 
           // Update status badges
           updateBadge('fathomStatus', settings.FATHOM_API_KEY);
@@ -333,17 +436,22 @@ Thanks,
       saveBtn.textContent = 'Saving...';
 
       const settings = {
+        // General
+        USER_NAME: document.getElementById('user_name').value.trim(),
+        DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
+        // Email Templates
+        MEETING_SUBJECT_TEMPLATE: document.getElementById('meeting_subject_template').value.trim(),
+        MEETING_SIGNATURE: document.getElementById('meeting_signature').value,
+        AGENDA_SUBJECT_TEMPLATE: document.getElementById('agenda_subject_template').value.trim(),
+        // Integrations
         FATHOM_API_KEY: document.getElementById('fathom_key').value.trim(),
         FATHOM_WEBHOOK_SECRET: document.getElementById('fathom_webhook_secret').value.trim(),
         HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
-        USER_NAME: document.getElementById('user_name').value.trim(),
-        MEETING_SUBJECT_TEMPLATE: document.getElementById('meeting_subject_template').value.trim(),
-        MEETING_SIGNATURE: document.getElementById('meeting_signature').value,
+        // Schedule
         BUSINESS_HOURS_START: document.getElementById('hours_start').value.trim(),
-        BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
-        DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim()
+        BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim()
       };
 
       google.script.run

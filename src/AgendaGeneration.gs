@@ -482,8 +482,17 @@ function getEventDurationMinutes(event) {
  */
 function sendAgendaEmail(event, client, agendaContent) {
   const userEmail = getCurrentUserEmail();
-  const subject = `Agenda: ${event.getTitle()}`;
   const eventDateTime = formatDateTime(event.getStartTime());
+  const eventDate = formatDateShort(event.getStartTime());
+
+  // Get customizable subject template from settings
+  const props = PropertiesService.getScriptProperties();
+  const subjectTemplate = props.getProperty('AGENDA_SUBJECT_TEMPLATE')
+    || 'Agenda: {client_name} - {meeting_title} ({date})';
+  const subject = subjectTemplate
+    .replace('{client_name}', client.client_name)
+    .replace('{meeting_title}', event.getTitle())
+    .replace('{date}', eventDate);
 
   // Get email template from sheet
   const template = getPrompt('AGENDA_EMAIL_TEMPLATE');

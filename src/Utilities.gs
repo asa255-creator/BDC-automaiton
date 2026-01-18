@@ -1708,6 +1708,7 @@ function getSettingsForEditor() {
     USER_NAME: props.getProperty('USER_NAME') || '',
     MEETING_SUBJECT_TEMPLATE: props.getProperty('MEETING_SUBJECT_TEMPLATE') || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}',
     MEETING_SIGNATURE: props.getProperty('MEETING_SIGNATURE') || 'Did I miss anything?\n\nThanks,\n{user_name}',
+    AGENDA_SUBJECT_TEMPLATE: props.getProperty('AGENDA_SUBJECT_TEMPLATE') || 'Agenda: {client_name} - {meeting_title} ({date})',
     BUSINESS_HOURS_START: props.getProperty('BUSINESS_HOURS_START') || '8',
     BUSINESS_HOURS_END: props.getProperty('BUSINESS_HOURS_END') || '18',
     DOC_NAME_TEMPLATE: props.getProperty('DOC_NAME_TEMPLATE') || 'Client Notes - {client_name}'
@@ -1774,7 +1775,16 @@ function saveSettingsFromEditor(settings) {
     props.setProperty('MEETING_SIGNATURE', settings.MEETING_SIGNATURE);
   }
 
-  Logger.log('Settings updated via editor');
+  // Track if agenda template changed (for filter update)
+  const oldAgendaTemplate = props.getProperty('AGENDA_SUBJECT_TEMPLATE');
+  const agendaTemplateChanged = settings.AGENDA_SUBJECT_TEMPLATE &&
+    settings.AGENDA_SUBJECT_TEMPLATE !== oldAgendaTemplate;
+
+  if (settings.AGENDA_SUBJECT_TEMPLATE) {
+    props.setProperty('AGENDA_SUBJECT_TEMPLATE', settings.AGENDA_SUBJECT_TEMPLATE);
+  }
+
+  logProcessing('SETTINGS', null, 'Settings updated via editor', 'info');
 
   // If subject template changed, update filters to match new pattern
   if (subjectTemplateChanged) {

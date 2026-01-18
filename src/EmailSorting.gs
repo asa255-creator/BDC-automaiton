@@ -97,8 +97,9 @@ function syncClientLabels(client) {
     }
   }
 
-  // Filter for self-sent agendas (these are sent to yourself)
-  const agendaCriteria = `from:me to:me subject:"Agenda:"`;
+  // Filter for self-sent agendas (uses client name in subject)
+  const agendaPattern = getAgendaFilterPatternForClient(client.client_name);
+  const agendaCriteria = `from:me to:me subject:"${agendaPattern}"`;
   createGmailApiFilter(agendaCriteria, `${baseLabelName}/Meeting Agendas`);
 
   Logger.log(`Synced filters for client: ${client.client_name}`);
@@ -230,8 +231,10 @@ function createClientFilters(client) {
     action: `Apply label: Client: ${client.client_name}/Meeting Summaries`
   });
 
+  // Use client-specific agenda pattern (includes client name)
+  const agendaPattern = getAgendaFilterPatternForClient(client.client_name);
   logFilterSpec('AGENDA_FILTER', client.client_name, {
-    criteria: `from:me to:me subject:'Agenda: ${client.client_name}'`,
+    criteria: `from:me to:me subject:'${agendaPattern}'`,
     action: `Apply label: Client: ${client.client_name}/Meeting Agendas`
   });
 }
@@ -527,6 +530,45 @@ function getSubjectFilterPatternForClient(clientName) {
     suffix = suffix.substring(0, nextPlaceholder);
   }
   // Also cut at common separators to keep pattern short
+  const separatorMatch = suffix.match(/^(\s*[-–—:]\s*)/);
+  suffix = separatorMatch ? '' : suffix.split(/[-–—]/)[0];
+
+  const pattern = (prefix + clientName + suffix).trim();
+  return pattern;
+}
+
+/**
+ * Extracts the agenda subject pattern for a specific client.
+ * Used to create Gmail filters that match agenda emails for that client.
+ *
+ * For template: "Agenda: {client_name} - {meeting_title} ({date})"
+ * With client "ACME Corp", returns: "Agenda: ACME Corp"
+ *
+ * @param {string} clientName - The client name to insert
+ * @returns {string} The subject pattern for this client's agendas
+ */
+function getAgendaFilterPatternForClient(clientName) {
+  const props = PropertiesService.getScriptProperties();
+  const template = props.getProperty('AGENDA_SUBJECT_TEMPLATE')
+    || 'Agenda: {client_name} - {meeting_title} ({date})';
+
+  // Split template at {client_name}
+  const parts = template.split('{client_name}');
+  if (parts.length < 2) {
+    // No {client_name} placeholder - just use "Agenda:" prefix
+    return 'Agenda:';
+  }
+
+  // Get prefix before {client_name} (e.g., "Agenda: ")
+  const prefix = parts[0];
+
+  // Get text after {client_name} up to next placeholder
+  let suffix = parts[1];
+  const nextPlaceholder = suffix.search(/\{[^}]+\}/);
+  if (nextPlaceholder > 0) {
+    suffix = suffix.substring(0, nextPlaceholder);
+  }
+  // Cut at common separators
   const separatorMatch = suffix.match(/^(\s*[-–—:]\s*)/);
   suffix = separatorMatch ? '' : suffix.split(/[-–—]/)[0];
 
