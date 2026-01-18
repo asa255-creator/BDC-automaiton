@@ -218,66 +218,102 @@ function getPendingDraftsList() {
  * Called by the 10-minute trigger.
  */
 function monitorSentMeetingSummaries() {
-  Logger.log('Checking for sent meeting summaries...');
+  logProcessing('SENT_MONITOR', null, 'Checking for sent meeting summaries...', 'info');
 
-  // Search for recently sent meeting summary emails
-  const query = 'from:me subject:"Meeting Summary" newer_than:1h';
+  // Get the subject pattern from settings to build search query
+  const props = PropertiesService.getScriptProperties();
+  const subjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE')
+    || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+
+  // Extract a searchable pattern (e.g., "Meeting notes from" or "Team")
+  // Remove placeholders and find static text
+  let searchPattern = subjectTemplate
+    .replace(/{client_name}/g, '')
+    .replace(/{meeting_title}/g, '')
+    .replace(/{date}/g, '')
+    .replace(/"/g, '')
+    .trim();
+
+  // Find the longest meaningful word sequence
+  const parts = searchPattern.split(/\s+-\s+/).filter(p => p.trim().length > 3);
+  if (parts.length > 0) {
+    searchPattern = parts.reduce((a, b) => a.length > b.length ? a : b).trim();
+  } else {
+    searchPattern = 'Meeting notes';
+  }
+
+  // Search for recently sent emails matching the pattern
+  const query = `from:me subject:"${searchPattern}" newer_than:1h`;
+  logProcessing('SENT_MONITOR', null, `Search query: ${query}`, 'info');
+
   const threads = GmailApp.search(query, 0, 20);
 
+  let processedCount = 0;
   for (const thread of threads) {
     const messages = thread.getMessages();
-    for (const message of messages) {
-      // Only process sent messages
-      if (message.getFrom().indexOf(getCurrentUserEmail()) === -1) {
-        continue;
-      }
 
-      // Check if already processed
-      if (isMessageProcessed(message.getId())) {
-        continue;
-      }
+    // Only process the first message in thread (not replies)
+    if (messages.length === 0) continue;
 
-      // Process the sent summary
-      processSentMeetingSummary(message);
+    const firstMessage = messages[0];
+
+    // Verify it's from me
+    const myEmail = getCurrentUserEmail();
+    if (!firstMessage.getFrom().toLowerCase().includes(myEmail.toLowerCase())) {
+      continue;
+    }
+
+    // Check if already processed
+    if (isMessageProcessed(firstMessage.getId())) {
+      continue;
+    }
+
+    // Process the sent summary
+    try {
+      processSentMeetingSummary(firstMessage);
+      processedCount++;
+    } catch (error) {
+      logProcessing('SENT_MONITOR', null, `Error processing: ${error.message}`, 'error');
     }
   }
+
+  logProcessing('SENT_MONITOR', null, `Processed ${processedCount} sent summaries`, 'success');
 }
 
 /**
  * Processes a sent meeting summary email.
+ * Extracts action items from the email body (not metadata) since user may have edited.
  *
  * @param {GmailMessage} message - The sent Gmail message
  */
 function processSentMeetingSummary(message) {
-  Logger.log(`Processing sent meeting summary: ${message.getSubject()}`);
+  const subject = message.getSubject();
+  logProcessing('SUMMARY_PROCESS', null, `Processing: ${subject}`, 'info');
 
-  // Extract metadata from email body
-  const body = message.getBody();
-  const clientId = extractMetadata(body, 'CLIENT_ID');
-  const actionItemsJson = extractMetadata(body, 'ACTION_ITEMS');
+  // Identify client from recipients (TO field)
+  const toAddresses = message.getTo();
+  const client = identifyClientFromEmailAddresses(toAddresses);
 
-  if (!clientId) {
-    Logger.log('No client ID found in email metadata');
-    return;
-  }
-
-  const client = getClientById(clientId);
   if (!client) {
-    Logger.log(`Client not found: ${clientId}`);
+    logProcessing('SUMMARY_PROCESS', null, `No client match for recipients: ${toAddresses}`, 'warning');
+    // Still mark as processed to avoid re-processing
+    markMessageProcessed(message.getId());
     return;
   }
 
-  // Parse action items
-  let actionItems = [];
-  try {
-    actionItems = actionItemsJson ? JSON.parse(actionItemsJson) : [];
-  } catch (e) {
-    Logger.log('Failed to parse action items JSON');
-  }
+  logProcessing('SUMMARY_PROCESS', client.client_name, 'Client identified from recipients', 'info');
 
-  // Create Todoist tasks
+  // Extract action items from the email body using AI
+  // This is critical because user may have edited action items before sending
+  const emailBody = message.getPlainBody();
+  const actionItems = extractActionItemsWithAI(emailBody, client);
+
+  // Create Todoist tasks if we have action items and a project
   if (actionItems.length > 0 && client.todoist_project_id) {
-    createTodoistTasks(actionItems, client);
+    logProcessing('SUMMARY_PROCESS', client.client_name, `Found ${actionItems.length} action items`, 'info');
+    createTodoistTasksWithAssignees(actionItems, client);
+  } else if (actionItems.length === 0) {
+    logProcessing('SUMMARY_PROCESS', client.client_name, 'No action items found in email', 'info');
   }
 
   // Append meeting notes to client's Google Doc
@@ -291,12 +327,320 @@ function processSentMeetingSummary(message) {
   // Mark as processed
   markMessageProcessed(message.getId());
 
-  logProcessing(
-    'SUMMARY_SENT',
-    clientId,
-    `Processed sent summary: ${message.getSubject()}`,
-    'success'
-  );
+  logProcessing('SUMMARY_PROCESS', client.client_name, `Completed processing: ${subject}`, 'success');
+}
+
+/**
+ * Identifies a client from a comma-separated list of email addresses.
+ *
+ * @param {string} emailAddresses - Comma-separated email addresses
+ * @returns {Object|null} The matched client or null
+ */
+function identifyClientFromEmailAddresses(emailAddresses) {
+  if (!emailAddresses) return null;
+
+  // Parse email addresses (can be "Name <email>" format)
+  const emails = emailAddresses.split(',').map(addr => {
+    const match = addr.match(/<([^>]+)>/);
+    return match ? match[1].trim().toLowerCase() : addr.trim().toLowerCase();
+  }).filter(e => e);
+
+  // Try to match against client registry
+  const clients = getClientRegistry();
+
+  for (const client of clients) {
+    // Check contact emails
+    const contactEmails = parseCommaSeparatedList(client.contact_emails)
+      .map(e => e.toLowerCase());
+
+    for (const email of emails) {
+      if (contactEmails.includes(email)) {
+        return client;
+      }
+    }
+
+    // Check email domains
+    const domains = parseCommaSeparatedList(client.email_domains)
+      .map(d => d.toLowerCase());
+
+    for (const email of emails) {
+      const emailDomain = email.split('@')[1];
+      if (emailDomain && domains.includes(emailDomain)) {
+        return client;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extracts action items from email body using Claude AI.
+ * This parses the actual sent email content, respecting any edits the user made.
+ *
+ * @param {string} emailBody - The plain text email body
+ * @param {Object} client - The client object
+ * @returns {Object[]} Array of structured action items
+ */
+function extractActionItemsWithAI(emailBody, client) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+
+  if (!apiKey) {
+    logProcessing('AI_EXTRACT', client.client_name, 'Claude API key not configured - skipping AI extraction', 'warning');
+    // Fallback: try to extract manually
+    return extractActionItemsManually(emailBody);
+  }
+
+  // Fetch project collaborators for assignee matching
+  let collaborators = [];
+  if (client.todoist_project_id) {
+    collaborators = fetchProjectCollaborators(client.todoist_project_id);
+    logProcessing('AI_EXTRACT', client.client_name, `Found ${collaborators.length} project collaborators`, 'info');
+  }
+
+  // Build collaborators JSON for the prompt
+  const collaboratorsJson = JSON.stringify(collaborators.map(c => ({
+    id: c.id,
+    name: c.full_name || c.name,
+    email: c.email
+  })));
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const prompt = `You are a specialized data processing tool designed to extract action items from meeting summary emails.
+
+Here is the meeting summary email:
+---
+${emailBody}
+---
+
+Here are the project collaborators who can be assigned tasks:
+${collaboratorsJson}
+
+Today's date is: ${today}
+
+### Your Task:
+1. Find all action items mentioned in the email (usually in a numbered list or "Action Items" section)
+2. For each action item, extract:
+   - title: A concise title (max 100 chars)
+   - description: The full action item text
+   - assignee_id: Match the assignee name to a collaborator ID, or null if no match
+   - assignee_name: The name mentioned in the action item, or null
+   - due_date: In YYYY-MM-DD format. Use context clues like "next Monday", "by Friday". If no date specified, set to one week from today.
+
+### Output Format:
+Return ONLY valid JSON (no markdown, no explanation):
+{
+  "tasks": [
+    {
+      "title": "...",
+      "description": "...",
+      "assignee_id": "...",
+      "assignee_name": "...",
+      "due_date": "YYYY-MM-DD"
+    }
+  ]
+}
+
+If no action items found, return: {"tasks": []}`;
+
+  try {
+    const url = 'https://api.anthropic.com/v1/messages';
+
+    const payload = {
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: prompt }]
+    };
+
+    const options = {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      logProcessing('AI_EXTRACT', client.client_name, `Claude API error: ${responseCode}`, 'error');
+      return extractActionItemsManually(emailBody);
+    }
+
+    const result = JSON.parse(response.getContentText());
+
+    if (result.content && result.content.length > 0) {
+      const aiResponse = result.content[0].text;
+
+      // Parse the JSON response
+      try {
+        const parsed = JSON.parse(aiResponse);
+        logProcessing('AI_EXTRACT', client.client_name, `AI extracted ${parsed.tasks?.length || 0} action items`, 'success');
+        return parsed.tasks || [];
+      } catch (parseError) {
+        logProcessing('AI_EXTRACT', client.client_name, `Failed to parse AI response: ${parseError.message}`, 'error');
+        return extractActionItemsManually(emailBody);
+      }
+    }
+
+    return [];
+
+  } catch (error) {
+    logProcessing('AI_EXTRACT', client.client_name, `AI extraction failed: ${error.message}`, 'error');
+    return extractActionItemsManually(emailBody);
+  }
+}
+
+/**
+ * Fallback: Extract action items manually from email body without AI.
+ *
+ * @param {string} emailBody - The plain text email body
+ * @returns {Object[]} Array of action items
+ */
+function extractActionItemsManually(emailBody) {
+  const actionItems = [];
+
+  // Look for numbered items after "Action Items" header
+  const actionSection = emailBody.match(/Action Items[\s\S]*?(?=\n\n|\n---|\n#|$)/i);
+  if (actionSection) {
+    const items = actionSection[0].match(/\d+\.\s+(.+)/g);
+    if (items) {
+      for (const item of items) {
+        const text = item.replace(/^\d+\.\s+/, '').trim();
+        actionItems.push({
+          title: text.substring(0, 100),
+          description: text,
+          assignee_id: null,
+          assignee_name: null,
+          due_date: getOneWeekFromNow()
+        });
+      }
+    }
+  }
+
+  return actionItems;
+}
+
+/**
+ * Gets date one week from now in YYYY-MM-DD format.
+ *
+ * @returns {string} Date string
+ */
+function getOneWeekFromNow() {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return date.toISOString().split('T')[0];
+}
+
+/**
+ * Fetches collaborators for a Todoist project.
+ *
+ * @param {string} projectId - The Todoist project ID
+ * @returns {Object[]} Array of collaborator objects
+ */
+function fetchProjectCollaborators(projectId) {
+  const apiToken = PropertiesService.getScriptProperties().getProperty('TODOIST_API_TOKEN');
+
+  if (!apiToken) {
+    return [];
+  }
+
+  try {
+    const url = `https://api.todoist.com/rest/v2/projects/${projectId}/collaborators`;
+
+    const options = {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      logProcessing('TODOIST', null, `Failed to fetch collaborators: ${responseCode}`, 'error');
+      return [];
+    }
+
+    return JSON.parse(response.getContentText());
+
+  } catch (error) {
+    logProcessing('TODOIST', null, `Error fetching collaborators: ${error.message}`, 'error');
+    return [];
+  }
+}
+
+/**
+ * Creates Todoist tasks with assignee matching.
+ *
+ * @param {Object[]} actionItems - Array of action items from AI extraction
+ * @param {Object} client - The client object
+ */
+function createTodoistTasksWithAssignees(actionItems, client) {
+  const apiToken = PropertiesService.getScriptProperties().getProperty('TODOIST_API_TOKEN');
+
+  if (!apiToken) {
+    logProcessing('TODOIST', client.client_name, 'Todoist API token not configured', 'error');
+    return;
+  }
+
+  const projectId = client.todoist_project_id;
+  let createdCount = 0;
+
+  for (const item of actionItems) {
+    try {
+      const url = 'https://api.todoist.com/rest/v2/tasks';
+
+      const payload = {
+        content: item.title || item.description.substring(0, 100),
+        description: item.description,
+        project_id: projectId
+      };
+
+      // Add assignee if we have one
+      if (item.assignee_id) {
+        payload.assignee_id = item.assignee_id;
+      }
+
+      // Add due date
+      if (item.due_date) {
+        payload.due_date = item.due_date;
+      }
+
+      const options = {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json'
+        },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
+
+      const response = UrlFetchApp.fetch(url, options);
+      const responseCode = response.getResponseCode();
+
+      if (responseCode === 200) {
+        createdCount++;
+        const assigneeInfo = item.assignee_name ? ` (assigned to ${item.assignee_name})` : '';
+        logProcessing('TODOIST', client.client_name, `Created task: ${item.title}${assigneeInfo}`, 'success');
+      } else {
+        logProcessing('TODOIST', client.client_name, `Failed to create task: ${responseCode}`, 'error');
+      }
+
+    } catch (error) {
+      logProcessing('TODOIST', client.client_name, `Error creating task: ${error.message}`, 'error');
+    }
+  }
+
+  logProcessing('TODOIST', client.client_name, `Created ${createdCount}/${actionItems.length} tasks`, 'success');
 }
 
 /**
