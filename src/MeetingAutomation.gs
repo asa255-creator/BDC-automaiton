@@ -214,70 +214,80 @@ function getPendingDraftsList() {
 // ============================================================================
 
 /**
- * Monitors for sent meeting summary emails and processes them.
+ * Monitors for sent meeting summary emails by checking for new conversations
+ * in client Meeting Summaries labels.
  * Called by the 10-minute trigger.
  */
 function monitorSentMeetingSummaries() {
-  logProcessing('SENT_MONITOR', null, 'Checking for sent meeting summaries...', 'info');
+  logProcessing('SENT_MONITOR', null, 'Checking for new meeting summaries in labeled folders...', 'info');
 
-  // Get the subject pattern from settings to build search query
-  const props = PropertiesService.getScriptProperties();
-  const subjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE')
-    || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+  // Get all clients with setup_complete
+  const allClients = getClientRegistry();
+  const clients = allClients.filter(client => client.setup_complete === true);
 
-  // Extract a searchable pattern (e.g., "Meeting notes from" or "Team")
-  // Remove placeholders and find static text
-  let searchPattern = subjectTemplate
-    .replace(/{client_name}/g, '')
-    .replace(/{meeting_title}/g, '')
-    .replace(/{date}/g, '')
-    .replace(/"/g, '')
-    .trim();
-
-  // Find the longest meaningful word sequence
-  const parts = searchPattern.split(/\s+-\s+/).filter(p => p.trim().length > 3);
-  if (parts.length > 0) {
-    searchPattern = parts.reduce((a, b) => a.length > b.length ? a : b).trim();
-  } else {
-    searchPattern = 'Meeting notes';
+  if (clients.length === 0) {
+    logProcessing('SENT_MONITOR', null, 'No clients with setup_complete found', 'warning');
+    return;
   }
 
-  // Search for recently sent emails matching the pattern
-  const query = `from:me subject:"${searchPattern}" newer_than:1h`;
-  logProcessing('SENT_MONITOR', null, `Search query: ${query}`, 'info');
+  let totalProcessed = 0;
 
-  const threads = GmailApp.search(query, 0, 20);
+  // Check each client's Meeting Summaries label for new conversations
+  for (const client of clients) {
+    const labelName = `Client: ${client.client_name}/Meeting Summaries`;
 
-  let processedCount = 0;
-  for (const thread of threads) {
-    const messages = thread.getMessages();
-
-    // Only process the first message in thread (not replies)
-    if (messages.length === 0) continue;
-
-    const firstMessage = messages[0];
-
-    // Verify it's from me
-    const myEmail = getCurrentUserEmail();
-    if (!firstMessage.getFrom().toLowerCase().includes(myEmail.toLowerCase())) {
-      continue;
-    }
-
-    // Check if already processed
-    if (isMessageProcessed(firstMessage.getId())) {
-      continue;
-    }
-
-    // Process the sent summary
     try {
-      processSentMeetingSummary(firstMessage);
-      processedCount++;
+      const label = GmailApp.getUserLabelByName(labelName);
+      if (!label) {
+        continue; // Label doesn't exist yet
+      }
+
+      // Get threads with this label from the last hour
+      const threads = label.getThreads(0, 20);
+
+      for (const thread of threads) {
+        const messages = thread.getMessages();
+        if (messages.length === 0) continue;
+
+        // Only process the FIRST message in the thread (not replies)
+        const firstMessage = messages[0];
+
+        // Check if already processed
+        if (isMessageProcessed(firstMessage.getId())) {
+          continue;
+        }
+
+        // Verify it's from me (I sent it)
+        const myEmail = getCurrentUserEmail();
+        if (!firstMessage.getFrom().toLowerCase().includes(myEmail.toLowerCase())) {
+          continue;
+        }
+
+        // Check if this is a new thread (sent within last hour)
+        const sentTime = firstMessage.getDate();
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        if (sentTime < oneHourAgo) {
+          // Mark old messages as processed to skip them in future
+          markMessageProcessed(firstMessage.getId());
+          continue;
+        }
+
+        // Process the sent summary
+        try {
+          logProcessing('SENT_MONITOR', client.client_name, `Found new summary: ${firstMessage.getSubject()}`, 'info');
+          processSentMeetingSummary(firstMessage, client);
+          totalProcessed++;
+        } catch (error) {
+          logProcessing('SENT_MONITOR', client.client_name, `Error processing: ${error.message}`, 'error');
+        }
+      }
+
     } catch (error) {
-      logProcessing('SENT_MONITOR', null, `Error processing: ${error.message}`, 'error');
+      logProcessing('SENT_MONITOR', client.client_name, `Error checking label: ${error.message}`, 'error');
     }
   }
 
-  logProcessing('SENT_MONITOR', null, `Processed ${processedCount} sent summaries`, 'success');
+  logProcessing('SENT_MONITOR', null, `Processed ${totalProcessed} new meeting summaries`, 'success');
 }
 
 /**
@@ -285,23 +295,11 @@ function monitorSentMeetingSummaries() {
  * Extracts action items from the email body (not metadata) since user may have edited.
  *
  * @param {GmailMessage} message - The sent Gmail message
+ * @param {Object} client - The client object (already identified from label)
  */
-function processSentMeetingSummary(message) {
+function processSentMeetingSummary(message, client) {
   const subject = message.getSubject();
-  logProcessing('SUMMARY_PROCESS', null, `Processing: ${subject}`, 'info');
-
-  // Identify client from recipients (TO field)
-  const toAddresses = message.getTo();
-  const client = identifyClientFromEmailAddresses(toAddresses);
-
-  if (!client) {
-    logProcessing('SUMMARY_PROCESS', null, `No client match for recipients: ${toAddresses}`, 'warning');
-    // Still mark as processed to avoid re-processing
-    markMessageProcessed(message.getId());
-    return;
-  }
-
-  logProcessing('SUMMARY_PROCESS', client.client_name, 'Client identified from recipients', 'info');
+  logProcessing('SUMMARY_PROCESS', client.client_name, `Processing: ${subject}`, 'info');
 
   // Extract action items from the email body using AI
   // This is critical because user may have edited action items before sending
@@ -316,13 +314,10 @@ function processSentMeetingSummary(message) {
     logProcessing('SUMMARY_PROCESS', client.client_name, 'No action items found in email', 'info');
   }
 
-  // Append meeting notes to client's Google Doc
+  // Append meeting notes to client's Google Doc with proper separators
   if (client.google_doc_url) {
     appendMeetingNotesToDoc(message, client);
   }
-
-  // Apply sub-label to the sent email
-  applyMeetingSummaryLabel(message, client);
 
   // Mark as processed
   markMessageProcessed(message.getId());
@@ -827,7 +822,7 @@ function fetchTodoistTasksDueToday(projectId) {
  */
 function appendMeetingNotesToDoc(message, client) {
   if (!client.google_doc_url) {
-    Logger.log('No Google Doc URL configured for client');
+    logProcessing('DOC_APPEND', client.client_name, 'No Google Doc URL configured', 'warning');
     return;
   }
 
@@ -840,23 +835,34 @@ function appendMeetingNotesToDoc(message, client) {
     const subject = message.getSubject();
     const date = formatDate(message.getDate());
 
-    // Add section header
-    body.appendParagraph(`Meeting Notes - ${date}`)
+    // Add blank line before for separation from previous content
+    body.appendParagraph('');
+
+    // Add start delimiter (parseable marker)
+    body.appendParagraph('═══════════════════════════════════════════════════════════');
+
+    // Add section header with date
+    body.appendParagraph(`MEETING NOTES - ${date}`)
       .setHeading(DocumentApp.ParagraphHeading.HEADING2);
+
+    body.appendParagraph('───────────────────────────────────────────────────────────');
 
     // Convert email HTML to plain text and append
     const emailBody = message.getPlainBody();
     body.appendParagraph(emailBody);
 
-    // Add separator
-    body.appendParagraph('---');
+    // Add end delimiter
+    body.appendParagraph('───────────────────────────────────────────────────────────');
+    body.appendParagraph(`END OF MEETING NOTES - ${date}`);
+    body.appendParagraph('═══════════════════════════════════════════════════════════');
+
+    // Add blank line after for separation
     body.appendParagraph('');
 
     doc.saveAndClose();
 
-    Logger.log(`Appended meeting notes to doc: ${client.google_doc_url}`);
+    logProcessing('DOC_APPEND', client.client_name, `Appended meeting notes for ${date}`, 'success');
   } catch (error) {
-    Logger.log(`Failed to append to Google Doc: ${error.message}`);
     logProcessing(
       'DOC_APPEND_ERROR',
       client.client_name,

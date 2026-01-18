@@ -215,14 +215,16 @@ function fetchRecentClientEmails(client) {
 }
 
 /**
- * Fetches previous meeting notes from client's Google Doc.
+ * Fetches ONLY the most recent meeting notes and agenda from client's Google Doc.
+ * This minimizes token usage by not pulling the entire document history.
  *
  * @param {Object} client - The client object
- * @returns {Object} Object with notes text and extracted action items
+ * @returns {Object} Object with lastNotes, lastAgenda, and extracted actionItems
  */
 function fetchPreviousMeetingNotes(client) {
   const result = {
     notes: null,
+    agenda: null,
     actionItems: []
   };
 
@@ -236,22 +238,61 @@ function fetchPreviousMeetingNotes(client) {
     const body = doc.getBody();
     const text = body.getText();
 
-    // Find the most recent "Meeting Notes" section
-    const regex = /Meeting Notes - (\d{4}-\d{2}-\d{2}|\w+ \d{1,2}, \d{4})\n([\s\S]*?)(?=Meeting Notes -|Meeting Agenda -|$)/gi;
-    const matches = [...text.matchAll(regex)];
+    // Find the LAST meeting notes section using the structured delimiters
+    // Pattern: ═══...═══ MEETING NOTES - [date] ───...─── [content] ───...─── END OF MEETING NOTES
+    const notesRegex = /═{20,}\s*\n\s*MEETING NOTES - ([^\n]+)\s*\n\s*─{20,}\s*\n([\s\S]*?)\n\s*─{20,}\s*\n\s*END OF MEETING NOTES/gi;
+    const notesMatches = [...text.matchAll(notesRegex)];
 
-    if (matches.length > 0) {
-      // Get the most recent match
-      const lastMatch = matches[matches.length - 1];
-      result.notes = lastMatch[2].trim();
+    if (notesMatches.length > 0) {
+      // Get the LAST (most recent) meeting notes only
+      const lastNotesMatch = notesMatches[notesMatches.length - 1];
+      result.notes = lastNotesMatch[2].trim();
 
       // Extract action items from the notes
       result.actionItems = extractActionItemsFromText(result.notes);
+
+      logProcessing('AGENDA_CONTEXT', client.client_name, `Found last meeting notes from ${lastNotesMatch[1]}`, 'info');
+    } else {
+      // Fallback: try old format without delimiters
+      const oldRegex = /Meeting Notes - (\d{4}-\d{2}-\d{2}|\w+ \d{1,2}, \d{4})\n([\s\S]*?)(?=Meeting Notes -|Meeting Agenda -|═{20,}|$)/gi;
+      const oldMatches = [...text.matchAll(oldRegex)];
+
+      if (oldMatches.length > 0) {
+        const lastMatch = oldMatches[oldMatches.length - 1];
+        result.notes = lastMatch[2].trim();
+        result.actionItems = extractActionItemsFromText(result.notes);
+
+        logProcessing('AGENDA_CONTEXT', client.client_name, `Found last meeting notes (old format) from ${lastMatch[1]}`, 'info');
+      }
+    }
+
+    // Find the LAST agenda section
+    // Pattern: ═══...═══ MEETING AGENDA - [date] ───...─── [content] ───...─── END OF MEETING AGENDA
+    const agendaRegex = /═{20,}\s*\n\s*MEETING AGENDA - ([^\n]+)\s*\n\s*─{20,}\s*\n([\s\S]*?)\n\s*─{20,}\s*\n\s*END OF MEETING AGENDA/gi;
+    const agendaMatches = [...text.matchAll(agendaRegex)];
+
+    if (agendaMatches.length > 0) {
+      // Get the LAST (most recent) agenda only
+      const lastAgendaMatch = agendaMatches[agendaMatches.length - 1];
+      result.agenda = lastAgendaMatch[2].trim();
+
+      logProcessing('AGENDA_CONTEXT', client.client_name, `Found last agenda from ${lastAgendaMatch[1]}`, 'info');
+    } else {
+      // Fallback: try old format
+      const oldAgendaRegex = /Meeting Agenda - (\d{4}-\d{2}-\d{2}|\w+ \d{1,2}, \d{4})\n([\s\S]*?)(?=Meeting Notes -|Meeting Agenda -|═{20,}|$)/gi;
+      const oldAgendaMatches = [...text.matchAll(oldAgendaRegex)];
+
+      if (oldAgendaMatches.length > 0) {
+        const lastMatch = oldAgendaMatches[oldAgendaMatches.length - 1];
+        result.agenda = lastMatch[2].trim();
+
+        logProcessing('AGENDA_CONTEXT', client.client_name, `Found last agenda (old format) from ${lastMatch[1]}`, 'info');
+      }
     }
 
     return result;
   } catch (error) {
-    Logger.log(`Failed to fetch previous meeting notes: ${error.message}`);
+    logProcessing('AGENDA_CONTEXT', client.client_name, `Failed to fetch previous meeting notes: ${error.message}`, 'error');
     return result;
   }
 }
@@ -512,7 +553,8 @@ function sendAgendaEmail(event, client, agendaContent) {
 }
 
 /**
- * Appends the agenda to the client's Google Doc.
+ * Appends the agenda to the client's Google Doc with structured delimiters.
+ * Uses the same format as meeting notes for consistent parsing.
  *
  * @param {CalendarEvent} event - The calendar event
  * @param {Object} client - The client object
@@ -520,7 +562,7 @@ function sendAgendaEmail(event, client, agendaContent) {
  */
 function appendAgendaToDoc(event, client, agendaContent) {
   if (!client.google_doc_url) {
-    Logger.log('No Google Doc URL configured for client');
+    logProcessing('AGENDA_DOC', client.client_name, 'No Google Doc URL configured', 'warning');
     return;
   }
 
@@ -531,21 +573,35 @@ function appendAgendaToDoc(event, client, agendaContent) {
 
     const formattedDate = formatDate(event.getStartTime());
 
-    // Add section header
-    body.appendParagraph(`Meeting Agenda - ${formattedDate}`)
+    // Add blank line before for separation
+    body.appendParagraph('');
+
+    // Add start delimiter (parseable marker)
+    body.appendParagraph('═══════════════════════════════════════════════════════════');
+
+    // Add section header with date
+    body.appendParagraph(`MEETING AGENDA - ${formattedDate}`)
       .setHeading(DocumentApp.ParagraphHeading.HEADING2);
+
+    // Add content delimiter
+    body.appendParagraph('───────────────────────────────────────────────────────────');
 
     // Add agenda content
     body.appendParagraph(agendaContent);
 
-    // Add separator
+    // Add end delimiter
+    body.appendParagraph('───────────────────────────────────────────────────────────');
+    body.appendParagraph(`END OF MEETING AGENDA - ${formattedDate}`);
+    body.appendParagraph('═══════════════════════════════════════════════════════════');
+
+    // Add blank line after for separation
     body.appendParagraph('');
 
     doc.saveAndClose();
 
-    Logger.log(`Appended agenda to doc for: ${client.client_name}`);
+    logProcessing('AGENDA_DOC', client.client_name, `Appended agenda for: ${event.getTitle()}`, 'success');
   } catch (error) {
-    Logger.log(`Failed to append agenda to doc: ${error.message}`);
+    logProcessing('AGENDA_DOC', client.client_name, `Failed to append agenda: ${error.message}`, 'error');
   }
 }
 
