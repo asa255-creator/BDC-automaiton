@@ -1797,27 +1797,28 @@ function saveSettingsFromEditor(settings) {
  * @returns {Object} Result with success status and message
  */
 function updateFiltersFromEditor() {
+  logProcessing('FILTER_UPDATE', null, 'Manual filter update triggered from Settings', 'info');
+
   try {
     // Check if Gmail Advanced Service is available
     if (typeof Gmail === 'undefined' || !Gmail.Users) {
+      const msg = 'Gmail Advanced Service not enabled. Enable it in Apps Script Editor > Services > Gmail API.';
+      logProcessing('FILTER_UPDATE', null, msg, 'error');
       return {
         success: false,
-        message: 'Gmail Advanced Service not enabled. Enable it in Apps Script Editor > Services > Gmail API.'
+        message: msg
       };
     }
 
-    // Run the filter update
+    // Run the filter update (this logs to Processing_Log)
     updateMeetingSummaryFilters();
-
-    // Get the pattern used for feedback
-    const subjectPattern = getSubjectFilterPattern();
 
     return {
       success: true,
-      message: `Filters updated! Using pattern: "${subjectPattern}"`
+      message: 'Filters updated! Check Processing_Log for details.'
     };
   } catch (error) {
-    Logger.log('updateFiltersFromEditor error: ' + error.message);
+    logProcessing('FILTER_UPDATE', null, 'Filter update failed: ' + error.message, 'error');
     return {
       success: false,
       message: 'Failed to update filters: ' + error.message

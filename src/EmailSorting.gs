@@ -88,10 +88,10 @@ function syncClientLabels(client) {
       createGmailApiFilter(fromCriteria, baseLabelName);
     }
 
-    // Filter for sent meeting summaries to client (uses subject pattern from settings)
+    // Filter for sent meeting summaries to client (uses client name in subject)
     const toCriteria = buildToCriteria(contacts);
     if (toCriteria) {
-      const subjectPattern = getSubjectFilterPattern();
+      const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
       const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
       createGmailApiFilter(summaryCriteria, `${baseLabelName}/Meeting Summaries`);
     }
@@ -223,8 +223,8 @@ function createClientFilters(client) {
     action: `Apply label: Client: ${client.client_name}`
   });
 
-  // Use dynamic subject pattern from settings
-  const subjectPattern = getSubjectFilterPattern();
+  // Use client-specific subject pattern (includes client name)
+  const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
   logFilterSpec('SUMMARY_FILTER', client.client_name, {
     criteria: `from:me subject:'${subjectPattern}' ${toCriteria}`,
     action: `Apply label: Client: ${client.client_name}/Meeting Summaries`
@@ -492,38 +492,46 @@ function retroactivelyLabelAllClients() {
 // ============================================================================
 
 /**
- * Extracts a stable subject pattern from the email subject template.
- * Used to create Gmail filters that match the template pattern.
+ * Extracts the subject prefix pattern for a specific client.
+ * Used to create Gmail filters that match emails for that client.
  *
- * For example: "Team {client_name} - Meeting notes from "{meeting_title}" {date}"
- * becomes: "Meeting notes from"
+ * For template: "Team {client_name} - Meeting notes from "{meeting_title}" {date}"
+ * With client "ACME Corp", returns: "Team ACME Corp"
  *
- * @returns {string} The stable portion of the subject for filter matching
+ * @param {string} clientName - The client name to insert
+ * @returns {string} The subject pattern for this client
  */
-function getSubjectFilterPattern() {
+function getSubjectFilterPatternForClient(clientName) {
   const props = PropertiesService.getScriptProperties();
   const template = props.getProperty('MEETING_SUBJECT_TEMPLATE')
     || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
 
-  // Extract text between placeholders - look for the most unique static part
-  // Remove all placeholders to see what's left
-  let pattern = template
-    .replace(/{client_name}/g, '')
-    .replace(/{meeting_title}/g, '')
-    .replace(/{date}/g, '')
-    .replace(/"/g, '') // Remove quotes
-    .trim();
+  // Find where {client_name} appears and extract text before/after up to the next placeholder
+  // For "Team {client_name} - Meeting notes..." we want "Team ClientName"
 
-  // Find the longest static portion (usually "Meeting notes from" or similar)
-  const parts = pattern.split(/\s+-\s+/).filter(p => p.trim().length > 5);
-
-  if (parts.length > 0) {
-    // Return the longest meaningful part
-    return parts.reduce((a, b) => a.length > b.length ? a : b).trim();
+  // Split template at {client_name}
+  const parts = template.split('{client_name}');
+  if (parts.length < 2) {
+    // No {client_name} placeholder - just use client name directly
+    return clientName;
   }
 
-  // Fallback - if template is too dynamic, use a generic pattern
-  return 'Meeting notes';
+  // Get prefix before {client_name} (e.g., "Team ")
+  const prefix = parts[0];
+
+  // Get text after {client_name} up to next placeholder or punctuation
+  let suffix = parts[1];
+  // Cut off at next placeholder or after first few words
+  const nextPlaceholder = suffix.search(/\{[^}]+\}/);
+  if (nextPlaceholder > 0) {
+    suffix = suffix.substring(0, nextPlaceholder);
+  }
+  // Also cut at common separators to keep pattern short
+  const separatorMatch = suffix.match(/^(\s*[-–—:]\s*)/);
+  suffix = separatorMatch ? '' : suffix.split(/[-–—]/)[0];
+
+  const pattern = (prefix + clientName + suffix).trim();
+  return pattern;
 }
 
 /**
@@ -531,78 +539,75 @@ function getSubjectFilterPattern() {
  * Deletes old filters and creates new ones based on the current template.
  */
 function updateMeetingSummaryFilters() {
-  Logger.log('Updating meeting summary filters...');
-
-  const subjectPattern = getSubjectFilterPattern();
-  Logger.log(`Using subject pattern for filters: "${subjectPattern}"`);
+  logProcessing('FILTER_UPDATE', null, 'Starting filter update...', 'info');
 
   // Get all clients with setup_complete
   const allClients = getClientRegistry();
   const clients = allClients.filter(client => client.setup_complete === true);
 
   if (clients.length === 0) {
-    Logger.log('No clients with setup_complete found');
+    logProcessing('FILTER_UPDATE', null, 'No clients with setup_complete found', 'warning');
     return;
   }
 
+  logProcessing('FILTER_UPDATE', null, `Processing ${clients.length} clients`, 'info');
+
   // Check if Gmail API is available
   if (typeof Gmail === 'undefined' || !Gmail.Users) {
-    Logger.log('Gmail Advanced Service not enabled - logging filter specs only');
-    // Just log what filters should be created
-    for (const client of clients) {
-      const contacts = parseCommaSeparatedList(client.contact_emails);
-      if (contacts.length > 0) {
-        const toCriteria = buildToCriteria(contacts);
-        logFilterSpec('SUMMARY_FILTER_UPDATE', client.client_name, {
-          criteria: `from:me subject:"${subjectPattern}" ${toCriteria}`,
-          action: `Apply label: Client: ${client.client_name}/Meeting Summaries`
-        });
-      }
-    }
+    logProcessing('FILTER_UPDATE', null, 'Gmail Advanced Service not enabled - cannot update filters programmatically', 'error');
     return;
   }
 
   // Delete old meeting summary filters and create new ones
   try {
     const existingFilters = listGmailFilters();
+    let deletedCount = 0;
+    let createdCount = 0;
 
     // Find and delete old meeting summary filters
     for (const filter of existingFilters) {
       if (filter.criteria && filter.criteria.query) {
         const query = filter.criteria.query;
-        // Match old summary filter patterns
+        // Match old summary filter patterns (from:me with Meeting Summaries label)
         if (query.includes('from:me') &&
-            (query.includes('subject:"Meeting Summary"') ||
-             query.includes("subject:'Meeting Summary'") ||
-             query.includes('Meeting notes'))) {
+            (query.includes('Meeting Summary') ||
+             query.includes('Meeting notes') ||
+             query.includes('notes from'))) {
           try {
             Gmail.Users.Settings.Filters.remove('me', filter.id);
-            Logger.log(`Deleted old filter: ${query}`);
+            logProcessing('FILTER_UPDATE', null, `Deleted old filter: ${query}`, 'info');
+            deletedCount++;
           } catch (e) {
-            Logger.log(`Failed to delete filter ${filter.id}: ${e.message}`);
+            logProcessing('FILTER_UPDATE', null, `Failed to delete filter: ${e.message}`, 'error');
           }
         }
       }
     }
 
-    // Create new filters for each client
+    // Create new filters for each client using client-specific subject pattern
     for (const client of clients) {
       const contacts = parseCommaSeparatedList(client.contact_emails);
       if (contacts.length > 0) {
         const toCriteria = buildToCriteria(contacts);
+        const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
         const criteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
         const labelName = `Client: ${client.client_name}/Meeting Summaries`;
 
-        createGmailApiFilter(criteria, labelName);
-        Logger.log(`Created new filter for ${client.client_name}: ${criteria}`);
+        const result = createGmailApiFilter(criteria, labelName);
+        if (result) {
+          logProcessing('FILTER_UPDATE', client.client_name, `Created filter: ${criteria}`, 'success');
+          createdCount++;
+        } else {
+          logProcessing('FILTER_UPDATE', client.client_name, `Filter may already exist: ${criteria}`, 'warning');
+        }
+      } else {
+        logProcessing('FILTER_UPDATE', client.client_name, 'No contact emails - skipping', 'warning');
       }
     }
 
-    Logger.log('Meeting summary filters updated successfully');
-    logProcessing('FILTER_UPDATE', null, `Updated meeting summary filters with pattern: "${subjectPattern}"`, 'success');
+    logProcessing('FILTER_UPDATE', null, `Filter update complete. Deleted: ${deletedCount}, Created: ${createdCount}`, 'success');
 
   } catch (error) {
-    Logger.log(`Failed to update filters: ${error.message}`);
     logProcessing('FILTER_UPDATE', null, `Failed to update filters: ${error.message}`, 'error');
     throw error;
   }
