@@ -321,7 +321,7 @@ const PROMPT_METADATA = {
  * Update these when new Claude versions are released.
  */
 const MODEL_TIERS = {
-  haiku: 'claude-3-5-haiku-20241022',
+  haiku: 'claude-3-haiku-20240307',
   sonnet: 'claude-sonnet-4-20250514'
 };
 
