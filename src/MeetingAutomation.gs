@@ -80,13 +80,21 @@ function processFathomWebhook(payload) {
  * @returns {string} The draft ID
  */
 function createMeetingSummaryDraft(payload, client) {
+  const props = PropertiesService.getScriptProperties();
   const meetingDate = formatDateShort(new Date(payload.meeting_date));
 
   // Build subject and greeting based on whether we have a client
   const clientName = client ? client.client_name : '[ADD CLIENT NAME]';
-  const subject = `Team ${clientName} - Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}`;
 
-  // Build email body
+  // Get customizable subject template from settings
+  const subjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE')
+    || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+  const subject = subjectTemplate
+    .replace('{client_name}', clientName)
+    .replace('{meeting_title}', payload.meeting_title)
+    .replace('{date}', meetingDate);
+
+  // Build email body with greeting that matches subject style
   let body = `<p>Team ${clientName} -</p>`;
   body += `<p>Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}.</p>`;
   body += `<hr/>`;
@@ -113,11 +121,15 @@ function createMeetingSummaryDraft(payload, client) {
     body += `</ol>`;
   }
 
-  // Closing
+  // Get customizable signature from settings
+  const userName = props.getProperty('USER_NAME') || 'Team';
+  const signatureTemplate = props.getProperty('MEETING_SIGNATURE')
+    || 'Did I miss anything?\n\nThanks,\n{user_name}';
+  const signature = signatureTemplate.replace('{user_name}', userName);
+
+  // Convert signature newlines to HTML
   body += `<hr/>`;
-  body += `<p>Did I miss anything?</p>`;
-  const userName = PropertiesService.getScriptProperties().getProperty('USER_NAME') || 'Team';
-  body += `<p>Thanks,<br/>${userName}</p>`;
+  body += `<p>${signature.replace(/\n/g, '<br/>')}</p>`;
 
   // Add metadata for post-send processing (hidden)
   // Client matching will happen when email is sent based on recipient

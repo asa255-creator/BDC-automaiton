@@ -1701,10 +1701,13 @@ function getSettingsForEditor() {
 
   return {
     FATHOM_API_KEY: props.getProperty('FATHOM_API_KEY') || '',
+    FATHOM_WEBHOOK_SECRET: props.getProperty('FATHOM_WEBHOOK_SECRET') || '',
     HUBSPOT_API_KEY: props.getProperty('HUBSPOT_API_KEY') || '',
     TODOIST_API_TOKEN: props.getProperty('TODOIST_API_TOKEN') || '',
     CLAUDE_API_KEY: props.getProperty('CLAUDE_API_KEY') || '',
     USER_NAME: props.getProperty('USER_NAME') || '',
+    MEETING_SUBJECT_TEMPLATE: props.getProperty('MEETING_SUBJECT_TEMPLATE') || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}',
+    MEETING_SIGNATURE: props.getProperty('MEETING_SIGNATURE') || 'Did I miss anything?\n\nThanks,\n{user_name}',
     BUSINESS_HOURS_START: props.getProperty('BUSINESS_HOURS_START') || '8',
     BUSINESS_HOURS_END: props.getProperty('BUSINESS_HOURS_END') || '18',
     DOC_NAME_TEMPLATE: props.getProperty('DOC_NAME_TEMPLATE') || 'Client Notes - {client_name}'
@@ -1754,7 +1757,35 @@ function saveSettingsFromEditor(settings) {
     props.setProperty('DOC_NAME_TEMPLATE', settings.DOC_NAME_TEMPLATE);
   }
 
+  if (settings.FATHOM_WEBHOOK_SECRET) {
+    props.setProperty('FATHOM_WEBHOOK_SECRET', settings.FATHOM_WEBHOOK_SECRET);
+  }
+
+  // Track if subject template changed (for filter update)
+  const oldSubjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE');
+  const subjectTemplateChanged = settings.MEETING_SUBJECT_TEMPLATE &&
+    settings.MEETING_SUBJECT_TEMPLATE !== oldSubjectTemplate;
+
+  if (settings.MEETING_SUBJECT_TEMPLATE) {
+    props.setProperty('MEETING_SUBJECT_TEMPLATE', settings.MEETING_SUBJECT_TEMPLATE);
+  }
+
+  if (settings.MEETING_SIGNATURE !== undefined) {
+    props.setProperty('MEETING_SIGNATURE', settings.MEETING_SIGNATURE);
+  }
+
   Logger.log('Settings updated via editor');
+
+  // If subject template changed, update filters to match new pattern
+  if (subjectTemplateChanged) {
+    Logger.log('Subject template changed - updating Gmail filters...');
+    try {
+      updateMeetingSummaryFilters();
+      Logger.log('Gmail filters updated for new subject template');
+    } catch (e) {
+      Logger.log('Failed to update filters: ' + e.message);
+    }
+  }
 
   return { success: true };
 }

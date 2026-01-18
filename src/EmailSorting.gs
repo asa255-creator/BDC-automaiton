@@ -88,10 +88,11 @@ function syncClientLabels(client) {
       createGmailApiFilter(fromCriteria, baseLabelName);
     }
 
-    // Filter for sent meeting summaries to client
+    // Filter for sent meeting summaries to client (uses subject pattern from settings)
     const toCriteria = buildToCriteria(contacts);
     if (toCriteria) {
-      const summaryCriteria = `from:me subject:"Meeting Summary" ${toCriteria}`;
+      const subjectPattern = getSubjectFilterPattern();
+      const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
       createGmailApiFilter(summaryCriteria, `${baseLabelName}/Meeting Summaries`);
     }
   }
@@ -222,8 +223,10 @@ function createClientFilters(client) {
     action: `Apply label: Client: ${client.client_name}`
   });
 
+  // Use dynamic subject pattern from settings
+  const subjectPattern = getSubjectFilterPattern();
   logFilterSpec('SUMMARY_FILTER', client.client_name, {
-    criteria: `from:me subject:'Meeting Summary' ${toCriteria}`,
+    criteria: `from:me subject:'${subjectPattern}' ${toCriteria}`,
     action: `Apply label: Client: ${client.client_name}/Meeting Summaries`
   });
 
@@ -482,4 +485,125 @@ function retroactivelyLabelAllClients() {
   }
 
   Logger.log('Completed retroactive labeling for all clients');
+}
+
+// ============================================================================
+// FILTER UPDATE FUNCTIONS
+// ============================================================================
+
+/**
+ * Extracts a stable subject pattern from the email subject template.
+ * Used to create Gmail filters that match the template pattern.
+ *
+ * For example: "Team {client_name} - Meeting notes from "{meeting_title}" {date}"
+ * becomes: "Meeting notes from"
+ *
+ * @returns {string} The stable portion of the subject for filter matching
+ */
+function getSubjectFilterPattern() {
+  const props = PropertiesService.getScriptProperties();
+  const template = props.getProperty('MEETING_SUBJECT_TEMPLATE')
+    || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+
+  // Extract text between placeholders - look for the most unique static part
+  // Remove all placeholders to see what's left
+  let pattern = template
+    .replace(/{client_name}/g, '')
+    .replace(/{meeting_title}/g, '')
+    .replace(/{date}/g, '')
+    .replace(/"/g, '') // Remove quotes
+    .trim();
+
+  // Find the longest static portion (usually "Meeting notes from" or similar)
+  const parts = pattern.split(/\s+-\s+/).filter(p => p.trim().length > 5);
+
+  if (parts.length > 0) {
+    // Return the longest meaningful part
+    return parts.reduce((a, b) => a.length > b.length ? a : b).trim();
+  }
+
+  // Fallback - if template is too dynamic, use a generic pattern
+  return 'Meeting notes';
+}
+
+/**
+ * Updates Gmail filters for meeting summaries when the subject template changes.
+ * Deletes old filters and creates new ones based on the current template.
+ */
+function updateMeetingSummaryFilters() {
+  Logger.log('Updating meeting summary filters...');
+
+  const subjectPattern = getSubjectFilterPattern();
+  Logger.log(`Using subject pattern for filters: "${subjectPattern}"`);
+
+  // Get all clients with setup_complete
+  const allClients = getClientRegistry();
+  const clients = allClients.filter(client => client.setup_complete === true);
+
+  if (clients.length === 0) {
+    Logger.log('No clients with setup_complete found');
+    return;
+  }
+
+  // Check if Gmail API is available
+  if (typeof Gmail === 'undefined' || !Gmail.Users) {
+    Logger.log('Gmail Advanced Service not enabled - logging filter specs only');
+    // Just log what filters should be created
+    for (const client of clients) {
+      const contacts = parseCommaSeparatedList(client.contact_emails);
+      if (contacts.length > 0) {
+        const toCriteria = buildToCriteria(contacts);
+        logFilterSpec('SUMMARY_FILTER_UPDATE', client.client_name, {
+          criteria: `from:me subject:"${subjectPattern}" ${toCriteria}`,
+          action: `Apply label: Client: ${client.client_name}/Meeting Summaries`
+        });
+      }
+    }
+    return;
+  }
+
+  // Delete old meeting summary filters and create new ones
+  try {
+    const existingFilters = listGmailFilters();
+
+    // Find and delete old meeting summary filters
+    for (const filter of existingFilters) {
+      if (filter.criteria && filter.criteria.query) {
+        const query = filter.criteria.query;
+        // Match old summary filter patterns
+        if (query.includes('from:me') &&
+            (query.includes('subject:"Meeting Summary"') ||
+             query.includes("subject:'Meeting Summary'") ||
+             query.includes('Meeting notes'))) {
+          try {
+            Gmail.Users.Settings.Filters.remove('me', filter.id);
+            Logger.log(`Deleted old filter: ${query}`);
+          } catch (e) {
+            Logger.log(`Failed to delete filter ${filter.id}: ${e.message}`);
+          }
+        }
+      }
+    }
+
+    // Create new filters for each client
+    for (const client of clients) {
+      const contacts = parseCommaSeparatedList(client.contact_emails);
+      if (contacts.length > 0) {
+        const toCriteria = buildToCriteria(contacts);
+        const criteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
+        const labelName = `Client: ${client.client_name}/Meeting Summaries`;
+
+        createGmailApiFilter(criteria, labelName);
+        Logger.log(`Created new filter for ${client.client_name}: ${criteria}`);
+      }
+    }
+
+    Logger.log('Meeting summary filters updated successfully');
+    logProcessing('FILTER_UPDATE', null, `Updated meeting summary filters with pattern: "${subjectPattern}"`, 'success');
+
+  } catch (error) {
+    Logger.log(`Failed to update filters: ${error.message}`);
+    logProcessing('FILTER_UPDATE', null, `Failed to update filters: ${error.message}`, 'error');
+    throw error;
+  }
 }

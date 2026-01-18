@@ -51,10 +51,29 @@
       border-radius: 4px;
       font-size: 14px;
     }
-    input:focus {
+    input:focus, textarea:focus {
       outline: none;
       border-color: #1a73e8;
       box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+    }
+    textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 80px;
+    }
+    .placeholder-hint {
+      font-size: 11px;
+      color: #5f6368;
+      margin-top: 4px;
+      font-family: monospace;
+      background: #f8f9fa;
+      padding: 4px 8px;
+      border-radius: 3px;
     }
     .input-row {
       display: flex;
@@ -205,6 +224,25 @@
         <input type="text" id="user_name" placeholder="Enter your name">
       </div>
 
+      <div class="section-title" style="margin-top: 24px;">Email Automation</div>
+
+      <div class="setting-group">
+        <div class="setting-label">Meeting Summary Subject</div>
+        <div class="setting-description">Subject line format for meeting summary emails. Changing this will update Gmail filters.</div>
+        <input type="text" id="meeting_subject_template" placeholder="Team {client_name} - Meeting notes from &quot;{meeting_title}&quot; {date}">
+        <div class="placeholder-hint">Placeholders: {client_name}, {meeting_title}, {date}</div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label">Meeting Summary Signature</div>
+        <div class="setting-description">Closing text for meeting summary emails</div>
+        <textarea id="meeting_signature" placeholder="Did I miss anything?
+
+Thanks,
+{user_name}"></textarea>
+        <div class="placeholder-hint">Placeholders: {user_name}</div>
+      </div>
+
       <div class="section-title" style="margin-top: 24px;">Schedule Settings</div>
 
       <div class="setting-group">
@@ -248,6 +286,8 @@
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
           document.getElementById('user_name').value = settings.USER_NAME || '';
+          document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+          document.getElementById('meeting_signature').value = settings.MEETING_SIGNATURE || 'Did I miss anything?\n\nThanks,\n{user_name}';
           document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
           document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
           document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
@@ -292,6 +332,8 @@
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
         USER_NAME: document.getElementById('user_name').value.trim(),
+        MEETING_SUBJECT_TEMPLATE: document.getElementById('meeting_subject_template').value.trim(),
+        MEETING_SIGNATURE: document.getElementById('meeting_signature').value,
         BUSINESS_HOURS_START: document.getElementById('hours_start').value.trim(),
         BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
         DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim()
