@@ -442,8 +442,9 @@ If no action items found, return: {"tasks": []}`;
   try {
     const url = 'https://api.anthropic.com/v1/messages';
 
+    // Use centralized model tier (update MODEL_TIERS in PromptManager.gs when models change)
     const payload = {
-      model: 'claude-sonnet-4-20250514',
+      model: MODEL_TIERS.sonnet,
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }]
     };

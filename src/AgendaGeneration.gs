@@ -393,8 +393,11 @@ function generateAgendaWithClaude(event, client, context) {
   try {
     const url = 'https://api.anthropic.com/v1/messages';
 
+    // Use model preference from Prompts sheet (allows user to choose haiku vs sonnet)
+    const model = getModelForPrompt('AGENDA_CLAUDE_PROMPT');
+
     const payload = {
-      model: 'claude-sonnet-4-20250514',
+      model: model,
       max_tokens: 1000,
       messages: [
         {
