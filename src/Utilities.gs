@@ -1790,6 +1790,41 @@ function saveSettingsFromEditor(settings) {
   return { success: true };
 }
 
+/**
+ * Updates Gmail filters from the settings editor.
+ * Called by the "Update Filters Now" button.
+ *
+ * @returns {Object} Result with success status and message
+ */
+function updateFiltersFromEditor() {
+  try {
+    // Check if Gmail Advanced Service is available
+    if (typeof Gmail === 'undefined' || !Gmail.Users) {
+      return {
+        success: false,
+        message: 'Gmail Advanced Service not enabled. Enable it in Apps Script Editor > Services > Gmail API.'
+      };
+    }
+
+    // Run the filter update
+    updateMeetingSummaryFilters();
+
+    // Get the pattern used for feedback
+    const subjectPattern = getSubjectFilterPattern();
+
+    return {
+      success: true,
+      message: `Filters updated! Using pattern: "${subjectPattern}"`
+    };
+  } catch (error) {
+    Logger.log('updateFiltersFromEditor error: ' + error.message);
+    return {
+      success: false,
+      message: 'Failed to update filters: ' + error.message
+    };
+  }
+}
+
 // ============================================================================
 // MIGRATION WIZARD
 // ============================================================================

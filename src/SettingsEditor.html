@@ -243,6 +243,13 @@ Thanks,
         <div class="placeholder-hint">Placeholders: {user_name}</div>
       </div>
 
+      <div class="setting-group">
+        <div class="setting-label">Gmail Filters</div>
+        <div class="setting-description">Filters auto-update when you change the subject template. Click below to manually refresh all meeting summary filters.</div>
+        <button class="btn btn-secondary" id="updateFiltersBtn" onclick="updateFilters()" style="margin-top: 8px;">Update Filters Now</button>
+        <div id="filterStatus" class="setting-description" style="margin-top: 8px; color: #666;"></div>
+      </div>
+
       <div class="section-title" style="margin-top: 24px;">Schedule Settings</div>
 
       <div class="setting-group">
@@ -369,6 +376,31 @@ Thanks,
           saveBtn.textContent = 'Save Changes';
         })
         .saveSettingsFromEditor(settings);
+    }
+
+    function updateFilters() {
+      const btn = document.getElementById('updateFiltersBtn');
+      const statusEl = document.getElementById('filterStatus');
+
+      btn.disabled = true;
+      btn.textContent = 'Updating...';
+      statusEl.textContent = '';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false;
+          btn.textContent = 'Update Filters Now';
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          btn.disabled = false;
+          btn.textContent = 'Update Filters Now';
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .updateFiltersFromEditor();
     }
   </script>
 </body>
