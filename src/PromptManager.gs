@@ -581,13 +581,26 @@ function savePromptsFromEditor(prompts) {
  * Uses Haiku for cost efficiency.
  *
  * @param {string} promptText - The original prompt text to compress
+ * @param {string} promptKey - Optional prompt key to look up available variables
  * @returns {Object} Result with compressed text or error
  */
-function compressPromptWithAI(promptText) {
+function compressPromptWithAI(promptText, promptKey) {
   const apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
 
   if (!apiKey) {
     return { success: false, error: 'Claude API key not configured. Add it in Settings.' };
+  }
+
+  // Get available variables for this prompt type
+  let variablesSection = '';
+  if (promptKey && PROMPT_METADATA[promptKey] && PROMPT_METADATA[promptKey].variables) {
+    const variables = PROMPT_METADATA[promptKey].variables;
+    variablesSection = `
+Available variables for this prompt (MUST be preserved exactly):
+${variables.join(', ')}
+
+These variables will be replaced with actual data at runtime. Do not remove, rename, or modify them.
+`;
   }
 
   const compressionPrompt = `You are a prompt compression expert. Your task is to rewrite the following prompt to use fewer tokens while preserving ALL requirements, instructions, sections, and formatting rules.
@@ -600,7 +613,7 @@ Rules for compression:
 5. Keep all emojis and formatting markers
 6. Maintain the same tone and intent
 7. The compressed version must produce identical output when used
-
+${variablesSection}
 Original prompt to compress:
 ---
 ${promptText}
