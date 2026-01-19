@@ -108,6 +108,14 @@ function generateAgendaForEvent(event, client) {
     return;
   }
 
+  // Ensure Gmail labels and filters are synced for this client before sending
+  try {
+    syncClientLabels(client);
+    logProcessing('AGENDA_GEN', client.client_name, 'Synced Gmail labels and filters', 'info');
+  } catch (error) {
+    logProcessing('AGENDA_GEN', client.client_name, `Failed to sync labels/filters: ${error.message}`, 'warning');
+  }
+
   // Send agenda email
   sendAgendaEmail(event, client, agendaContent);
 
@@ -433,7 +441,13 @@ function generateAgendaWithClaude(event, client, context) {
 
     if (result.content && result.content.length > 0) {
       logProcessing('AGENDA_GEN', client.client_name, 'Successfully generated agenda with Claude', 'success');
-      return result.content[0].text;
+      let content = result.content[0].text;
+
+      // Strip markdown code fences if present (Claude sometimes wraps HTML in ```html ... ```)
+      content = content.replace(/^```html\s*/i, '').replace(/\s*```$/, '');
+      content = content.trim();
+
+      return content;
     }
 
     logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty content', 'error');
@@ -562,12 +576,70 @@ function sendAgendaEmail(event, client, agendaContent) {
 }
 
 /**
+ * Converts HTML content to plain text suitable for Google Docs.
+ * Strips HTML tags and converts common entities to readable text.
+ *
+ * @param {string} html - The HTML content
+ * @returns {string} Plain text version
+ */
+function htmlToPlainText(html) {
+  if (!html) return '';
+
+  let text = html;
+
+  // Strip <!DOCTYPE>, <html>, <head>, <style>, <script> tags and their contents
+  text = text.replace(/<!DOCTYPE[^>]*>/gi, '');
+  text = text.replace(/<head[\s\S]*?<\/head>/gi, '');
+  text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
+  text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
+  text = text.replace(/<html[^>]*>/gi, '');
+  text = text.replace(/<\/html>/gi, '');
+  text = text.replace(/<body[^>]*>/gi, '');
+  text = text.replace(/<\/body>/gi, '');
+
+  // Convert common HTML elements to plain text equivalents
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/p>/gi, '\n\n');
+  text = text.replace(/<p[^>]*>/gi, '');
+  text = text.replace(/<\/div>/gi, '\n');
+  text = text.replace(/<div[^>]*>/gi, '');
+  text = text.replace(/<\/h[1-6]>/gi, '\n\n');
+  text = text.replace(/<h[1-6][^>]*>/gi, '');
+  text = text.replace(/<\/li>/gi, '\n');
+  text = text.replace(/<li[^>]*>/gi, '  • ');
+  text = text.replace(/<\/ul>/gi, '\n');
+  text = text.replace(/<ul[^>]*>/gi, '');
+  text = text.replace(/<\/ol>/gi, '\n');
+  text = text.replace(/<ol[^>]*>/gi, '');
+
+  // Strip all remaining HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+
+  // Decode HTML entities
+  text = text.replace(/&nbsp;/g, ' ');
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&#39;/g, "'");
+  text = text.replace(/&mdash;/g, '—');
+  text = text.replace(/&ndash;/g, '–');
+
+  // Clean up excessive whitespace
+  text = text.replace(/\n{3,}/g, '\n\n'); // Max 2 consecutive newlines
+  text = text.replace(/[ \t]+/g, ' '); // Multiple spaces to single space
+  text = text.trim();
+
+  return text;
+}
+
+/**
  * Appends the agenda to the client's Google Doc with structured delimiters.
  * Uses the same format as meeting notes for consistent parsing.
  *
  * @param {CalendarEvent} event - The calendar event
  * @param {Object} client - The client object
- * @param {string} agendaContent - The generated agenda
+ * @param {string} agendaContent - The generated agenda (HTML format)
  */
 function appendAgendaToDoc(event, client, agendaContent) {
   if (!client.google_doc_url) {
@@ -582,6 +654,9 @@ function appendAgendaToDoc(event, client, agendaContent) {
 
     const formattedDate = formatDate(event.getStartTime());
 
+    // Convert HTML to plain text for the doc
+    const plainTextContent = htmlToPlainText(agendaContent);
+
     // Add blank line before for separation
     body.appendParagraph('');
 
@@ -595,8 +670,8 @@ function appendAgendaToDoc(event, client, agendaContent) {
     // Add content delimiter
     body.appendParagraph('───────────────────────────────────────────────────────────');
 
-    // Add agenda content
-    body.appendParagraph(agendaContent);
+    // Add agenda content as plain text
+    body.appendParagraph(plainTextContent);
 
     // Add end delimiter
     body.appendParagraph('───────────────────────────────────────────────────────────');
