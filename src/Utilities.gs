@@ -2371,19 +2371,31 @@ function importClientsFromWizard(importData) {
       todoistProjectId
     ];
 
-    const rowNumber = sheet.getLastRow() + 1;
+    const beforeRowCount = sheet.getLastRow();
+    logProcessing('MIGRATION_WIZARD', client.client_name, `Before append: ${beforeRowCount} rows`, 'info');
+
     sheet.appendRow(rowData);
     SpreadsheetApp.flush(); // Force write
 
-    // Verify the row was actually added
-    const verifyRow = sheet.getRange(rowNumber, 1, 1, 6).getValues()[0];
-    if (verifyRow[0] !== client.client_name) {
-      logProcessing('MIGRATION_WIZARD', client.client_name, `FAILED - Row not added to sheet (verification failed)`, 'error');
+    const afterRowCount = sheet.getLastRow();
+    logProcessing('MIGRATION_WIZARD', client.client_name, `After append and flush: ${afterRowCount} rows`, 'info');
+
+    // Verify row count increased
+    if (afterRowCount <= beforeRowCount) {
+      logProcessing('MIGRATION_WIZARD', client.client_name, `FAILED - Row count did not increase (before: ${beforeRowCount}, after: ${afterRowCount})`, 'error');
       skipped++;
       continue;
     }
 
-    logProcessing('MIGRATION_WIZARD', client.client_name, `Row added to Client_Registry at row ${rowNumber}`, 'info');
+    // Verify the data is actually there
+    const verifyRow = sheet.getRange(afterRowCount, 1, 1, 6).getValues()[0];
+    if (verifyRow[0] !== client.client_name) {
+      logProcessing('MIGRATION_WIZARD', client.client_name, `FAILED - Data verification failed (expected "${client.client_name}", got "${verifyRow[0]}")`, 'error');
+      skipped++;
+      continue;
+    }
+
+    logProcessing('MIGRATION_WIZARD', client.client_name, `SUCCESS - Row ${afterRowCount} verified in Client_Registry`, 'success');
 
     // COUNT IT NOW - row is in the sheet, that's what matters
     imported++;
