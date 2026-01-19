@@ -2000,6 +2000,102 @@ function scanForMigration() {
 }
 
 /**
+ * Extracts unique email addresses from all emails in a Gmail label.
+ * Scans To, From, and CC fields.
+ *
+ * @param {string} labelName - The Gmail label name to scan
+ * @returns {string[]} Array of unique email addresses
+ */
+function getEmailAddressesFromLabel(labelName) {
+  try {
+    Logger.log(`Scanning label "${labelName}" for email addresses...`);
+
+    const label = GmailApp.getUserLabelByName(labelName);
+    if (!label) {
+      Logger.log(`Label not found: ${labelName}`);
+      return [];
+    }
+
+    const emailSet = new Set();
+    const myEmail = Session.getActiveUser().getEmail().toLowerCase();
+
+    // Get threads from this label (limit to most recent 500 threads for performance)
+    const threads = label.getThreads(0, 500);
+    Logger.log(`Found ${threads.length} threads in label "${labelName}"`);
+
+    for (const thread of threads) {
+      const messages = thread.getMessages();
+
+      for (const message of messages) {
+        // Extract From
+        const from = message.getFrom();
+        const fromEmails = extractEmailsFromString(from);
+        fromEmails.forEach(email => {
+          const normalized = email.toLowerCase().trim();
+          if (normalized && normalized !== myEmail) {
+            emailSet.add(normalized);
+          }
+        });
+
+        // Extract To
+        const to = message.getTo();
+        const toEmails = extractEmailsFromString(to);
+        toEmails.forEach(email => {
+          const normalized = email.toLowerCase().trim();
+          if (normalized && normalized !== myEmail) {
+            emailSet.add(normalized);
+          }
+        });
+
+        // Extract CC
+        const cc = message.getCc();
+        const ccEmails = extractEmailsFromString(cc);
+        ccEmails.forEach(email => {
+          const normalized = email.toLowerCase().trim();
+          if (normalized && normalized !== myEmail) {
+            emailSet.add(normalized);
+          }
+        });
+      }
+    }
+
+    const uniqueEmails = Array.from(emailSet);
+    Logger.log(`Extracted ${uniqueEmails.length} unique email addresses from label "${labelName}"`);
+
+    return uniqueEmails;
+
+  } catch (error) {
+    Logger.log(`Error extracting emails from label: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Extracts email addresses from a string that may contain names and emails.
+ * Handles formats like "Name <email@example.com>" and "email@example.com".
+ *
+ * @param {string} str - The string to extract emails from
+ * @returns {string[]} Array of email addresses
+ */
+function extractEmailsFromString(str) {
+  if (!str) return [];
+
+  const emails = [];
+
+  // Regex to match email addresses
+  const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi;
+  const matches = str.match(emailRegex);
+
+  if (matches) {
+    matches.forEach(email => {
+      emails.push(email.toLowerCase().trim());
+    });
+  }
+
+  return emails;
+}
+
+/**
  * Gets folders for the wizard dropdown.
  *
  * @returns {Object[]} Array of folder objects with folder_path
