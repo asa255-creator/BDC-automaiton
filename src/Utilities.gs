@@ -1879,17 +1879,25 @@ function scanForMigration() {
   // Scan Gmail labels for "Client: *" pattern
   try {
     const allLabels = GmailApp.getUserLabels();
+    Logger.log(`Total Gmail labels found: ${allLabels.length}`);
+
     const labelMap = {}; // Map parent labels to their sub-labels
 
     // First pass: collect all client labels
     for (const label of allLabels) {
       const labelName = label.getName();
 
+      // Debug: log all labels to see what we're working with
+      if (labelName.startsWith('Client:')) {
+        Logger.log(`Found client label: "${labelName}"`);
+      }
+
       if (labelName.startsWith('Client: ')) {
         // Check if this is a parent label or sub-label
         if (!labelName.includes('/')) {
           // Parent label
           const clientName = labelName.replace('Client: ', '');
+          Logger.log(`Adding parent label: ${labelName} (client: ${clientName})`);
           labelMap[labelName] = {
             labelName: labelName,
             clientName: clientName,
@@ -1900,6 +1908,8 @@ function scanForMigration() {
           const parts = labelName.split('/');
           const parentLabel = parts[0]; // e.g., "Client: Acme Corp"
           const subLabelName = parts.slice(1).join('/'); // e.g., "Meeting Summaries"
+
+          Logger.log(`Adding sub-label: ${labelName} (parent: ${parentLabel}, sub: ${subLabelName})`);
 
           // Ensure parent exists in map
           if (!labelMap[parentLabel]) {
@@ -1922,8 +1932,13 @@ function scanForMigration() {
 
     // Convert map to array
     discovered.gmailLabels = Object.values(labelMap);
+    Logger.log(`Total client labels discovered: ${discovered.gmailLabels.length}`);
+    discovered.gmailLabels.forEach(function(label) {
+      Logger.log(`  - ${label.labelName} with ${label.subLabels.length} sub-labels`);
+    });
   } catch (error) {
-    Logger.log(`Failed to scan Gmail labels: ${error.message}`);
+    Logger.log(`ERROR scanning Gmail labels: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
   }
 
   // Scan Todoist projects
