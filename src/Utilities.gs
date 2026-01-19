@@ -2230,7 +2230,7 @@ function importClientsFromWizard(importData) {
       googleDocUrl = client.existing_doc_url;
     } else if (client.doc_mode === 'create') {
       // Create new doc
-      const folderId = client.create_folder ? getFolderIdFromPath(client.create_folder) : null;
+      const folderId = client.create_folder ? getFolderIdByPath(client.create_folder) : null;
       googleDocUrl = createClientDoc(client.client_name, folderId) || '';
     }
 
