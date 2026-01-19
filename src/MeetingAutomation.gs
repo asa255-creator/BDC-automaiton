@@ -1169,15 +1169,12 @@ function loadLatestFathomMeeting() {
 // ============================================================================
 
 /**
- * TEST: Process the most recent meeting summary.
- * Run from Apps Script editor - finds latest meeting summary and processes it.
- * Tests BOTH Todoist task creation AND document append.
- * Results in Execution Log (View > Execution log).
+ * TEST: Append most recent meeting summary to Google Doc.
+ * Run from Apps Script editor. That's it - just appends to doc.
  */
 function testLastMeetingSummary() {
-  Logger.log('=== TESTING LAST MEETING SUMMARY PROCESSING ===\n');
+  Logger.log('=== APPENDING LAST MEETING SUMMARY TO DOC ===\n');
 
-  // Find the most recent meeting summary across all clients
   const allClients = getClientRegistry();
   const clients = allClients.filter(client => client.setup_complete === true);
 
@@ -1205,70 +1202,19 @@ function testLastMeetingSummary() {
   }
 
   if (!mostRecentMessage || !mostRecentClient) {
-    Logger.log('ERROR: No meeting summaries found in any client label');
+    Logger.log('ERROR: No meeting summaries found');
     return;
   }
 
-  Logger.log('FOUND MOST RECENT MEETING SUMMARY:');
-  Logger.log(`  Client: ${mostRecentClient.client_name}`);
-  Logger.log(`  Subject: ${mostRecentMessage.getSubject()}`);
-  Logger.log(`  Date: ${mostRecentMessage.getDate()}`);
-  Logger.log(`  Doc URL: ${mostRecentClient.google_doc_url || 'NOT SET'}`);
-  Logger.log(`  Todoist Project: ${mostRecentClient.todoist_project_id || 'NOT SET'}`);
+  Logger.log(`Client: ${mostRecentClient.client_name}`);
+  Logger.log(`Subject: ${mostRecentMessage.getSubject()}`);
+  Logger.log(`Doc URL: ${mostRecentClient.google_doc_url}`);
 
-  // Show email body preview
-  const emailBody = mostRecentMessage.getPlainBody();
-  Logger.log(`\n--- EMAIL BODY PREVIEW (first 500 chars) ---`);
-  Logger.log(emailBody.substring(0, 500));
-  Logger.log('--- END PREVIEW ---\n');
+  // Append to doc
+  appendMeetingNotesToDoc(mostRecentMessage, mostRecentClient);
 
-  // Test 1: Extract action items with AI
-  Logger.log('=== TEST 1: ACTION ITEM EXTRACTION ===');
-  try {
-    const actionItems = extractActionItemsWithAI(emailBody, mostRecentClient);
-    Logger.log(`Found ${actionItems.length} action items:`);
-    actionItems.forEach((item, i) => {
-      Logger.log(`  ${i + 1}. ${item.task}`);
-      if (item.assignee) Logger.log(`     Assignee: ${item.assignee}`);
-      if (item.due_date) Logger.log(`     Due: ${item.due_date}`);
-    });
-    Logger.log('Action item extraction: SUCCESS\n');
-  } catch (error) {
-    Logger.log(`Action item extraction: FAILED - ${error.message}\n`);
-  }
-
-  // Test 2: Document access
-  Logger.log('=== TEST 2: DOCUMENT ACCESS ===');
-  if (!mostRecentClient.google_doc_url) {
-    Logger.log('SKIPPED - No Google Doc URL configured');
-  } else {
-    try {
-      const docId = extractDocIdFromUrl(mostRecentClient.google_doc_url);
-      Logger.log(`Extracted Doc ID: ${docId}`);
-      const doc = DocumentApp.openById(docId);
-      Logger.log(`Doc Title: ${doc.getName()}`);
-      Logger.log('Document access: SUCCESS\n');
-    } catch (error) {
-      Logger.log(`Document access: FAILED - ${error.message}\n`);
-    }
-  }
-
-  // Test 3: Full processing (creates tasks + appends doc)
-  Logger.log('=== TEST 3: FULL PROCESSING ===');
-  Logger.log('Running processSentMeetingSummary()...\n');
-
-  try {
-    processSentMeetingSummary(mostRecentMessage, mostRecentClient);
-    Logger.log('Full processing: SUCCESS');
-  } catch (error) {
-    Logger.log(`Full processing: FAILED - ${error.message}`);
-  }
-
-  Logger.log('\n=== TEST COMPLETE ===');
-  Logger.log('Check:');
-  Logger.log('  - Todoist for new tasks');
-  Logger.log('  - Google Doc for appended notes');
-  Logger.log('  - Processing_Log sheet for detailed logs');
+  Logger.log('\nDone. Check the Google Doc.');
+}
 }
 
 /**
