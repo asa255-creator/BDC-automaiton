@@ -421,6 +421,11 @@
         return;
       }
 
+      // Sort Gmail labels alphabetically
+      discoveredData.gmailLabels.sort(function(a, b) {
+        return a.labelName.localeCompare(b.labelName);
+      });
+
       let html = '';
 
       // Build list of potential clients from Todoist projects
@@ -431,6 +436,8 @@
           name: project.projectName,
           todoistId: project.projectId,
           gmailLabel: '',
+          selectedSubLabels: [],
+          createNewSubLabels: false,
           emails: []
         };
 
@@ -458,10 +465,16 @@
         html += '</select>';
         html += '</div>';
 
-        // Sub-labels display area
+        // Sub-labels selection area
         html += '<div id="sublabels_' + clientKey + '" style="margin-left: 16px; margin-top: 8px; display: none;">';
-        html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px;">Included sub-labels:</div>';
+        html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px;">Select existing sub-labels to include:</div>';
         html += '<div id="sublabels_list_' + clientKey + '" style="font-size: 12px; color: #202124;"></div>';
+        html += '<div style="margin-top: 8px;">';
+        html += '<label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">';
+        html += '<input type="checkbox" id="create_sublabels_' + clientKey + '" onchange="toggleCreateSubLabels(\'' + clientKey + '\')">';
+        html += '<span style="font-size: 12px;">Create Meeting Summaries and Meeting Agendas sub-labels</span>';
+        html += '</label>';
+        html += '</div>';
         html += '</div>';
 
         // Email input with autocomplete
@@ -483,6 +496,8 @@
             name: label.clientName,
             todoistId: '',
             gmailLabel: label.labelName,
+            selectedSubLabels: label.subLabels ? label.subLabels.map(function(sl) { return sl.fullLabelName; }) : [],
+            createNewSubLabels: false,
             emails: []
           };
 
@@ -503,17 +518,25 @@
           html += '</select>';
           html += '</div>';
 
-          // Sub-labels display area for Gmail-only clients
+          // Sub-labels selection area for Gmail-only clients
           if (label.subLabels && label.subLabels.length > 0) {
             html += '<div style="margin-left: 16px; margin-top: 8px;">';
-            html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px;">Included sub-labels:</div>';
-            html += '<ul style="margin: 4px 0; padding-left: 20px; font-size: 12px; color: #202124;">';
+            html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px;">Select sub-labels to include:</div>';
             label.subLabels.forEach(function(subLabel) {
-              html += '<li style="color: #5f6368;">' + escapeHtml(subLabel.subLabelName) + '</li>';
+              html += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
+              html += '<input type="checkbox" class="sublabel-checkbox" data-client="' + clientKey + '" data-sublabel="' + escapeHtml(subLabel.fullLabelName) + '" checked onchange="toggleSubLabel(\'' + clientKey + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+              html += '<span style="font-size: 12px;">' + escapeHtml(subLabel.subLabelName) + '</span>';
+              html += '</label>';
             });
-            html += '</ul>';
             html += '</div>';
           }
+
+          html += '<div style="margin-left: 16px; margin-top: 8px;">';
+          html += '<label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">';
+          html += '<input type="checkbox" id="create_sublabels_' + clientKey + '" onchange="toggleCreateSubLabels(\'' + clientKey + '\')">';
+          html += '<span style="font-size: 12px;">Create Meeting Summaries and Meeting Agendas sub-labels</span>';
+          html += '</label>';
+          html += '</div>';
 
           // Email input with autocomplete
           html += renderEmailInput(clientKey);
@@ -698,17 +721,47 @@
       });
 
       if (selectedLabel && selectedLabel.subLabels && selectedLabel.subLabels.length > 0) {
-        // Show sub-labels
-        let subLabelsHtml = '<ul style="margin: 4px 0; padding-left: 20px;">';
-        selectedLabel.subLabels.forEach(function(subLabel) {
-          subLabelsHtml += '<li style="color: #5f6368;">' + escapeHtml(subLabel.subLabelName) + '</li>';
+        // Initialize selected sub-labels array with all sub-labels checked by default
+        selectedClients[key].selectedSubLabels = selectedLabel.subLabels.map(function(sl) {
+          return sl.fullLabelName;
         });
-        subLabelsHtml += '</ul>';
+
+        // Show sub-labels as checkboxes
+        let subLabelsHtml = '';
+        selectedLabel.subLabels.forEach(function(subLabel) {
+          subLabelsHtml += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
+          subLabelsHtml += '<input type="checkbox" class="sublabel-checkbox" data-client="' + key + '" data-sublabel="' + escapeHtml(subLabel.fullLabelName) + '" checked onchange="toggleSubLabel(\'' + key + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+          subLabelsHtml += '<span style="font-size: 12px;">' + escapeHtml(subLabel.subLabelName) + '</span>';
+          subLabelsHtml += '</label>';
+        });
         sublabelsList.innerHTML = subLabelsHtml;
         sublabelsDiv.style.display = 'block';
       } else {
-        sublabelsDiv.style.display = 'none';
+        // No existing sub-labels, still show option to create new ones
+        selectedClients[key].selectedSubLabels = [];
+        sublabelsList.innerHTML = '';
+        sublabelsDiv.style.display = 'block';
       }
+    }
+
+    function toggleSubLabel(clientKey, subLabelName) {
+      if (!selectedClients[clientKey].selectedSubLabels) {
+        selectedClients[clientKey].selectedSubLabels = [];
+      }
+
+      const index = selectedClients[clientKey].selectedSubLabels.indexOf(subLabelName);
+      if (index > -1) {
+        // Remove from array
+        selectedClients[clientKey].selectedSubLabels.splice(index, 1);
+      } else {
+        // Add to array
+        selectedClients[clientKey].selectedSubLabels.push(subLabelName);
+      }
+    }
+
+    function toggleCreateSubLabels(clientKey) {
+      const checkbox = document.getElementById('create_sublabels_' + clientKey);
+      selectedClients[clientKey].createNewSubLabels = checkbox.checked;
     }
 
     function updateTodoistMatch(key) {
@@ -966,6 +1019,14 @@
           html += 'Gmail: Will create label<br>';
         }
 
+        // Sub-labels
+        if (client.selectedSubLabels && client.selectedSubLabels.length > 0) {
+          html += 'Sub-labels: ' + client.selectedSubLabels.length + ' selected<br>';
+        }
+        if (client.createNewSubLabels) {
+          html += 'Will create: Meeting Summaries, Meeting Agendas<br>';
+        }
+
         // Doc
         if (doc.mode === 'existing' && doc.existingDocUrl) {
           html += 'Doc: ' + escapeHtml(doc.existingDocName);
@@ -1006,6 +1067,8 @@
           create_todoist: client.todoistId === '__create__',
           gmail_label: client.gmailLabel === '__create__' ? '' : client.gmailLabel,
           create_gmail_label: client.gmailLabel === '__create__' || !client.gmailLabel,
+          selected_sub_labels: client.selectedSubLabels || [],
+          create_new_sub_labels: client.createNewSubLabels || false,
           doc_mode: doc.mode || 'create',
           existing_doc_url: doc.existingDocUrl || '',
           create_folder: doc.createFolder || ''

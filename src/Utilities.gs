@@ -2251,11 +2251,41 @@ function importClientsFromWizard(importData) {
     ]);
 
     // Create Gmail labels and filters
-    if (client.create_gmail_label || !client.gmail_label) {
-      syncClientLabels({
-        client_name: client.client_name,
-        contact_emails: contactEmails
-      });
+    const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;
+
+    // Create the base label if needed
+    createLabelIfNotExists(baseLabelName);
+
+    // Handle sub-labels
+    // If user selected existing sub-labels, they're already created - nothing to do
+    // If user wants to create new sub-labels, create them
+    if (client.create_new_sub_labels) {
+      createLabelIfNotExists(`${baseLabelName}/Meeting Summaries`);
+      createLabelIfNotExists(`${baseLabelName}/Meeting Agendas`);
+
+      // Create filters for the new sub-labels
+      const contacts = parseCommaSeparatedList(contactEmails);
+      if (contacts.length > 0) {
+        const toCriteria = buildToCriteria(contacts);
+        if (toCriteria) {
+          const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
+          const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
+          createGmailApiFilter(summaryCriteria, `${baseLabelName}/Meeting Summaries`);
+        }
+      }
+
+      const agendaPattern = getAgendaFilterPatternForClient(client.client_name);
+      const agendaCriteria = `from:me to:me subject:"${agendaPattern}"`;
+      createGmailApiFilter(agendaCriteria, `${baseLabelName}/Meeting Agendas`);
+    }
+
+    // Create filter for incoming emails from client contacts
+    const contacts = parseCommaSeparatedList(contactEmails);
+    if (contacts.length > 0) {
+      const fromCriteria = buildFromCriteria(contacts);
+      if (fromCriteria) {
+        createGmailApiFilter(fromCriteria, baseLabelName);
+      }
     }
 
     Logger.log(`Imported: ${client.client_name}`);
