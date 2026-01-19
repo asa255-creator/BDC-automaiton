@@ -585,20 +585,37 @@ function getPromptModel(promptKey) {
 }
 
 /**
- * Maps model tier to actual model ID.
+ * Maps model tier to actual model ID using available models from API.
  *
  * @param {string} tier - The model tier ('haiku', 'sonnet', 'opus')
  * @returns {string} The actual Claude model ID
  */
 function getModelIdForTier(tier) {
-  // Map tier names to actual model IDs
-  const tierMap = {
-    'haiku': 'claude-3-haiku-20240307',
-    'sonnet': 'claude-sonnet-4-20250514',
-    'opus': 'claude-opus-4-20241120'
-  };
+  // Fetch available models (uses cache if available)
+  const availableModels = fetchAvailableModelsFromAPI(false);
 
-  return tierMap[tier] || tierMap['haiku']; // Default to haiku if unknown tier
+  // Normalize tier
+  const normalizedTier = (tier || 'haiku').toLowerCase();
+
+  // Find the first model that matches the tier in its ID or name
+  const matchedModel = availableModels.find(model => {
+    const modelId = model.id.toLowerCase();
+    const modelName = model.name.toLowerCase();
+    return modelId.includes(normalizedTier) || modelName.includes(normalizedTier);
+  });
+
+  if (matchedModel) {
+    return matchedModel.id;
+  }
+
+  // Fallback: if no match found, return first available model or hardcoded haiku
+  if (availableModels.length > 0) {
+    Logger.log(`No ${normalizedTier} model found, using ${availableModels[0].id}`);
+    return availableModels[0].id;
+  }
+
+  // Last resort fallback
+  return 'claude-3-haiku-20240307';
 }
 
 /**
