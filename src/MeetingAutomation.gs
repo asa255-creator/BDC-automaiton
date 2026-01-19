@@ -1163,3 +1163,132 @@ function loadLatestFathomMeeting() {
     Logger.log(`loadLatestFathomMeeting error: ${error.message}`);
   }
 }
+
+// ============================================================================
+// MANUAL TEST FUNCTIONS
+// ============================================================================
+
+/**
+ * Manual function to retry appending meeting notes for the most recent summary.
+ * Call this from Apps Script editor to debug document access issues.
+ * Shows dialog to select client, then tries to append their most recent meeting summary.
+ */
+function retryLastMeetingNotesAppend() {
+  const ui = SpreadsheetApp.getUi();
+
+  // Get all clients with setup_complete
+  const allClients = getClientRegistry();
+  const clients = allClients.filter(client => client.setup_complete === true);
+
+  if (clients.length === 0) {
+    ui.alert('Error', 'No clients with setup_complete found', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Build client selection prompt
+  let clientList = 'Enter client number:\n\n';
+  clients.forEach((client, index) => {
+    clientList += `${index + 1}. ${client.client_name}\n`;
+  });
+
+  const response = ui.prompt('Select Client', clientList, ui.ButtonSet.OK_CANCEL);
+
+  if (response.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+
+  const clientIndex = parseInt(response.getResponseText(), 10) - 1;
+  if (isNaN(clientIndex) || clientIndex < 0 || clientIndex >= clients.length) {
+    ui.alert('Error', 'Invalid client number', ui.ButtonSet.OK);
+    return;
+  }
+
+  const client = clients[clientIndex];
+
+  // Check if client has a Google Doc configured
+  if (!client.google_doc_url) {
+    ui.alert('Error', `${client.client_name} has no Google Doc URL configured`, ui.ButtonSet.OK);
+    return;
+  }
+
+  // Find the most recent message in their Meeting Summaries label
+  const labelName = `Client: ${client.client_name}/Meeting Summaries`;
+  const label = GmailApp.getUserLabelByName(labelName);
+
+  if (!label) {
+    ui.alert('Error', `Label "${labelName}" not found`, ui.ButtonSet.OK);
+    return;
+  }
+
+  const threads = label.getThreads(0, 1);
+  if (threads.length === 0) {
+    ui.alert('Error', 'No threads found in Meeting Summaries label', ui.ButtonSet.OK);
+    return;
+  }
+
+  const messages = threads[0].getMessages();
+  if (messages.length === 0) {
+    ui.alert('Error', 'No messages found in thread', ui.ButtonSet.OK);
+    return;
+  }
+
+  const message = messages[0];
+
+  // Show confirmation with details
+  const confirmResult = ui.alert(
+    'Confirm Retry',
+    `Client: ${client.client_name}\n` +
+    `Subject: ${message.getSubject()}\n` +
+    `Date: ${message.getDate()}\n` +
+    `Doc URL: ${client.google_doc_url}\n\n` +
+    'Attempt to append meeting notes to document?',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (confirmResult !== ui.Button.YES) {
+    return;
+  }
+
+  // Try to append
+  try {
+    const docId = extractDocIdFromUrl(client.google_doc_url);
+    ui.alert('Debug Info', `Extracted Doc ID: ${docId}`, ui.ButtonSet.OK);
+
+    const doc = DocumentApp.openById(docId);
+    const body = doc.getBody();
+
+    // Get meeting details from message
+    const date = formatDate(message.getDate());
+
+    // Add content
+    body.appendParagraph('');
+    body.appendParagraph('═══════════════════════════════════════════════════════════');
+    body.appendParagraph(`MEETING NOTES - ${date}`)
+      .setHeading(DocumentApp.ParagraphHeading.HEADING2);
+    body.appendParagraph('───────────────────────────────────────────────────────────');
+
+    const emailBody = message.getPlainBody();
+    body.appendParagraph(emailBody);
+
+    body.appendParagraph('───────────────────────────────────────────────────────────');
+    body.appendParagraph(`END OF MEETING NOTES - ${date}`);
+    body.appendParagraph('═══════════════════════════════════════════════════════════');
+    body.appendParagraph('');
+
+    doc.saveAndClose();
+
+    ui.alert('Success', `Meeting notes appended successfully for ${client.client_name}`, ui.ButtonSet.OK);
+    logProcessing('DOC_APPEND_MANUAL', client.client_name, `Manual append successful for ${date}`, 'success');
+
+  } catch (error) {
+    ui.alert(
+      'Error',
+      `Failed to append meeting notes:\n\n` +
+      `Error: ${error.message}\n\n` +
+      `Client: ${client.client_name}\n` +
+      `Doc URL: ${client.google_doc_url}`,
+      ui.ButtonSet.OK
+    );
+    logProcessing('DOC_APPEND_MANUAL', client.client_name, `Manual append failed: ${error.message} | URL: ${client.google_doc_url}`, 'error');
+  }
+}
