@@ -1131,6 +1131,11 @@
       const importBtn = document.getElementById('importBtn');
       importBtn.disabled = true;
 
+      document.querySelectorAll('.step').forEach(function(el) {
+        el.style.display = 'none';
+      });
+      document.getElementById('importing').style.display = 'block';
+
       const importData = [];
 
       Object.keys(selectedClients).forEach(function(key) {
@@ -1153,18 +1158,6 @@
           create_folder: doc.createFolder || ''
         });
       });
-
-      // Validate that at least one client is selected
-      if (importData.length === 0) {
-        importBtn.disabled = false;
-        alert('Please select at least one client to import by checking the checkbox next to their name.');
-        return;
-      }
-
-      document.querySelectorAll('.step').forEach(function(el) {
-        el.style.display = 'none';
-      });
-      document.getElementById('importing').style.display = 'block';
 
       console.log('Importing clients:', importData);
 

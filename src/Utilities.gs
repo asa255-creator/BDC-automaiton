@@ -2330,7 +2330,7 @@ function importClientsFromWizard(importData) {
 
     // Skip duplicates
     if (existingNames.includes(client.client_name.toLowerCase())) {
-      Logger.log(`Skip duplicate: ${client.client_name}`);
+      Logger.log(`SKIPPED DUPLICATE: ${client.client_name}`);
       continue;
     }
 
@@ -2364,6 +2364,7 @@ function importClientsFromWizard(importData) {
 
     Logger.log(`Appending row to Client_Registry: ${JSON.stringify(rowData)}`);
     sheet.appendRow(rowData);
+    SpreadsheetApp.flush(); // Force immediate write to spreadsheet
     Logger.log(`Row appended successfully. New row count: ${sheet.getLastRow()}`);
 
     // Create Gmail labels and filters
