@@ -432,7 +432,7 @@
       discoveredData.todoistProjects.forEach(function(project, idx) {
         const clientKey = 'todoist_' + idx;
         selectedClients[clientKey] = {
-          selected: true,
+          selected: false,
           name: project.projectName,
           todoistId: project.projectId,
           gmailLabel: '',
@@ -443,7 +443,7 @@
 
         html += '<div class="client-row">';
         html += '<div class="checkbox-row">';
-        html += '<input type="checkbox" id="sel_' + clientKey + '" checked onchange="toggleClient(\'' + clientKey + '\')">';
+        html += '<input type="checkbox" id="sel_' + clientKey + '" onchange="toggleClient(\'' + clientKey + '\')">';
         html += '<span class="client-name">Todoist: ' + escapeHtml(project.projectName) + '</span>';
         html += '</div>';
 
@@ -492,7 +492,7 @@
         if (!alreadyMatched) {
           const clientKey = 'gmail_' + idx;
           selectedClients[clientKey] = {
-            selected: true,
+            selected: false,
             name: label.clientName,
             todoistId: '',
             gmailLabel: label.labelName,
@@ -503,7 +503,7 @@
 
           html += '<div class="client-row">';
           html += '<div class="checkbox-row">';
-          html += '<input type="checkbox" id="sel_' + clientKey + '" checked onchange="toggleClient(\'' + clientKey + '\')">';
+          html += '<input type="checkbox" id="sel_' + clientKey + '" onchange="toggleClient(\'' + clientKey + '\')">';
           html += '<span class="client-name">Gmail: ' + escapeHtml(label.clientName) + '</span>';
           html += '</div>';
 
