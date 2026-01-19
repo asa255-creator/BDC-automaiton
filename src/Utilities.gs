@@ -2288,17 +2288,29 @@ function searchGmailContacts(query) {
  * @returns {Object} Result with imported count
  */
 function importClientsFromWizard(importData) {
+  Logger.log(`=== importClientsFromWizard called with ${importData ? importData.length : 0} clients ===`);
+
+  if (!importData || importData.length === 0) {
+    Logger.log('No clients to import');
+    return { imported: 0 };
+  }
+
+  Logger.log('Import data received:', JSON.stringify(importData, null, 2));
+
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
   if (!spreadsheetId) {
     throw new Error('SPREADSHEET_ID not set');
   }
 
+  Logger.log(`Opening spreadsheet: ${spreadsheetId}`);
   const ss = SpreadsheetApp.openById(spreadsheetId);
   const sheet = ss.getSheetByName('Client_Registry');
 
   if (!sheet) {
     throw new Error('Client_Registry sheet not found');
   }
+
+  Logger.log(`Client_Registry sheet found, current row count: ${sheet.getLastRow()}`);
 
   // Get existing clients to avoid duplicates
   const existingData = sheet.getDataRange().getValues();
@@ -2309,9 +2321,13 @@ function importClientsFromWizard(importData) {
     }
   }
 
+  Logger.log(`Existing clients in registry: ${existingNames.join(', ')}`);
+
   let imported = 0;
 
   for (const client of importData) {
+    Logger.log(`Processing client: ${client.client_name}`);
+
     // Skip duplicates
     if (existingNames.includes(client.client_name.toLowerCase())) {
       Logger.log(`Skip duplicate: ${client.client_name}`);
@@ -2337,14 +2353,18 @@ function importClientsFromWizard(importData) {
 
     // Add to sheet: client_name, contact_emails, docs_folder_path, setup_complete, google_doc_url, todoist_project_id
     const contactEmails = client.contact_emails || '';
-    sheet.appendRow([
+    const rowData = [
       client.client_name,
       contactEmails,
       client.create_folder || '',
       true,  // setup_complete - checked since we're setting up now
       googleDocUrl,
       todoistProjectId
-    ]);
+    ];
+
+    Logger.log(`Appending row to Client_Registry: ${JSON.stringify(rowData)}`);
+    sheet.appendRow(rowData);
+    Logger.log(`Row appended successfully. New row count: ${sheet.getLastRow()}`);
 
     // Create Gmail labels and filters
     const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;

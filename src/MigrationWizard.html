@@ -594,31 +594,6 @@
         updateGmailMatch('todoist_' + idx);
       });
 
-      // Auto-fetch emails for Gmail-only clients (they already have labels selected)
-      discoveredData.gmailLabels.forEach(function(label, idx) {
-        const alreadyMatched = discoveredData.todoistProjects.some(function(p) {
-          return p.projectName.toLowerCase() === label.clientName.toLowerCase();
-        });
-
-        if (!alreadyMatched) {
-          const clientKey = 'gmail_' + idx;
-          const labelName = label.labelName;
-
-          // Fetch emails from this label
-          google.script.run
-            .withSuccessHandler(function(emails) {
-              if (emails && emails.length > 0) {
-                selectedClients[clientKey].emails = emails;
-                renderEmailTags(clientKey);
-              }
-            })
-            .withFailureHandler(function(error) {
-              console.error('Failed to auto-fetch emails for ' + labelName + ':', error);
-            })
-            .getEmailAddressesFromLabel(labelName);
-        }
-      });
-
       // Setup email input event listeners
       setupEmailInputs();
     }
@@ -769,6 +744,27 @@
     function toggleClient(key) {
       const checkbox = document.getElementById('sel_' + key);
       selectedClients[key].selected = checkbox.checked;
+
+      // If client is checked and has a Gmail label, auto-fetch emails
+      if (checkbox.checked && selectedClients[key].gmailLabel && selectedClients[key].gmailLabel !== '__create__' && selectedClients[key].gmailLabel !== '') {
+        const labelName = selectedClients[key].gmailLabel;
+        showStatus('Scanning label for email addresses...', 'info');
+        google.script.run
+          .withSuccessHandler(function(emails) {
+            if (emails && emails.length > 0) {
+              selectedClients[key].emails = emails;
+              renderEmailTags(key);
+              showStatus('Found ' + emails.length + ' email address' + (emails.length === 1 ? '' : 'es') + ' from label', 'success');
+            } else {
+              showStatus('No email addresses found in label', 'info');
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('Failed to scan label for emails:', error);
+            showStatus('Failed to scan label for emails', 'error');
+          })
+          .getEmailAddressesFromLabel(labelName);
+      }
     }
 
     function updateGmailMatch(key) {
@@ -810,8 +806,8 @@
         sublabelsDiv.style.display = 'block';
       }
 
-      // Auto-fetch email addresses from the selected Gmail label
-      if (selectedLabelName && selectedLabelName !== '__create__' && selectedLabelName !== '') {
+      // Auto-fetch email addresses from the selected Gmail label ONLY if client is checked
+      if (selectedLabelName && selectedLabelName !== '__create__' && selectedLabelName !== '' && selectedClients[key].selected) {
         showStatus('Scanning label for email addresses...', 'info');
         google.script.run
           .withSuccessHandler(function(emails) {
@@ -1135,11 +1131,6 @@
       const importBtn = document.getElementById('importBtn');
       importBtn.disabled = true;
 
-      document.querySelectorAll('.step').forEach(function(el) {
-        el.style.display = 'none';
-      });
-      document.getElementById('importing').style.display = 'block';
-
       const importData = [];
 
       Object.keys(selectedClients).forEach(function(key) {
@@ -1162,6 +1153,20 @@
           create_folder: doc.createFolder || ''
         });
       });
+
+      // Validate that at least one client is selected
+      if (importData.length === 0) {
+        importBtn.disabled = false;
+        alert('Please select at least one client to import by checking the checkbox next to their name.');
+        return;
+      }
+
+      document.querySelectorAll('.step').forEach(function(el) {
+        el.style.display = 'none';
+      });
+      document.getElementById('importing').style.display = 'block';
+
+      console.log('Importing clients:', importData);
 
       google.script.run
         .withSuccessHandler(function(result) {
