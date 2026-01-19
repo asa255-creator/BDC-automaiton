@@ -102,30 +102,17 @@ function identifyClientFromParticipants(participants) {
 function identifyClientFromCalendarEvent(event) {
   const emails = [];
 
-  // Get ALL guests/attendees
-  const guestList = event.getGuestList();
-  for (const guest of guestList) {
-    const email = guest.getEmail();
+  // Get ALL attendees including the owner
+  // getGuestList(true) includes the event owner/organizer
+  const attendees = event.getGuestList(true);
+  for (const attendee of attendees) {
+    const email = attendee.getEmail();
     if (email) {
       emails.push(email);
     }
   }
 
-  // Get ALL organizers/creators
-  const creators = event.getCreators();
-  for (const creator of creators) {
-    if (creator) {
-      emails.push(creator);
-    }
-  }
-
-  // Add current user (you)
-  const currentUserEmail = Session.getActiveUser().getEmail();
-  if (currentUserEmail) {
-    emails.push(currentUserEmail);
-  }
-
-  Logger.log(`Calendar event "${event.getTitle()}" - collected ${emails.length} emails: ${emails.join(', ')}`);
+  Logger.log(`Calendar event "${event.getTitle()}" - collected ${emails.length} attendee emails: ${emails.join(', ')}`);
 
   return identifyClient(emails);
 }
