@@ -2232,6 +2232,46 @@ function loadClientsForReview() {
 
   logProcessing('LABEL_REVIEW', null, `Loaded ${clients.length} clients for review with ${availableLabels.length} available labels`, 'success');
 
+  // Detect duplicate emails across clients
+  const emailToClients = {}; // Map of email -> array of client names
+
+  for (const client of clients) {
+    const emails = parseCommaSeparatedList(client.contact_emails || '');
+    for (const email of emails) {
+      const normalized = email.toLowerCase().trim();
+      if (!emailToClients[normalized]) {
+        emailToClients[normalized] = [];
+      }
+      emailToClients[normalized].push(client.client_name);
+    }
+  }
+
+  // Find duplicates (emails that appear in more than one client)
+  const duplicateEmails = {};
+  for (const email in emailToClients) {
+    if (emailToClients[email].length > 1) {
+      duplicateEmails[email] = emailToClients[email];
+    }
+  }
+
+  // Add duplicate info to each client
+  for (const client of clients) {
+    client.duplicateEmails = []; // Array of emails that are duplicated
+    const emails = parseCommaSeparatedList(client.contact_emails || '');
+
+    for (const email of emails) {
+      const normalized = email.toLowerCase().trim();
+      if (duplicateEmails[normalized]) {
+        client.duplicateEmails.push({
+          email: email,
+          alsoIn: duplicateEmails[normalized].filter(name => name !== client.client_name)
+        });
+      }
+    }
+  }
+
+  logProcessing('LABEL_REVIEW', null, `Found ${Object.keys(duplicateEmails).length} duplicate emails across clients`, 'info');
+
   return {
     clients: clients,
     availableLabels: availableLabels
@@ -2304,6 +2344,12 @@ function updateClientLabels(updates) {
       }
       if (update.agendaLabel) {
         sheet.getRange(rowNum, agendaLabelIdx + 1).setValue(update.agendaLabel);
+      }
+
+      // Update contact emails if provided (for duplicate email cleanup)
+      if (update.updatedEmails !== undefined) {
+        sheet.getRange(rowNum, contactEmailsIdx + 1).setValue(update.updatedEmails);
+        logProcessing('LABEL_UPDATE', update.clientName, `Updated contact emails to: ${update.updatedEmails}`, 'info');
       }
 
       SpreadsheetApp.flush();

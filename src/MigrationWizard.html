@@ -583,9 +583,31 @@
 
         html += `</select>
             <div style="font-size: 11px; color: #5f6368; margin-top: 4px;">Current: ${escapeHtml(client.meeting_agendas_label || 'Not set')}</div>
-          </div>
+          </div>`;
 
-          <div class="field-group">
+        // Show duplicate emails if any
+        if (client.duplicateEmails && client.duplicateEmails.length > 0) {
+          html += `<div class="field-group" style="background: #fef7e0; padding: 8px; border-radius: 4px; border: 1px solid #fdd663;">
+            <label style="color: #ea8600; font-weight: 500; margin-bottom: 8px; display: block;">⚠️ Duplicate Emails Detected</label>`;
+
+          for (const dup of client.duplicateEmails) {
+            html += `<div style="margin-bottom: 12px; padding: 8px; background: white; border-radius: 4px;">
+              <div style="font-size: 12px; font-weight: 500; margin-bottom: 4px;">${escapeHtml(dup.email)}</div>
+              <div style="font-size: 11px; color: #5f6368; margin-bottom: 6px;">Also in: ${dup.alsoIn.map(n => escapeHtml(n)).join(', ')}</div>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox"
+                       id="keep_${key}_${escapeHtml(dup.email)}"
+                       onchange="markEmailToKeep('${key}', '${escapeHtml(dup.email).replace(/'/g, "\\'")}', this.checked)"
+                       style="margin: 0;">
+                <span style="font-size: 11px;">Keep this email on ${escapeHtml(client.client_name)} (remove from others)</span>
+              </label>
+            </div>`;
+          }
+
+          html += `</div>`;
+        }
+
+        html += `<div class="field-group">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
               <input type="checkbox" id="delete_${key}" onchange="labelUpdates['${key}'].deleteOldLabels = this.checked" style="margin: 0;">
               <span>Delete old label from Gmail (if it matches default pattern)</span>
@@ -608,33 +630,93 @@
       }
     }
 
-    function doUpdateLabels() {
-      const updates = Object.values(labelUpdates).filter(u =>
-        u.gmailLabel || u.summaryLabel || u.agendaLabel
-      );
+    // Track which emails to keep on which clients
+    const emailKeepers = {}; // { email: clientName }
 
-      if (updates.length === 0) {
+    function markEmailToKeep(clientName, email, checked) {
+      const normalizedEmail = email.toLowerCase().trim();
+
+      if (checked) {
+        // Mark this client as the keeper for this email
+        emailKeepers[normalizedEmail] = clientName;
+      } else {
+        // Unmark
+        if (emailKeepers[normalizedEmail] === clientName) {
+          delete emailKeepers[normalizedEmail];
+        }
+      }
+    }
+
+    function doUpdateLabels() {
+      // Process email deduplication first
+      const allUpdates = [];
+
+      for (const clientName in labelUpdates) {
+        const update = labelUpdates[clientName];
+        const client = reviewData.clients.find(c => c.client_name === clientName);
+
+        if (!client) continue;
+
+        // Get current emails for this client
+        const currentEmails = client.contact_emails ? client.contact_emails.split(',').map(e => e.trim()) : [];
+        let updatedEmails = [...currentEmails];
+        let emailsChanged = false;
+
+        // Check if any emails should be removed (kept on another client)
+        if (client.duplicateEmails && client.duplicateEmails.length > 0) {
+          for (const dup of client.duplicateEmails) {
+            const normalizedEmail = dup.email.toLowerCase().trim();
+            const keeper = emailKeepers[normalizedEmail];
+
+            // If this email is marked to be kept on a different client, remove it from this one
+            if (keeper && keeper !== clientName) {
+              updatedEmails = updatedEmails.filter(e => e.toLowerCase().trim() !== normalizedEmail);
+              emailsChanged = true;
+            }
+          }
+        }
+
+        // Add to updates if there are any changes (labels or emails)
+        if (update.gmailLabel || update.summaryLabel || update.agendaLabel || emailsChanged) {
+          const finalUpdate = {
+            clientName: clientName,
+            gmailLabel: update.gmailLabel,
+            summaryLabel: update.summaryLabel,
+            agendaLabel: update.agendaLabel,
+            deleteOldLabels: update.deleteOldLabels
+          };
+
+          if (emailsChanged) {
+            finalUpdate.updatedEmails = updatedEmails.join(', ');
+          }
+
+          allUpdates.push(finalUpdate);
+        }
+      }
+
+      if (allUpdates.length === 0) {
         showStatus('No changes to apply', 'warning');
         return;
       }
 
       document.getElementById('stepReview').style.display = 'none';
       document.getElementById('importing').style.display = 'block';
-      document.getElementById('importStatus').textContent = 'Updating label mappings...';
+      document.getElementById('importStatus').textContent = 'Updating label mappings and cleaning up duplicate emails...';
 
       google.script.run
         .withSuccessHandler(function(result) {
           document.getElementById('importing').style.display = 'none';
           document.getElementById('complete').style.display = 'block';
+          const cleanedEmails = Object.keys(emailKeepers).length;
           document.getElementById('completeMessage').textContent =
-            `Updated ${result.updated} client(s). ${result.errors.length > 0 ? 'Errors: ' + result.errors.join(', ') : ''}`;
+            `Updated ${result.updated} client(s). ${cleanedEmails > 0 ? `Cleaned up ${cleanedEmails} duplicate email(s). ` : ''}${result.errors.length > 0 ? 'Errors: ' + result.errors.join(', ') : ''}`;
         })
         .withFailureHandler(function(error) {
           document.getElementById('importing').style.display = 'none';
           showStatus('Error updating labels: ' + error.message, 'error');
           document.getElementById('stepReview').style.display = 'block';
         })
-        .updateClientLabels(updates);
+        .updateClientLabels(allUpdates);
     }
 
     function loadDiscoveredClients() {
