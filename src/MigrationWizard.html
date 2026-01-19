@@ -478,8 +478,8 @@
           name: project.projectName,
           todoistId: project.projectId,
           gmailLabel: '',
-          selectedSubLabels: [],
-          createNewSubLabels: false,
+          summarySubLabel: null,  // Which existing sub-label to use for Meeting Summaries (null = create new)
+          agendaSubLabel: null,   // Which existing sub-label to use for Meeting Agendas (null = create new)
           emails: []
         };
 
@@ -509,14 +509,15 @@
 
         // Sub-labels selection area
         html += '<div id="sublabels_' + clientKey + '" style="margin-left: 16px; margin-top: 8px; display: none;">';
-        html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px;">Select existing sub-labels to include:</div>';
-        html += '<div id="sublabels_list_' + clientKey + '" style="font-size: 12px; color: #202124;"></div>';
-        html += '<div style="margin-top: 8px;">';
-        html += '<label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">';
-        html += '<input type="checkbox" id="create_sublabels_' + clientKey + '" onchange="toggleCreateSubLabels(\'' + clientKey + '\')">';
-        html += '<span style="font-size: 12px;">Create Meeting Summaries and Meeting Agendas sub-labels</span>';
-        html += '</label>';
-        html += '</div>';
+
+        // Meeting Summaries sub-label selection
+        html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px; font-weight: 500;">Meeting Summaries sub-label:</div>';
+        html += '<div id="summary_sublabels_' + clientKey + '" style="font-size: 12px; color: #202124; margin-bottom: 12px;"></div>';
+
+        // Meeting Agendas sub-label selection
+        html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px; font-weight: 500;">Meeting Agendas sub-label:</div>';
+        html += '<div id="agenda_sublabels_' + clientKey + '" style="font-size: 12px; color: #202124;"></div>';
+
         html += '</div>';
 
         // Email input with autocomplete
@@ -538,8 +539,8 @@
             name: label.clientName,
             todoistId: '',
             gmailLabel: label.labelName,
-            selectedSubLabels: label.subLabels ? label.subLabels.map(function(sl) { return sl.fullLabelName; }) : [],
-            createNewSubLabels: false,
+            summarySubLabel: null,  // Which existing sub-label to use for Meeting Summaries (null = create new)
+            agendaSubLabel: null,   // Which existing sub-label to use for Meeting Agendas (null = create new)
             emails: []
           };
 
@@ -563,22 +564,39 @@
           // Sub-labels selection area for Gmail-only clients
           if (label.subLabels && label.subLabels.length > 0) {
             html += '<div style="margin-left: 16px; margin-top: 8px;">';
-            html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px;">Select sub-labels to include:</div>';
+
+            // Meeting Summaries section
+            html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px; font-weight: 500;">Meeting Summaries sub-label:</div>';
+            html += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
+            html += '<input type="radio" name="summary_' + clientKey + '" value="" checked onchange="setSummarySubLabel(\'' + clientKey + '\', null)">';
+            html += '<span style="font-size: 12px;">Create new "Meeting Summaries" sub-label</span>';
+            html += '</label>';
             label.subLabels.forEach(function(subLabel) {
               html += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
-              html += '<input type="checkbox" class="sublabel-checkbox" data-client="' + clientKey + '" data-sublabel="' + escapeHtml(subLabel.fullLabelName) + '" checked onchange="toggleSubLabel(\'' + clientKey + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
-              html += '<span style="font-size: 12px;">' + escapeHtml(subLabel.subLabelName) + '</span>';
+              html += '<input type="radio" name="summary_' + clientKey + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setSummarySubLabel(\'' + clientKey + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+              html += '<span style="font-size: 12px;">Use "' + escapeHtml(subLabel.subLabelName) + '"</span>';
               html += '</label>';
             });
+
+            // Meeting Agendas section
+            html += '<div style="font-size: 11px; color: #5f6368; margin-bottom: 4px; margin-top: 12px; font-weight: 500;">Meeting Agendas sub-label:</div>';
+            html += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
+            html += '<input type="radio" name="agenda_' + clientKey + '" value="" checked onchange="setAgendaSubLabel(\'' + clientKey + '\', null)">';
+            html += '<span style="font-size: 12px;">Create new "Meeting Agendas" sub-label</span>';
+            html += '</label>';
+            label.subLabels.forEach(function(subLabel) {
+              html += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
+              html += '<input type="radio" name="agenda_' + clientKey + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setAgendaSubLabel(\'' + clientKey + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+              html += '<span style="font-size: 12px;">Use "' + escapeHtml(subLabel.subLabelName) + '"</span>';
+              html += '</label>';
+            });
+
+            html += '</div>';
+          } else {
+            html += '<div style="margin-left: 16px; margin-top: 8px;">';
+            html += '<div style="font-size: 12px; color: #5f6368;">Will create new "Meeting Summaries" and "Meeting Agendas" sub-labels</div>';
             html += '</div>';
           }
-
-          html += '<div style="margin-left: 16px; margin-top: 8px;">';
-          html += '<label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">';
-          html += '<input type="checkbox" id="create_sublabels_' + clientKey + '" onchange="toggleCreateSubLabels(\'' + clientKey + '\')">';
-          html += '<span style="font-size: 12px;">Create Meeting Summaries and Meeting Agendas sub-labels</span>';
-          html += '</label>';
-          html += '</div>';
 
           // Email input with autocomplete
           html += renderEmailInput(clientKey);
@@ -773,9 +791,10 @@
 
       // Show sub-labels if this Gmail label has them
       const sublabelsDiv = document.getElementById('sublabels_' + key);
-      const sublabelsList = document.getElementById('sublabels_list_' + key);
+      const summarySublabelsDiv = document.getElementById('summary_sublabels_' + key);
+      const agendaSublabelsDiv = document.getElementById('agenda_sublabels_' + key);
 
-      if (!sublabelsDiv || !sublabelsList) return;
+      if (!sublabelsDiv || !summarySublabelsDiv || !agendaSublabelsDiv) return;
 
       // Find the selected label in discovered data
       const selectedLabelName = select.value;
@@ -784,25 +803,41 @@
       });
 
       if (selectedLabel && selectedLabel.subLabels && selectedLabel.subLabels.length > 0) {
-        // Initialize selected sub-labels array with all sub-labels checked by default
-        selectedClients[key].selectedSubLabels = selectedLabel.subLabels.map(function(sl) {
-          return sl.fullLabelName;
+        // Build Meeting Summaries radio options
+        let summaryHtml = '';
+        summaryHtml += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
+        summaryHtml += '<input type="radio" name="summary_' + key + '" value="" checked onchange="setSummarySubLabel(\'' + key + '\', null)">';
+        summaryHtml += '<span style="font-size: 12px;">Create new "Meeting Summaries" sub-label</span>';
+        summaryHtml += '</label>';
+
+        selectedLabel.subLabels.forEach(function(subLabel) {
+          summaryHtml += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
+          summaryHtml += '<input type="radio" name="summary_' + key + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setSummarySubLabel(\'' + key + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+          summaryHtml += '<span style="font-size: 12px;">Use "' + escapeHtml(subLabel.subLabelName) + '"</span>';
+          summaryHtml += '</label>';
         });
 
-        // Show sub-labels as checkboxes
-        let subLabelsHtml = '';
+        // Build Meeting Agendas radio options
+        let agendaHtml = '';
+        agendaHtml += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
+        agendaHtml += '<input type="radio" name="agenda_' + key + '" value="" checked onchange="setAgendaSubLabel(\'' + key + '\', null)">';
+        agendaHtml += '<span style="font-size: 12px;">Create new "Meeting Agendas" sub-label</span>';
+        agendaHtml += '</label>';
+
         selectedLabel.subLabels.forEach(function(subLabel) {
-          subLabelsHtml += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
-          subLabelsHtml += '<input type="checkbox" class="sublabel-checkbox" data-client="' + key + '" data-sublabel="' + escapeHtml(subLabel.fullLabelName) + '" checked onchange="toggleSubLabel(\'' + key + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
-          subLabelsHtml += '<span style="font-size: 12px;">' + escapeHtml(subLabel.subLabelName) + '</span>';
-          subLabelsHtml += '</label>';
+          agendaHtml += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
+          agendaHtml += '<input type="radio" name="agenda_' + key + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setAgendaSubLabel(\'' + key + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+          agendaHtml += '<span style="font-size: 12px;">Use "' + escapeHtml(subLabel.subLabelName) + '"</span>';
+          agendaHtml += '</label>';
         });
-        sublabelsList.innerHTML = subLabelsHtml;
+
+        summarySublabelsDiv.innerHTML = summaryHtml;
+        agendaSublabelsDiv.innerHTML = agendaHtml;
         sublabelsDiv.style.display = 'block';
       } else {
-        // No existing sub-labels, still show option to create new ones
-        selectedClients[key].selectedSubLabels = [];
-        sublabelsList.innerHTML = '';
+        // No existing sub-labels, hide the selection areas
+        summarySublabelsDiv.innerHTML = '<div style="font-size: 12px; color: #5f6368;">Will create new "Meeting Summaries" sub-label</div>';
+        agendaSublabelsDiv.innerHTML = '<div style="font-size: 12px; color: #5f6368;">Will create new "Meeting Agendas" sub-label</div>';
         sublabelsDiv.style.display = 'block';
       }
 
@@ -828,24 +863,12 @@
       }
     }
 
-    function toggleSubLabel(clientKey, subLabelName) {
-      if (!selectedClients[clientKey].selectedSubLabels) {
-        selectedClients[clientKey].selectedSubLabels = [];
-      }
-
-      const index = selectedClients[clientKey].selectedSubLabels.indexOf(subLabelName);
-      if (index > -1) {
-        // Remove from array
-        selectedClients[clientKey].selectedSubLabels.splice(index, 1);
-      } else {
-        // Add to array
-        selectedClients[clientKey].selectedSubLabels.push(subLabelName);
-      }
+    function setSummarySubLabel(key, subLabelName) {
+      selectedClients[key].summarySubLabel = subLabelName;
     }
 
-    function toggleCreateSubLabels(clientKey) {
-      const checkbox = document.getElementById('create_sublabels_' + clientKey);
-      selectedClients[clientKey].createNewSubLabels = checkbox.checked;
+    function setAgendaSubLabel(key, subLabelName) {
+      selectedClients[key].agendaSubLabel = subLabelName;
     }
 
     function updateTodoistMatch(key) {
@@ -1151,8 +1174,8 @@
           create_todoist: client.todoistId === '__create__',
           gmail_label: client.gmailLabel === '__create__' ? '' : client.gmailLabel,
           create_gmail_label: client.gmailLabel === '__create__' || !client.gmailLabel,
-          selected_sub_labels: client.selectedSubLabels || [],
-          create_new_sub_labels: client.createNewSubLabels || false,
+          summary_sub_label: client.summarySubLabel || null,  // null means create new
+          agenda_sub_label: client.agendaSubLabel || null,    // null means create new
           doc_mode: doc.mode || 'create',
           existing_doc_url: doc.existingDocUrl || '',
           create_folder: doc.createFolder || ''

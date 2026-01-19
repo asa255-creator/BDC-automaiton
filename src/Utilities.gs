@@ -2043,16 +2043,6 @@ function getEmailAddressesFromLabel(labelName) {
             emailSet.add(normalized);
           }
         });
-
-        // Extract CC
-        const cc = message.getCc();
-        const ccEmails = extractEmailsFromString(cc);
-        ccEmails.forEach(email => {
-          const normalized = email.toLowerCase().trim();
-          if (normalized && normalized !== myEmail) {
-            emailSet.add(normalized);
-          }
-        });
       }
     }
 
@@ -2390,31 +2380,37 @@ function importClientsFromWizard(importData) {
     // Create the base label if needed
     createLabelIfNotExists(baseLabelName);
 
-    // Handle sub-labels
-    // If user selected existing sub-labels, they're already created - nothing to do
-    // If user wants to create new sub-labels, create them
-    if (client.create_new_sub_labels) {
-      createLabelIfNotExists(`${baseLabelName}/Meeting Summaries`);
-      createLabelIfNotExists(`${baseLabelName}/Meeting Agendas`);
-
-      // Create filters for the new sub-labels
-      const contacts = parseCommaSeparatedList(contactEmails);
-      if (contacts.length > 0) {
-        const toCriteria = buildToCriteria(contacts);
-        if (toCriteria) {
-          const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
-          const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
-          createGmailApiFilter(summaryCriteria, `${baseLabelName}/Meeting Summaries`);
-        }
-      }
-
-      const agendaPattern = getAgendaFilterPatternForClient(client.client_name);
-      const agendaCriteria = `from:me to:me subject:"${agendaPattern}"`;
-      createGmailApiFilter(agendaCriteria, `${baseLabelName}/Meeting Agendas`);
+    // Handle Meeting Summaries sub-label
+    const summaryLabelName = client.summary_sub_label || `${baseLabelName}/Meeting Summaries`;
+    if (!client.summary_sub_label) {
+      // Create new sub-label if user didn't select an existing one
+      createLabelIfNotExists(summaryLabelName);
     }
 
-    // Create filter for incoming emails from client contacts
+    // Create filter for Meeting Summaries
     const contacts = parseCommaSeparatedList(contactEmails);
+    if (contacts.length > 0) {
+      const toCriteria = buildToCriteria(contacts);
+      if (toCriteria) {
+        const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
+        const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
+        createGmailApiFilter(summaryCriteria, summaryLabelName);
+      }
+    }
+
+    // Handle Meeting Agendas sub-label
+    const agendaLabelName = client.agenda_sub_label || `${baseLabelName}/Meeting Agendas`;
+    if (!client.agenda_sub_label) {
+      // Create new sub-label if user didn't select an existing one
+      createLabelIfNotExists(agendaLabelName);
+    }
+
+    // Create filter for Meeting Agendas
+    const agendaPattern = getAgendaFilterPatternForClient(client.client_name);
+    const agendaCriteria = `from:me to:me subject:"${agendaPattern}"`;
+    createGmailApiFilter(agendaCriteria, agendaLabelName);
+
+    // Create filter for incoming emails from client contacts
     if (contacts.length > 0) {
       const fromCriteria = buildFromCriteria(contacts);
       if (fromCriteria) {
