@@ -1916,23 +1916,43 @@ function scanForMigration() {
   const existingClientNames = new Set();
   const existingTodoistIds = new Set();
 
+  logProcessing('MIGRATION_SCAN', null, `Starting duplicate check - Spreadsheet ID: ${spreadsheetId}`, 'info');
+
   if (spreadsheetId) {
     try {
       const ss = SpreadsheetApp.openById(spreadsheetId);
+      logProcessing('MIGRATION_SCAN', null, `Opened spreadsheet: ${ss.getName()}`, 'info');
+
       const sheet = ss.getSheetByName('Client_Registry');
 
-      if (sheet && sheet.getLastRow() > 1) {
-        const data = sheet.getDataRange().getValues();
-        for (let i = 1; i < data.length; i++) {
-          if (data[i][0]) existingClientNames.add(data[i][0].toLowerCase());
-          if (data[i][5]) existingTodoistIds.add(data[i][5]); // Column 5 is todoist_project_id
+      if (sheet) {
+        const lastRow = sheet.getLastRow();
+        logProcessing('MIGRATION_SCAN', null, `Client_Registry found with ${lastRow} rows (including header)`, 'info');
+
+        if (lastRow > 1) {
+          const data = sheet.getDataRange().getValues();
+          logProcessing('MIGRATION_SCAN', null, `Reading ${data.length} rows of data`, 'info');
+
+          for (let i = 1; i < data.length; i++) {
+            if (data[i][0]) {
+              existingClientNames.add(data[i][0].toLowerCase());
+              logProcessing('MIGRATION_SCAN', null, `Found existing client: "${data[i][0]}" (Todoist ID: ${data[i][5] || 'none'})`, 'info');
+            }
+            if (data[i][5]) existingTodoistIds.add(data[i][5]);
+          }
+        } else {
+          logProcessing('MIGRATION_SCAN', null, `Client_Registry is empty (only header row exists)`, 'info');
         }
+      } else {
+        logProcessing('MIGRATION_SCAN', null, `Client_Registry sheet does not exist in this spreadsheet`, 'warning');
       }
 
-      Logger.log(`Found ${existingClientNames.size} existing clients in registry`);
+      logProcessing('MIGRATION_SCAN', null, `Duplicate check complete: ${existingClientNames.size} existing clients found`, 'success');
     } catch (error) {
-      Logger.log(`Could not read Client_Registry: ${error.message}`);
+      logProcessing('MIGRATION_SCAN', null, `Error reading Client_Registry: ${error.message}`, 'error');
     }
+  } else {
+    logProcessing('MIGRATION_SCAN', null, `SPREADSHEET_ID property not set!`, 'error');
   }
 
   // Scan ALL Gmail labels
@@ -1982,11 +2002,11 @@ function scanForMigration() {
       if (!existingClientNames.has(label.clientName.toLowerCase())) {
         discovered.gmailLabels.push(label);
       } else {
-        Logger.log(`Filtered out Gmail label "${label.labelName}" - client name already in registry`);
+        logProcessing('MIGRATION_SCAN', label.clientName, `Filtered out Gmail label "${label.labelName}" - client name "${label.clientName}" already exists in registry`, 'info');
       }
     });
 
-    Logger.log(`Total client labels discovered (after filtering): ${discovered.gmailLabels.length}`);
+    logProcessing('MIGRATION_SCAN', null, `Gmail scan complete: ${discovered.gmailLabels.length} new labels found (after filtering)`, 'success');
   } catch (error) {
     Logger.log(`ERROR scanning Gmail labels: ${error.message}`);
   }
@@ -2015,11 +2035,14 @@ function scanForMigration() {
             projectName: project.name
           });
         } else {
-          Logger.log(`Filtered out Todoist project "${project.name}" - already in registry`);
+          const reason = existingTodoistIds.has(project.id)
+            ? `Todoist ID ${project.id} already linked`
+            : `client name "${project.name}" already exists`;
+          logProcessing('MIGRATION_SCAN', project.name, `Filtered out Todoist project - ${reason}`, 'info');
         }
       }
 
-      Logger.log(`Total Todoist projects discovered (after filtering): ${discovered.todoistProjects.length}`);
+      logProcessing('MIGRATION_SCAN', null, `Todoist scan complete: ${discovered.todoistProjects.length} new projects found (after filtering)`, 'success');
     } catch (error) {
       Logger.log(`Failed to scan Todoist projects: ${error.message}`);
     }
