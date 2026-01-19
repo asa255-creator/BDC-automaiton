@@ -371,6 +371,22 @@ Thanks,
             </div>
           </div>
         </div>
+
+        <div class="section-title">Briefing Email Labels</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Daily Briefing Label</div>
+          <div class="setting-description">Gmail label to apply to daily outlook emails (leave blank for default "Brief: Daily")</div>
+          <input type="text" id="daily_label" placeholder="Brief: Daily">
+          <div class="placeholder-hint">Examples: "Daily Briefing", "Brief/Daily", "Admin/Daily"</div>
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Weekly Briefing Label</div>
+          <div class="setting-description">Gmail label to apply to weekly outlook emails (leave blank for default "Brief: Weekly")</div>
+          <input type="text" id="weekly_label" placeholder="Brief: Weekly">
+          <div class="placeholder-hint">Examples: "Weekly Briefing", "Brief/Weekly", "Admin/Weekly"</div>
+        </div>
       </div>
     </div>
 
@@ -421,6 +437,8 @@ Thanks,
           // Schedule tab
           document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
           document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
+          document.getElementById('daily_label').value = settings.DAILY_BRIEFING_LABEL || 'Brief: Daily';
+          document.getElementById('weekly_label').value = settings.WEEKLY_BRIEFING_LABEL || 'Brief: Weekly';
 
           // Update status badges
           updateBadge('fathomStatus', settings.FATHOM_API_KEY);
@@ -473,7 +491,9 @@ Thanks,
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
         // Schedule
         BUSINESS_HOURS_START: document.getElementById('hours_start').value.trim(),
-        BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim()
+        BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
+        DAILY_BRIEFING_LABEL: document.getElementById('daily_label').value.trim(),
+        WEEKLY_BRIEFING_LABEL: document.getElementById('weekly_label').value.trim()
       };
 
       google.script.run

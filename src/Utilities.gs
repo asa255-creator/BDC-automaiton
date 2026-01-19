@@ -1713,7 +1713,9 @@ function getSettingsForEditor() {
     BUSINESS_HOURS_END: props.getProperty('BUSINESS_HOURS_END') || '18',
     DOC_NAME_TEMPLATE: props.getProperty('DOC_NAME_TEMPLATE') || 'Client Notes - {client_name}',
     INCLUDE_UNREAD_EMAILS: props.getProperty('INCLUDE_UNREAD_EMAILS') || 'false',
-    AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0'
+    AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0',
+    DAILY_BRIEFING_LABEL: props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily',
+    WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly'
   };
 }
 
@@ -1796,6 +1798,15 @@ function saveSettingsFromEditor(settings) {
     props.setProperty('AUTO_MARK_READ_AFTER_DAYS', settings.AUTO_MARK_READ_AFTER_DAYS.toString());
   }
 
+  // Briefing label settings
+  if (settings.DAILY_BRIEFING_LABEL) {
+    props.setProperty('DAILY_BRIEFING_LABEL', settings.DAILY_BRIEFING_LABEL);
+  }
+
+  if (settings.WEEKLY_BRIEFING_LABEL) {
+    props.setProperty('WEEKLY_BRIEFING_LABEL', settings.WEEKLY_BRIEFING_LABEL);
+  }
+
   logProcessing('SETTINGS', null, 'Settings updated via editor', 'info');
 
   // If subject template changed, update filters to match new pattern
@@ -1876,79 +1887,48 @@ function scanForMigration() {
     todoistProjects: []
   };
 
-  // Scan Gmail labels for client patterns
-  // Supports: "Client: Name", "Client:Name", "Clients: Name", etc.
+  // Scan ALL Gmail labels - no filtering, user can select any label they want
   try {
     const allLabels = GmailApp.getUserLabels();
     Logger.log(`Total Gmail labels found: ${allLabels.length}`);
 
-    // Log a sample of label names for debugging
-    Logger.log('Sample of first 20 labels:');
-    for (let i = 0; i < Math.min(20, allLabels.length); i++) {
-      Logger.log(`  "${allLabels[i].getName()}"`);
-    }
-
     const labelMap = {}; // Map parent labels to their sub-labels
-    const patterns = [
-      { prefix: 'Client: ', name: 'Client: ' },
-      { prefix: 'Client:', name: 'Client:' },
-      { prefix: 'Clients: ', name: 'Clients: ' },
-      { prefix: 'Clients:', name: 'Clients:' }
-    ];
 
-    // First pass: collect all client labels
+    // Process ALL labels - include everything
     for (const label of allLabels) {
       const labelName = label.getName();
 
-      // Try each pattern
-      for (const pattern of patterns) {
-        if (labelName.startsWith(pattern.prefix)) {
-          Logger.log(`Found label matching pattern "${pattern.name}": "${labelName}"`);
+      // Check if this is a parent label or sub-label
+      if (!labelName.includes('/')) {
+        // Parent label - use the full label name as both label and client name
+        Logger.log(`Found parent label: "${labelName}"`);
+        labelMap[labelName] = {
+          labelName: labelName,
+          clientName: labelName, // Use the label name as-is for the client name
+          subLabels: []
+        };
+      } else {
+        // Sub-label - extract parent and sub-label name
+        const parts = labelName.split('/');
+        const parentLabel = parts[0];
+        const subLabelName = parts.slice(1).join('/');
 
-          // Check if this is a parent label or sub-label
-          if (!labelName.includes('/')) {
-            // Parent label - extract client name
-            const clientName = labelName.substring(pattern.prefix.length).trim();
+        Logger.log(`Found sub-label: "${labelName}" (parent: "${parentLabel}", sub: "${subLabelName}")`);
 
-            if (clientName) { // Only add if there's actually a name after the prefix
-              Logger.log(`Adding parent label: ${labelName} (client: ${clientName})`);
-              labelMap[labelName] = {
-                labelName: labelName,
-                clientName: clientName,
-                subLabels: []
-              };
-            }
-          } else {
-            // Sub-label - extract parent and sub-label name
-            const parts = labelName.split('/');
-            const parentLabel = parts[0];
-            const subLabelName = parts.slice(1).join('/');
-
-            Logger.log(`Adding sub-label: ${labelName} (parent: ${parentLabel}, sub: ${subLabelName})`);
-
-            // Ensure parent exists in map
-            if (!labelMap[parentLabel]) {
-              const clientName = parentLabel.substring(pattern.prefix.length).trim();
-              if (clientName) {
-                labelMap[parentLabel] = {
-                  labelName: parentLabel,
-                  clientName: clientName,
-                  subLabels: []
-                };
-              }
-            }
-
-            // Add sub-label to parent if parent exists
-            if (labelMap[parentLabel]) {
-              labelMap[parentLabel].subLabels.push({
-                fullLabelName: labelName,
-                subLabelName: subLabelName
-              });
-            }
-          }
-
-          break; // Found a matching pattern, no need to try others
+        // Ensure parent exists in map
+        if (!labelMap[parentLabel]) {
+          labelMap[parentLabel] = {
+            labelName: parentLabel,
+            clientName: parentLabel, // Use the label name as-is
+            subLabels: []
+          };
         }
+
+        // Add sub-label to parent
+        labelMap[parentLabel].subLabels.push({
+          fullLabelName: labelName,
+          subLabelName: subLabelName
+        });
       }
     }
 
@@ -1956,18 +1936,9 @@ function scanForMigration() {
     discovered.gmailLabels = Object.values(labelMap);
     Logger.log(`Total client labels discovered: ${discovered.gmailLabels.length}`);
 
-    if (discovered.gmailLabels.length === 0) {
-      Logger.log('');
-      Logger.log('No client labels found!');
-      Logger.log('Expected label patterns: "Client: ClientName", "Client:ClientName", "Clients: ClientName"');
-      Logger.log('If you have existing client labels with a different naming pattern, you may need to:');
-      Logger.log('1. Rename them to match "Client: ClientName" format, OR');
-      Logger.log('2. Add clients manually to Client_Registry sheet');
-    } else {
-      discovered.gmailLabels.forEach(function(label) {
-        Logger.log(`  - ${label.labelName} with ${label.subLabels.length} sub-labels`);
-      });
-    }
+    discovered.gmailLabels.forEach(function(label) {
+      Logger.log(`  - ${label.labelName} with ${label.subLabels.length} sub-labels`);
+    });
   } catch (error) {
     Logger.log(`ERROR scanning Gmail labels: ${error.message}`);
     Logger.log(`Stack trace: ${error.stack}`);
