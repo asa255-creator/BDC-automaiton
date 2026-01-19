@@ -884,10 +884,18 @@ function appendMeetingNotesToDoc(message, client) {
  * @returns {string} The document ID
  */
 function extractDocIdFromUrl(url) {
-  const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-  if (match) {
-    return match[1];
+  // Format: /d/DOC_ID
+  const matchD = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (matchD) {
+    return matchD[1];
   }
+
+  // Format: ?id=DOC_ID or &id=DOC_ID
+  const matchId = url.match(/[?&]id=([a-zA-Z0-9-_]+)/);
+  if (matchId) {
+    return matchId[1];
+  }
+
   // Assume it's already a doc ID if not a URL
   return url;
 }
