@@ -1911,44 +1911,65 @@ function scanForMigration() {
     todoistProjects: []
   };
 
-  // Scan ALL Gmail labels - no filtering, user can select any label they want
+  // Get existing clients from Client_Registry to filter out duplicates
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  const existingClientNames = new Set();
+  const existingTodoistIds = new Set();
+
+  if (spreadsheetId) {
+    try {
+      const ss = SpreadsheetApp.openById(spreadsheetId);
+      const sheet = ss.getSheetByName('Client_Registry');
+
+      if (sheet && sheet.getLastRow() > 1) {
+        const data = sheet.getDataRange().getValues();
+        for (let i = 1; i < data.length; i++) {
+          if (data[i][0]) existingClientNames.add(data[i][0].toLowerCase());
+          if (data[i][5]) existingTodoistIds.add(data[i][5]); // Column 5 is todoist_project_id
+        }
+      }
+
+      Logger.log(`Found ${existingClientNames.size} existing clients in registry`);
+    } catch (error) {
+      Logger.log(`Could not read Client_Registry: ${error.message}`);
+    }
+  }
+
+  // Scan ALL Gmail labels
   try {
     const allLabels = GmailApp.getUserLabels();
     Logger.log(`Total Gmail labels found: ${allLabels.length}`);
 
-    const labelMap = {}; // Map parent labels to their sub-labels
+    const labelMap = {};
 
-    // Process ALL labels - include everything
     for (const label of allLabels) {
       const labelName = label.getName();
 
       // Check if this is a parent label or sub-label
       if (!labelName.includes('/')) {
-        // Parent label - use the full label name as both label and client name
+        // Parent label
         Logger.log(`Found parent label: "${labelName}"`);
         labelMap[labelName] = {
           labelName: labelName,
-          clientName: labelName, // Use the label name as-is for the client name
+          clientName: labelName,
           subLabels: []
         };
       } else {
-        // Sub-label - extract parent and sub-label name
+        // Sub-label
         const parts = labelName.split('/');
         const parentLabel = parts[0];
         const subLabelName = parts.slice(1).join('/');
 
         Logger.log(`Found sub-label: "${labelName}" (parent: "${parentLabel}", sub: "${subLabelName}")`);
 
-        // Ensure parent exists in map
         if (!labelMap[parentLabel]) {
           labelMap[parentLabel] = {
             labelName: parentLabel,
-            clientName: parentLabel, // Use the label name as-is
+            clientName: parentLabel,
             subLabels: []
           };
         }
 
-        // Add sub-label to parent
         labelMap[parentLabel].subLabels.push({
           fullLabelName: labelName,
           subLabelName: subLabelName
@@ -1956,16 +1977,18 @@ function scanForMigration() {
       }
     }
 
-    // Convert map to array
-    discovered.gmailLabels = Object.values(labelMap);
-    Logger.log(`Total client labels discovered: ${discovered.gmailLabels.length}`);
-
-    discovered.gmailLabels.forEach(function(label) {
-      Logger.log(`  - ${label.labelName} with ${label.subLabels.length} sub-labels`);
+    // Filter out labels where client name already exists in registry
+    Object.values(labelMap).forEach(function(label) {
+      if (!existingClientNames.has(label.clientName.toLowerCase())) {
+        discovered.gmailLabels.push(label);
+      } else {
+        Logger.log(`Filtered out Gmail label "${label.labelName}" - client name already in registry`);
+      }
     });
+
+    Logger.log(`Total client labels discovered (after filtering): ${discovered.gmailLabels.length}`);
   } catch (error) {
     Logger.log(`ERROR scanning Gmail labels: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
   }
 
   // Scan Todoist projects
@@ -1983,14 +2006,20 @@ function scanForMigration() {
       const projects = JSON.parse(response.getContentText());
 
       for (const project of projects) {
-        // Skip inbox and other system projects
         if (project.is_inbox_project) continue;
 
-        discovered.todoistProjects.push({
-          projectId: project.id,
-          projectName: project.name
-        });
+        // Filter out projects already linked in registry AND client names that exist
+        if (!existingTodoistIds.has(project.id) && !existingClientNames.has(project.name.toLowerCase())) {
+          discovered.todoistProjects.push({
+            projectId: project.id,
+            projectName: project.name
+          });
+        } else {
+          Logger.log(`Filtered out Todoist project "${project.name}" - already in registry`);
+        }
       }
+
+      Logger.log(`Total Todoist projects discovered (after filtering): ${discovered.todoistProjects.length}`);
     } catch (error) {
       Logger.log(`Failed to scan Todoist projects: ${error.message}`);
     }
@@ -2296,45 +2325,12 @@ function importClientsFromWizard(importData) {
 
   logProcessing('MIGRATION_WIZARD', null, `Client_Registry found with ${sheet.getLastRow()} rows`, 'info');
 
-  // Get existing clients to avoid duplicates
-  const existingData = sheet.getDataRange().getValues();
-  const existingNames = [];
-  const existingTodoistIds = [];
-
-  for (let i = 1; i < existingData.length; i++) {
-    // Column 0: client_name
-    if (existingData[i][0]) {
-      existingNames.push(existingData[i][0].toLowerCase());
-    }
-    // Column 5: todoist_project_id
-    if (existingData[i][5]) {
-      existingTodoistIds.push(existingData[i][5]);
-    }
-  }
-
-  logProcessing('MIGRATION_WIZARD', null, `Found ${existingNames.length} existing clients in registry`, 'info');
-
   let imported = 0;
-  let skipped = 0;
 
   for (const client of importData) {
     logProcessing('MIGRATION_WIZARD', client.client_name, `Processing import (Gmail: ${client.gmail_label || 'none'}, Todoist: ${client.todoist_project_id || 'none'})`, 'info');
 
-    // Check 1: Duplicate client name
-    if (existingNames.includes(client.client_name.toLowerCase())) {
-      logProcessing('MIGRATION_WIZARD', client.client_name, 'Skipped - duplicate client name', 'warning');
-      skipped++;
-      continue;
-    }
-
-    // Check 2: Duplicate Todoist project ID (if linking to existing project)
-    if (client.todoist_project_id && client.todoist_project_id !== '__create__' && existingTodoistIds.includes(client.todoist_project_id)) {
-      logProcessing('MIGRATION_WIZARD', client.client_name, `Skipped - Todoist project already linked to another client`, 'warning');
-      skipped++;
-      continue;
-    }
-
-    // Prepare data - NO doc creation yet
+    // NO duplicate checking - already filtered in scanForMigration()
     const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;
     let todoistProjectId = client.todoist_project_id || '';
     const contactEmails = client.contact_emails || '';
@@ -2366,7 +2362,6 @@ function importClientsFromWizard(importData) {
     // Verify row count increased
     if (afterRowCount <= beforeRowCount) {
       logProcessing('MIGRATION_WIZARD', client.client_name, `FAILED - Row count did not increase (before: ${beforeRowCount}, after: ${afterRowCount})`, 'error');
-      skipped++;
       continue;
     }
 
@@ -2374,7 +2369,6 @@ function importClientsFromWizard(importData) {
     const verifyRow = sheet.getRange(afterRowCount, 1, 1, 6).getValues()[0];
     if (verifyRow[0] !== client.client_name) {
       logProcessing('MIGRATION_WIZARD', client.client_name, `FAILED - Data verification failed (expected "${client.client_name}", got "${verifyRow[0]}")`, 'error');
-      skipped++;
       continue;
     }
 
@@ -2394,7 +2388,7 @@ function importClientsFromWizard(importData) {
 
     // Update the row with the doc URL if we have one
     if (googleDocUrl) {
-      sheet.getRange(rowNumber, 5).setValue(googleDocUrl);
+      sheet.getRange(afterRowCount, 5).setValue(googleDocUrl);
       SpreadsheetApp.flush();
     }
 
@@ -2443,7 +2437,7 @@ function importClientsFromWizard(importData) {
     logProcessing('MIGRATION_WIZARD', client.client_name, `Completed setup with ${contacts.length} contacts, labels and filters created`, 'success');
   }
 
-  const summary = `Import complete: ${imported} added, ${skipped} skipped (duplicates)`;
+  const summary = `Import complete: ${imported} clients added to Client_Registry`;
   logProcessing('MIGRATION_WIZARD', null, summary, 'success');
 
   return { imported: imported };
