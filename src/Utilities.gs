@@ -1109,7 +1109,8 @@ function createClientRegistrySheet(ss) {
   const sheetName = 'Client_Registry';
   const headers = [
     'client_name', 'contact_emails', 'docs_folder_path',
-    'setup_complete', 'google_doc_url', 'todoist_project_id'
+    'setup_complete', 'google_doc_url', 'todoist_project_id',
+    'gmail_label', 'meeting_summaries_label', 'meeting_agendas_label'
   ];
 
   let sheet = ss.getSheetByName(sheetName);
@@ -2375,24 +2376,33 @@ function importClientsFromWizard(importData) {
 
     logProcessing('MIGRATION_WIZARD', client.client_name, `Inserting at first empty row: ${targetRow}`, 'info');
 
-    // Add to sheet FIRST with empty doc URL
+    // Handle Meeting Summaries sub-label
+    const summaryLabelName = client.summary_sub_label || `${baseLabelName}/Meeting Summaries`;
+
+    // Handle Meeting Agendas sub-label
+    const agendaLabelName = client.agenda_sub_label || `${baseLabelName}/Meeting Agendas`;
+
+    // Add to sheet FIRST with empty doc URL and label info
     const rowData = [
       client.client_name,
       contactEmails,
       client.create_folder || '',
       true,  // setup_complete
       '',    // google_doc_url - EMPTY for now
-      todoistProjectId
+      todoistProjectId,
+      baseLabelName,         // gmail_label (column 7)
+      summaryLabelName,      // meeting_summaries_label (column 8)
+      agendaLabelName        // meeting_agendas_label (column 9)
     ];
 
     // Write to the specific row
-    sheet.getRange(targetRow, 1, 1, 6).setValues([rowData]);
+    sheet.getRange(targetRow, 1, 1, 9).setValues([rowData]);
     SpreadsheetApp.flush(); // Force write
 
     logProcessing('MIGRATION_WIZARD', client.client_name, `Written to row ${targetRow}, verifying...`, 'info');
 
     // Verify the data is actually there
-    const verifyRow = sheet.getRange(targetRow, 1, 1, 6).getValues()[0];
+    const verifyRow = sheet.getRange(targetRow, 1, 1, 9).getValues()[0];
     if (verifyRow[0] !== client.client_name) {
       logProcessing('MIGRATION_WIZARD', client.client_name, `FAILED - Data verification failed (expected "${client.client_name}", got "${verifyRow[0]}")`, 'error');
       continue;
@@ -2418,15 +2428,19 @@ function importClientsFromWizard(importData) {
       SpreadsheetApp.flush();
     }
 
-    // Create Gmail labels and filters (baseLabelName already declared above for duplicate check)
+    // Create Gmail labels and filters
     // Create the base label if needed
     createLabelIfNotExists(baseLabelName);
 
-    // Handle Meeting Summaries sub-label
-    const summaryLabelName = client.summary_sub_label || `${baseLabelName}/Meeting Summaries`;
+    // Create sub-labels if they don't already exist
     if (!client.summary_sub_label) {
       // Create new sub-label if user didn't select an existing one
       createLabelIfNotExists(summaryLabelName);
+    }
+
+    if (!client.agenda_sub_label) {
+      // Create new sub-label if user didn't select an existing one
+      createLabelIfNotExists(agendaLabelName);
     }
 
     // Create filter for Meeting Summaries
@@ -2438,13 +2452,6 @@ function importClientsFromWizard(importData) {
         const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
         createGmailApiFilter(summaryCriteria, summaryLabelName);
       }
-    }
-
-    // Handle Meeting Agendas sub-label
-    const agendaLabelName = client.agenda_sub_label || `${baseLabelName}/Meeting Agendas`;
-    if (!client.agenda_sub_label) {
-      // Create new sub-label if user didn't select an existing one
-      createLabelIfNotExists(agendaLabelName);
     }
 
     // Create filter for Meeting Agendas

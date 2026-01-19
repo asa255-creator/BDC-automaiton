@@ -67,16 +67,19 @@ function syncLabelsAndFilters() {
  * @param {Object} client - The client object
  */
 function syncClientLabels(client) {
-  const baseLabelName = `Client: ${client.client_name}`;
+  // Use stored label names from Client_Registry, or default to standard pattern
+  const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;
+  const summaryLabelName = client.meeting_summaries_label || `${baseLabelName}/Meeting Summaries`;
+  const agendaLabelName = client.meeting_agendas_label || `${baseLabelName}/Meeting Agendas`;
 
   // Create base client label
   createLabelIfNotExists(baseLabelName);
 
   // Create sub-labels
-  createLabelIfNotExists(`${baseLabelName}/Meeting Summaries`);
-  createLabelIfNotExists(`${baseLabelName}/Meeting Agendas`);
+  createLabelIfNotExists(summaryLabelName);
+  createLabelIfNotExists(agendaLabelName);
 
-  Logger.log(`Synced labels for client: ${client.client_name}`);
+  Logger.log(`Synced labels for client: ${client.client_name} (base: ${baseLabelName})`);
 
   // Create filters (requires Gmail API Advanced Service)
   const contacts = parseCommaSeparatedList(client.contact_emails);
@@ -93,14 +96,14 @@ function syncClientLabels(client) {
     if (toCriteria) {
       const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
       const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
-      createGmailApiFilter(summaryCriteria, `${baseLabelName}/Meeting Summaries`);
+      createGmailApiFilter(summaryCriteria, summaryLabelName);
     }
   }
 
   // Filter for self-sent agendas (uses client name in subject)
   const agendaPattern = getAgendaFilterPatternForClient(client.client_name);
   const agendaCriteria = `from:me to:me subject:"${agendaPattern}"`;
-  createGmailApiFilter(agendaCriteria, `${baseLabelName}/Meeting Agendas`);
+  createGmailApiFilter(agendaCriteria, agendaLabelName);
 
   Logger.log(`Synced filters for client: ${client.client_name}`);
 }
