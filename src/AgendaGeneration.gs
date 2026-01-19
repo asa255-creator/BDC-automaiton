@@ -439,6 +439,13 @@ function generateAgendaWithClaude(event, client, context) {
       content = content.replace(/^```html\s*/i, '').replace(/\s*```$/, '');
       content = content.trim();
 
+      // Extract body content from full HTML document if present
+      // Claude sometimes returns full HTML with <!DOCTYPE>, <head>, <style>, etc.
+      const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      if (bodyMatch) {
+        content = bodyMatch[1].trim();
+      }
+
       return content;
     }
 
@@ -600,24 +607,35 @@ function htmlToPlainText(html) {
 
   let text = html;
 
-  // Strip <!DOCTYPE>, <html>, <head>, <style>, <script> tags and their contents
-  text = text.replace(/<!DOCTYPE[^>]*>/gi, '');
+  // First, aggressively remove everything in <head>, <style>, and <script> tags
+  // Use global flag and handle multiline content
   text = text.replace(/<head[\s\S]*?<\/head>/gi, '');
   text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
   text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
+
+  // Strip DOCTYPE and root HTML tags
+  text = text.replace(/<!DOCTYPE[^>]*>/gi, '');
   text = text.replace(/<html[^>]*>/gi, '');
   text = text.replace(/<\/html>/gi, '');
   text = text.replace(/<body[^>]*>/gi, '');
   text = text.replace(/<\/body>/gi, '');
 
-  // Convert common HTML elements to plain text equivalents
-  text = text.replace(/<br\s*\/?>/gi, '\n');
+  // Extract just body content if body tags still exist (redundant safety check)
+  const bodyMatch = text.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  if (bodyMatch) {
+    text = bodyMatch[1];
+  }
+
+  // Convert block elements to newlines BEFORE stripping tags
   text = text.replace(/<\/p>/gi, '\n\n');
   text = text.replace(/<p[^>]*>/gi, '');
+  text = text.replace(/<br\s*\/?>/gi, '\n');
   text = text.replace(/<\/div>/gi, '\n');
   text = text.replace(/<div[^>]*>/gi, '');
   text = text.replace(/<\/h[1-6]>/gi, '\n\n');
   text = text.replace(/<h[1-6][^>]*>/gi, '');
+
+  // Convert list items
   text = text.replace(/<\/li>/gi, '\n');
   text = text.replace(/<li[^>]*>/gi, '  • ');
   text = text.replace(/<\/ul>/gi, '\n');
@@ -625,10 +643,10 @@ function htmlToPlainText(html) {
   text = text.replace(/<\/ol>/gi, '\n');
   text = text.replace(/<ol[^>]*>/gi, '');
 
-  // Strip all remaining HTML tags
+  // Strip ALL remaining HTML tags (including any stray style/script that weren't caught)
   text = text.replace(/<[^>]+>/g, '');
 
-  // Decode HTML entities
+  // Decode common HTML entities
   text = text.replace(/&nbsp;/g, ' ');
   text = text.replace(/&amp;/g, '&');
   text = text.replace(/&lt;/g, '<');
@@ -637,10 +655,12 @@ function htmlToPlainText(html) {
   text = text.replace(/&#39;/g, "'");
   text = text.replace(/&mdash;/g, '—');
   text = text.replace(/&ndash;/g, '–');
+  text = text.replace(/&bull;/g, '•');
 
   // Clean up excessive whitespace
   text = text.replace(/\n{3,}/g, '\n\n'); // Max 2 consecutive newlines
   text = text.replace(/[ \t]+/g, ' '); // Multiple spaces to single space
+  text = text.replace(/^\s+/gm, ''); // Remove leading whitespace from each line
   text = text.trim();
 
   return text;
