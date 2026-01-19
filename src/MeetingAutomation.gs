@@ -442,9 +442,13 @@ If no action items found, return: {"tasks": []}`;
   try {
     const url = 'https://api.anthropic.com/v1/messages';
 
-    // Use centralized model tier (update MODEL_TIERS in PromptManager.gs when models change)
+    // Use dynamic model (prefer sonnet for better extraction quality)
+    const models = fetchAvailableModelsFromAPI(false);
+    const sonnet = models.find(m => m.id.includes('sonnet'));
+    const model = sonnet ? sonnet.id : models[0]?.id || FALLBACK_MODELS[0].id;
+
     const payload = {
-      model: MODEL_TIERS.sonnet,
+      model: model,
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }]
     };

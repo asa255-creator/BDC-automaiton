@@ -317,23 +317,147 @@ const PROMPT_METADATA = {
 // ============================================================================
 
 /**
- * Model tier mapping - maps generic names to current model IDs.
- * Update these when new Claude versions are released.
+ * Fallback models if API fetch fails.
+ * These are only used when the Claude API is unreachable.
  */
-const MODEL_TIERS = {
-  haiku: 'claude-3-haiku-20240307',
-  sonnet: 'claude-sonnet-4-20250514'
-};
+const FALLBACK_MODELS = [
+  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
+  { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku' }
+];
 
 /**
- * Gets the current model ID for a tier name.
- * This allows prompts to use generic names that don't need updating.
- *
- * @param {string} tierName - 'haiku' or 'sonnet'
- * @returns {string} The current model ID
+ * Cache duration for models list (24 hours in milliseconds)
  */
-function getModelIdForTier(tierName) {
-  return MODEL_TIERS[tierName] || MODEL_TIERS.haiku;
+const MODELS_CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Fetches available Claude models from the Anthropic API.
+ * Caches results for 24 hours to minimize API calls.
+ *
+ * @param {boolean} forceRefresh - If true, bypasses cache and fetches fresh data
+ * @returns {Object[]} Array of model objects with id and name
+ */
+function fetchAvailableModelsFromAPI(forceRefresh) {
+  const props = PropertiesService.getScriptProperties();
+  const apiKey = props.getProperty('CLAUDE_API_KEY');
+
+  if (!apiKey) {
+    Logger.log('Claude API key not configured - using fallback models');
+    return FALLBACK_MODELS;
+  }
+
+  // Check cache first (unless force refresh)
+  if (!forceRefresh) {
+    const cachedModels = props.getProperty('CACHED_MODELS');
+    const cacheTimestamp = props.getProperty('CACHED_MODELS_TIMESTAMP');
+
+    if (cachedModels && cacheTimestamp) {
+      const cacheAge = Date.now() - parseInt(cacheTimestamp, 10);
+      if (cacheAge < MODELS_CACHE_DURATION_MS) {
+        try {
+          return JSON.parse(cachedModels);
+        } catch (e) {
+          Logger.log('Failed to parse cached models, fetching fresh');
+        }
+      }
+    }
+  }
+
+  // Fetch from API
+  try {
+    const url = 'https://api.anthropic.com/v1/models';
+
+    const options = {
+      method: 'GET',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      Logger.log(`Failed to fetch models: ${responseCode} - ${response.getContentText()}`);
+      return FALLBACK_MODELS;
+    }
+
+    const result = JSON.parse(response.getContentText());
+
+    // Extract and format models
+    const models = (result.data || [])
+      .filter(m => m.type === 'model')
+      .map(m => ({
+        id: m.id,
+        name: m.display_name || formatModelName(m.id)
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (models.length === 0) {
+      Logger.log('No models returned from API - using fallback');
+      return FALLBACK_MODELS;
+    }
+
+    // Cache the results
+    props.setProperty('CACHED_MODELS', JSON.stringify(models));
+    props.setProperty('CACHED_MODELS_TIMESTAMP', Date.now().toString());
+
+    Logger.log(`Fetched ${models.length} models from Claude API`);
+    return models;
+
+  } catch (e) {
+    Logger.log(`Error fetching models: ${e.message}`);
+    return FALLBACK_MODELS;
+  }
+}
+
+/**
+ * Formats a model ID into a readable name.
+ * e.g., "claude-3-haiku-20240307" -> "Claude 3 Haiku"
+ *
+ * @param {string} modelId - The model ID
+ * @returns {string} Formatted display name
+ */
+function formatModelName(modelId) {
+  return modelId
+    .replace(/^claude-/, 'Claude ')
+    .replace(/-(\d{8})$/, '') // Remove date suffix
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
+ * Gets the model ID to use for a prompt.
+ * Looks up the stored preference, or returns a sensible default.
+ *
+ * @param {string} promptKey - The prompt key
+ * @returns {string} The actual model ID to use
+ */
+function getModelForPrompt(promptKey) {
+  const storedModel = getPromptModel(promptKey);
+
+  // If it's already a full model ID, return it
+  if (storedModel && storedModel.startsWith('claude-')) {
+    return storedModel;
+  }
+
+  // Legacy: convert tier names to model IDs
+  const models = fetchAvailableModelsFromAPI(false);
+
+  if (storedModel === 'haiku') {
+    const haiku = models.find(m => m.id.includes('haiku'));
+    return haiku ? haiku.id : models[0]?.id || FALLBACK_MODELS[0].id;
+  }
+
+  if (storedModel === 'sonnet') {
+    const sonnet = models.find(m => m.id.includes('sonnet'));
+    return sonnet ? sonnet.id : models[0]?.id || FALLBACK_MODELS[0].id;
+  }
+
+  // Default to first available model
+  return models[0]?.id || FALLBACK_MODELS[0].id;
 }
 
 /**
@@ -544,15 +668,41 @@ function getAllPromptsForEditor() {
 }
 
 /**
- * Gets available model tiers for the editor dropdown.
+ * Gets available models for the editor dropdown.
+ * Fetches dynamically from Claude API with caching.
  *
  * @returns {Object[]} Array of {value, label} for dropdown
  */
 function getAvailableModels() {
-  return [
-    { value: 'haiku', label: 'Haiku (Faster, Cheaper)' },
-    { value: 'sonnet', label: 'Sonnet (Smarter, More Expensive)' }
-  ];
+  const models = fetchAvailableModelsFromAPI(false);
+
+  return models.map(m => ({
+    value: m.id,
+    label: m.name
+  }));
+}
+
+/**
+ * Refreshes the models cache and returns updated list.
+ * Called from editor UI when user clicks "Refresh Models".
+ *
+ * @returns {Object} Result with models array or error
+ */
+function refreshModelsCache() {
+  try {
+    const models = fetchAvailableModelsFromAPI(true);
+
+    return {
+      success: true,
+      models: models.map(m => ({ value: m.id, label: m.name })),
+      message: `Found ${models.length} available models`
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e.message
+    };
+  }
 }
 
 /**
@@ -624,8 +774,13 @@ Return ONLY the compressed prompt text, nothing else. Do not add explanations or
   try {
     const url = 'https://api.anthropic.com/v1/messages';
 
+    // Use cheapest available model (prefer haiku) for compression
+    const models = fetchAvailableModelsFromAPI(false);
+    const haiku = models.find(m => m.id.includes('haiku'));
+    const model = haiku ? haiku.id : models[0]?.id || FALLBACK_MODELS[1].id;
+
     const payload = {
-      model: MODEL_TIERS.haiku,
+      model: model,
       max_tokens: 4096,
       messages: [
         { role: 'user', content: compressionPrompt }
