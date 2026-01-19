@@ -436,7 +436,7 @@
         </button>
       </div>
       <div style="font-size: 11px; color: #5f6368; margin-top: 8px;">
-        This will keep each email on the first client (alphabetically) and remove from all others
+        This will remove all duplicate emails from ALL clients
       </div>
     </div>
     <div id="reviewClientList"></div>
@@ -653,39 +653,33 @@
     function removeAllDuplicates() {
       if (!reviewData || !reviewData.clients) return;
 
-      // Build a map of email -> list of clients that have it
-      const emailToClients = {};
+      // Build a set of all duplicate emails
+      const allDuplicateEmails = new Set();
       for (const client of reviewData.clients) {
         if (client.duplicateEmails && client.duplicateEmails.length > 0) {
           for (const dup of client.duplicateEmails) {
             const normalizedEmail = dup.email.toLowerCase().trim();
-            if (!emailToClients[normalizedEmail]) {
-              emailToClients[normalizedEmail] = [];
-            }
-            emailToClients[normalizedEmail].push(client.client_name);
+            allDuplicateEmails.add(normalizedEmail);
           }
         }
       }
 
-      // For each duplicate email, keep it on the first client alphabetically
-      let removedCount = 0;
-      for (const email in emailToClients) {
-        const clients = emailToClients[email].sort();
-        const keeperClient = clients[0];
+      // Mark all duplicate emails to be removed from ALL clients
+      // We do this by NOT marking any keeper - so they'll all be removed
+      for (const email of allDuplicateEmails) {
+        // Don't set emailKeepers[email] = anything
+        // This means all clients will have this email removed
 
-        // Mark the keeper
-        emailKeepers[email] = keeperClient;
-
-        // Check the checkbox for the keeper
-        const keeperCheckbox = document.getElementById(`keep_${keeperClient}_${email}`);
-        if (keeperCheckbox) {
-          keeperCheckbox.checked = true;
+        // Uncheck all checkboxes for this email
+        for (const client of reviewData.clients) {
+          const checkbox = document.getElementById(`keep_${client.client_name}_${email}`);
+          if (checkbox) {
+            checkbox.checked = false;
+          }
         }
-
-        removedCount++;
       }
 
-      showStatus(`Will keep ${removedCount} duplicate email(s) on their first client and remove from others`, 'success');
+      showStatus(`Will remove ${allDuplicateEmails.size} duplicate email(s) from ALL clients`, 'success');
     }
 
     function updateLabelSelection(key, type, value) {
@@ -730,14 +724,16 @@
         let updatedEmails = [...currentEmails];
         let emailsChanged = false;
 
-        // Check if any emails should be removed (kept on another client)
+        // Check if any emails should be removed
         if (client.duplicateEmails && client.duplicateEmails.length > 0) {
           for (const dup of client.duplicateEmails) {
             const normalizedEmail = dup.email.toLowerCase().trim();
             const keeper = emailKeepers[normalizedEmail];
 
-            // If this email is marked to be kept on a different client, remove it from this one
-            if (keeper && keeper !== clientName) {
+            // Remove email if:
+            // 1. No keeper set (remove from all clients)
+            // 2. Keeper is a different client
+            if (!keeper || keeper !== clientName) {
               updatedEmails = updatedEmails.filter(e => e.toLowerCase().trim() !== normalizedEmail);
               emailsChanged = true;
             }
