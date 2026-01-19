@@ -2286,12 +2286,15 @@ function importClientsFromWizard(importData) {
     throw new Error('SPREADSHEET_ID not set');
   }
 
+  logProcessing('MIGRATION_WIZARD', null, `Opening spreadsheet ${spreadsheetId}`, 'info');
   const ss = SpreadsheetApp.openById(spreadsheetId);
   const sheet = ss.getSheetByName('Client_Registry');
 
   if (!sheet) {
     throw new Error('Client_Registry sheet not found');
   }
+
+  logProcessing('MIGRATION_WIZARD', null, `Client_Registry found with ${sheet.getLastRow()} rows`, 'info');
 
   // Get existing clients to avoid duplicates
   const existingData = sheet.getDataRange().getValues();
@@ -2318,10 +2321,14 @@ function importClientsFromWizard(importData) {
     }
   }
 
+  logProcessing('MIGRATION_WIZARD', null, `Found ${existingNames.length} existing clients in registry`, 'info');
+
   let imported = 0;
   let skipped = 0;
 
   for (const client of importData) {
+    logProcessing('MIGRATION_WIZARD', client.client_name, `Processing import (Gmail: ${client.gmail_label || 'none'}, Todoist: ${client.todoist_project_id || 'none'})`, 'info');
+
     // Check 1: Duplicate client name
     if (existingNames.includes(client.client_name.toLowerCase())) {
       logProcessing('MIGRATION_WIZARD', client.client_name, 'Skipped - duplicate client name', 'warning');
@@ -2345,36 +2352,53 @@ function importClientsFromWizard(importData) {
       continue;
     }
 
-    let googleDocUrl = '';
+    // Prepare data - NO doc creation yet
     let todoistProjectId = client.todoist_project_id || '';
+    const contactEmails = client.contact_emails || '';
 
-    // Handle doc creation/linking
-    if (client.doc_mode === 'existing' && client.existing_doc_url) {
-      googleDocUrl = client.existing_doc_url;
-    } else if (client.doc_mode === 'create') {
-      // Create new doc
-      const folderId = client.create_folder ? getFolderIdByPath(client.create_folder) : null;
-      googleDocUrl = createClientDoc(client.client_name, folderId) || '';
-    }
-
-    // Handle Todoist project creation
+    // Handle Todoist project creation BEFORE sheet append (these are cheap operations)
     if (client.create_todoist) {
       todoistProjectId = createTodoistProject(client.client_name) || '';
     }
 
-    // Add to sheet: client_name, contact_emails, docs_folder_path, setup_complete, google_doc_url, todoist_project_id
-    const contactEmails = client.contact_emails || '';
+    // Add to sheet FIRST with empty doc URL
     const rowData = [
       client.client_name,
       contactEmails,
       client.create_folder || '',
-      true,  // setup_complete - checked since we're setting up now
-      googleDocUrl,
+      true,  // setup_complete
+      '',    // google_doc_url - EMPTY for now
       todoistProjectId
     ];
 
+    const rowNumber = sheet.getLastRow() + 1;
     sheet.appendRow(rowData);
-    SpreadsheetApp.flush(); // Force immediate write to spreadsheet
+    SpreadsheetApp.flush(); // Force write
+
+    // Verify the row was actually added
+    const verifyRow = sheet.getRange(rowNumber, 1, 1, 6).getValues()[0];
+    if (verifyRow[0] !== client.client_name) {
+      logProcessing('MIGRATION_WIZARD', client.client_name, `FAILED - Row not added to sheet (verification failed)`, 'error');
+      skipped++;
+      continue;
+    }
+
+    logProcessing('MIGRATION_WIZARD', client.client_name, `Row added to Client_Registry at row ${rowNumber}`, 'info');
+
+    // NOW create the doc if needed
+    let googleDocUrl = '';
+    if (client.doc_mode === 'existing' && client.existing_doc_url) {
+      googleDocUrl = client.existing_doc_url;
+    } else if (client.doc_mode === 'create') {
+      const folderId = client.create_folder ? getFolderIdByPath(client.create_folder) : null;
+      googleDocUrl = createClientDoc(client.client_name, folderId) || '';
+    }
+
+    // Update the row with the doc URL if we have one
+    if (googleDocUrl) {
+      sheet.getRange(rowNumber, 5).setValue(googleDocUrl);
+      SpreadsheetApp.flush();
+    }
 
     // Create Gmail labels and filters (baseLabelName already declared above for duplicate check)
     // Create the base label if needed
