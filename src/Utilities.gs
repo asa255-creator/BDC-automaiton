@@ -2008,11 +2008,9 @@ function scanForMigration() {
  */
 function getEmailAddressesFromLabel(labelName) {
   try {
-    Logger.log(`Scanning label "${labelName}" for email addresses...`);
-
     const label = GmailApp.getUserLabelByName(labelName);
     if (!label) {
-      Logger.log(`Label not found: ${labelName}`);
+      logProcessing('EMAIL_EXTRACTION', null, `Label not found: ${labelName}`, 'error');
       return [];
     }
 
@@ -2021,7 +2019,6 @@ function getEmailAddressesFromLabel(labelName) {
 
     // Get threads from this label (limit to most recent 500 threads for performance)
     const threads = label.getThreads(0, 500);
-    Logger.log(`Found ${threads.length} threads in label "${labelName}"`);
 
     for (const thread of threads) {
       const messages = thread.getMessages();
@@ -2060,12 +2057,12 @@ function getEmailAddressesFromLabel(labelName) {
     }
 
     const uniqueEmails = Array.from(emailSet);
-    Logger.log(`Extracted ${uniqueEmails.length} unique email addresses from label "${labelName}"`);
+    logProcessing('EMAIL_EXTRACTION', null, `Extracted ${uniqueEmails.length} emails from ${threads.length} threads in "${labelName}"`, 'success');
 
     return uniqueEmails;
 
   } catch (error) {
-    Logger.log(`Error extracting emails from label: ${error.message}`);
+    logProcessing('EMAIL_EXTRACTION', null, `Error extracting from label "${labelName}": ${error.message}`, 'error');
     return [];
   }
 }
@@ -2288,29 +2285,23 @@ function searchGmailContacts(query) {
  * @returns {Object} Result with imported count
  */
 function importClientsFromWizard(importData) {
-  Logger.log(`=== importClientsFromWizard called with ${importData ? importData.length : 0} clients ===`);
-
   if (!importData || importData.length === 0) {
-    Logger.log('No clients to import');
     return { imported: 0 };
   }
 
-  Logger.log('Import data received:', JSON.stringify(importData, null, 2));
+  logProcessing('MIGRATION_WIZARD', null, `Starting import of ${importData.length} clients`, 'info');
 
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
   if (!spreadsheetId) {
     throw new Error('SPREADSHEET_ID not set');
   }
 
-  Logger.log(`Opening spreadsheet: ${spreadsheetId}`);
   const ss = SpreadsheetApp.openById(spreadsheetId);
   const sheet = ss.getSheetByName('Client_Registry');
 
   if (!sheet) {
     throw new Error('Client_Registry sheet not found');
   }
-
-  Logger.log(`Client_Registry sheet found, current row count: ${sheet.getLastRow()}`);
 
   // Get existing clients to avoid duplicates
   const existingData = sheet.getDataRange().getValues();
@@ -2321,16 +2312,14 @@ function importClientsFromWizard(importData) {
     }
   }
 
-  Logger.log(`Existing clients in registry: ${existingNames.join(', ')}`);
-
   let imported = 0;
+  let skipped = 0;
 
   for (const client of importData) {
-    Logger.log(`Processing client: ${client.client_name}`);
-
     // Skip duplicates
     if (existingNames.includes(client.client_name.toLowerCase())) {
-      Logger.log(`SKIPPED DUPLICATE: ${client.client_name}`);
+      logProcessing('MIGRATION_WIZARD', client.client_name, 'Skipped - duplicate client name', 'warning');
+      skipped++;
       continue;
     }
 
@@ -2362,10 +2351,8 @@ function importClientsFromWizard(importData) {
       todoistProjectId
     ];
 
-    Logger.log(`Appending row to Client_Registry: ${JSON.stringify(rowData)}`);
     sheet.appendRow(rowData);
     SpreadsheetApp.flush(); // Force immediate write to spreadsheet
-    Logger.log(`Row appended successfully. New row count: ${sheet.getLastRow()}`);
 
     // Create Gmail labels and filters
     const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;
@@ -2405,11 +2392,12 @@ function importClientsFromWizard(importData) {
       }
     }
 
-    Logger.log(`Imported: ${client.client_name}`);
+    logProcessing('MIGRATION_WIZARD', client.client_name, `Added to Client_Registry with ${contacts.length} contacts`, 'success');
     imported++;
   }
 
-  logProcessing('MIGRATION_WIZARD', null, `Imported ${imported} clients via wizard`, 'success');
+  const summary = `Import complete: ${imported} added, ${skipped} skipped (duplicates)`;
+  logProcessing('MIGRATION_WIZARD', null, summary, 'success');
 
   return { imported: imported };
 }
