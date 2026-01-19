@@ -1169,122 +1169,106 @@ function loadLatestFathomMeeting() {
 // ============================================================================
 
 /**
- * TEST FUNCTION: Check document access for all clients.
- * Run this from Apps Script editor - results go to Execution Log.
- * Tests if the script can open each client's Google Doc.
+ * TEST: Process the most recent meeting summary.
+ * Run from Apps Script editor - finds latest meeting summary and processes it.
+ * Tests BOTH Todoist task creation AND document append.
+ * Results in Execution Log (View > Execution log).
  */
-function testDocumentAccess() {
-  Logger.log('=== TESTING DOCUMENT ACCESS FOR ALL CLIENTS ===');
+function testLastMeetingSummary() {
+  Logger.log('=== TESTING LAST MEETING SUMMARY PROCESSING ===\n');
 
+  // Find the most recent meeting summary across all clients
   const allClients = getClientRegistry();
   const clients = allClients.filter(client => client.setup_complete === true);
 
-  if (clients.length === 0) {
-    Logger.log('ERROR: No clients with setup_complete found');
-    return;
-  }
-
-  Logger.log(`Found ${clients.length} clients to test\n`);
+  let mostRecentMessage = null;
+  let mostRecentClient = null;
+  let mostRecentDate = new Date(0);
 
   for (const client of clients) {
-    Logger.log(`--- ${client.client_name} ---`);
-    Logger.log(`  Doc URL: ${client.google_doc_url || 'NOT SET'}`);
+    const labelName = `Client: ${client.client_name}/Meeting Summaries`;
+    const label = GmailApp.getUserLabelByName(labelName);
+    if (!label) continue;
 
-    if (!client.google_doc_url) {
-      Logger.log(`  Result: SKIPPED - No URL configured`);
-      continue;
+    const threads = label.getThreads(0, 1);
+    if (threads.length === 0) continue;
+
+    const messages = threads[0].getMessages();
+    if (messages.length === 0) continue;
+
+    const message = messages[0];
+    if (message.getDate() > mostRecentDate) {
+      mostRecentDate = message.getDate();
+      mostRecentMessage = message;
+      mostRecentClient = client;
     }
-
-    try {
-      const docId = extractDocIdFromUrl(client.google_doc_url);
-      Logger.log(`  Extracted Doc ID: ${docId}`);
-
-      const doc = DocumentApp.openById(docId);
-      const title = doc.getName();
-      Logger.log(`  Doc Title: ${title}`);
-      Logger.log(`  Result: SUCCESS - Document accessible`);
-    } catch (error) {
-      Logger.log(`  Result: FAILED - ${error.message}`);
-    }
-    Logger.log('');
   }
 
-  Logger.log('=== TEST COMPLETE ===');
-}
-
-/**
- * TEST FUNCTION: Try to append meeting notes for a specific client.
- * Edit the CLIENT_NAME variable below, then run from Apps Script editor.
- */
-function testAppendForClient() {
-  // ========= EDIT THIS =========
-  const CLIENT_NAME = 'YOUR_CLIENT_NAME_HERE';
-  // =============================
-
-  Logger.log(`=== TESTING MEETING NOTES APPEND FOR: ${CLIENT_NAME} ===`);
-
-  const allClients = getClientRegistry();
-  const client = allClients.find(c => c.client_name === CLIENT_NAME);
-
-  if (!client) {
-    Logger.log(`ERROR: Client "${CLIENT_NAME}" not found`);
-    Logger.log('Available clients:');
-    allClients.forEach(c => Logger.log(`  - ${c.client_name}`));
+  if (!mostRecentMessage || !mostRecentClient) {
+    Logger.log('ERROR: No meeting summaries found in any client label');
     return;
   }
 
-  Logger.log(`Client found: ${client.client_name}`);
-  Logger.log(`Doc URL: ${client.google_doc_url || 'NOT SET'}`);
+  Logger.log('FOUND MOST RECENT MEETING SUMMARY:');
+  Logger.log(`  Client: ${mostRecentClient.client_name}`);
+  Logger.log(`  Subject: ${mostRecentMessage.getSubject()}`);
+  Logger.log(`  Date: ${mostRecentMessage.getDate()}`);
+  Logger.log(`  Doc URL: ${mostRecentClient.google_doc_url || 'NOT SET'}`);
+  Logger.log(`  Todoist Project: ${mostRecentClient.todoist_project_id || 'NOT SET'}`);
 
-  if (!client.google_doc_url) {
-    Logger.log('ERROR: No Google Doc URL configured for this client');
-    return;
-  }
+  // Show email body preview
+  const emailBody = mostRecentMessage.getPlainBody();
+  Logger.log(`\n--- EMAIL BODY PREVIEW (first 500 chars) ---`);
+  Logger.log(emailBody.substring(0, 500));
+  Logger.log('--- END PREVIEW ---\n');
 
-  // Test document access
+  // Test 1: Extract action items with AI
+  Logger.log('=== TEST 1: ACTION ITEM EXTRACTION ===');
   try {
-    const docId = extractDocIdFromUrl(client.google_doc_url);
-    Logger.log(`Extracted Doc ID: ${docId}`);
-
-    const doc = DocumentApp.openById(docId);
-    Logger.log(`Doc Title: ${doc.getName()}`);
-    Logger.log('Document access: SUCCESS');
+    const actionItems = extractActionItemsWithAI(emailBody, mostRecentClient);
+    Logger.log(`Found ${actionItems.length} action items:`);
+    actionItems.forEach((item, i) => {
+      Logger.log(`  ${i + 1}. ${item.task}`);
+      if (item.assignee) Logger.log(`     Assignee: ${item.assignee}`);
+      if (item.due_date) Logger.log(`     Due: ${item.due_date}`);
+    });
+    Logger.log('Action item extraction: SUCCESS\n');
   } catch (error) {
-    Logger.log(`Document access: FAILED - ${error.message}`);
-    return;
+    Logger.log(`Action item extraction: FAILED - ${error.message}\n`);
   }
 
-  // Find most recent meeting summary
-  const labelName = `Client: ${client.client_name}/Meeting Summaries`;
-  Logger.log(`\nLooking for label: ${labelName}`);
-
-  const label = GmailApp.getUserLabelByName(labelName);
-  if (!label) {
-    Logger.log('ERROR: Label not found');
-    return;
+  // Test 2: Document access
+  Logger.log('=== TEST 2: DOCUMENT ACCESS ===');
+  if (!mostRecentClient.google_doc_url) {
+    Logger.log('SKIPPED - No Google Doc URL configured');
+  } else {
+    try {
+      const docId = extractDocIdFromUrl(mostRecentClient.google_doc_url);
+      Logger.log(`Extracted Doc ID: ${docId}`);
+      const doc = DocumentApp.openById(docId);
+      Logger.log(`Doc Title: ${doc.getName()}`);
+      Logger.log('Document access: SUCCESS\n');
+    } catch (error) {
+      Logger.log(`Document access: FAILED - ${error.message}\n`);
+    }
   }
 
-  const threads = label.getThreads(0, 1);
-  if (threads.length === 0) {
-    Logger.log('ERROR: No threads in label');
-    return;
+  // Test 3: Full processing (creates tasks + appends doc)
+  Logger.log('=== TEST 3: FULL PROCESSING ===');
+  Logger.log('Running processSentMeetingSummary()...\n');
+
+  try {
+    processSentMeetingSummary(mostRecentMessage, mostRecentClient);
+    Logger.log('Full processing: SUCCESS');
+  } catch (error) {
+    Logger.log(`Full processing: FAILED - ${error.message}`);
   }
 
-  const messages = threads[0].getMessages();
-  if (messages.length === 0) {
-    Logger.log('ERROR: No messages in thread');
-    return;
-  }
-
-  const message = messages[0];
-  Logger.log(`Found message: ${message.getSubject()}`);
-  Logger.log(`Date: ${message.getDate()}`);
-
-  // Actually append (uncomment to run)
-  Logger.log('\n--- To actually append, uncomment the line below and re-run ---');
-  // appendMeetingNotesToDoc(message, client);
-
-  Logger.log('=== TEST COMPLETE ===');
+  Logger.log('\n=== TEST COMPLETE ===');
+  Logger.log('Check:');
+  Logger.log('  - Todoist for new tasks');
+  Logger.log('  - Google Doc for appended notes');
+  Logger.log('  - Processing_Log sheet for detailed logs');
 }
 
 /**
