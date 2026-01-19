@@ -2156,6 +2156,9 @@ function scanForMigration() {
       }
     });
 
+    // Sort alphabetically by label name - groups sub-labels with parents
+    discovered.gmailLabels.sort((a, b) => a.labelName.localeCompare(b.labelName));
+
     logProcessing('MIGRATION_SCAN', null, `Gmail scan complete: ${discovered.gmailLabels.length} new labels found (after filtering)`, 'success');
   } catch (error) {
     Logger.log(`ERROR scanning Gmail labels: ${error.message}`);
@@ -2191,6 +2194,9 @@ function scanForMigration() {
           logProcessing('MIGRATION_SCAN', project.name, `Filtered out Todoist project - ${reason}`, 'info');
         }
       }
+
+      // Sort alphabetically by project name
+      discovered.todoistProjects.sort((a, b) => a.projectName.localeCompare(b.projectName));
 
       logProcessing('MIGRATION_SCAN', null, `Todoist scan complete: ${discovered.todoistProjects.length} new projects found (after filtering)`, 'success');
     } catch (error) {
@@ -2229,6 +2235,9 @@ function loadClientsForReview() {
       subLabels: []
     });
   }
+
+  // Sort alphabetically - this groups sub-labels with their parents
+  availableLabels.sort((a, b) => a.labelName.localeCompare(b.labelName));
 
   logProcessing('LABEL_REVIEW', null, `Loaded ${clients.length} clients for review with ${availableLabels.length} available labels`, 'success');
 
