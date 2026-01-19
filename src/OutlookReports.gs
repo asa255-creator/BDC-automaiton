@@ -20,6 +20,7 @@
 /**
  * Generates and sends the daily outlook report.
  * Called at 7:00 AM daily.
+ * Uses Claude AI to generate strategic briefing from all data.
  */
 function generateDailyOutlook() {
   Logger.log('Generating daily outlook...');
@@ -30,14 +31,170 @@ function generateDailyOutlook() {
   const today = new Date();
   const reportData = compileDailyData(today);
 
-  // Generate HTML report
-  const htmlReport = formatDailyOutlookHtml(reportData, today);
+  // Generate HTML report using AI
+  let htmlReport;
+  const aiGenerated = generateDailyOutlookWithClaude(reportData, today);
+
+  if (aiGenerated) {
+    htmlReport = aiGenerated;
+    Logger.log('Daily outlook generated with AI');
+  } else {
+    // Fallback to template-based if AI fails
+    htmlReport = formatDailyOutlookHtml(reportData, today);
+    Logger.log('Daily outlook generated with fallback template (AI unavailable)');
+  }
 
   // Send email
   const subject = `Daily Outlook - ${formatDate(today)}`;
   sendOutlookEmail(subject, htmlReport, 'Brief: Daily');
 
   Logger.log('Daily outlook sent');
+}
+
+/**
+ * Generates daily outlook HTML using Claude AI.
+ * Passes ALL data through the AI prompt for strategic analysis.
+ *
+ * @param {Object} data - The compiled report data
+ * @param {Date} date - The report date
+ * @returns {string|null} AI-generated HTML or null if failed
+ */
+function generateDailyOutlookWithClaude(data, date) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+
+  if (!apiKey) {
+    Logger.log('Claude API key not configured - falling back to template');
+    return null;
+  }
+
+  const prompt = buildDailyOutlookPrompt(data, date);
+
+  try {
+    const url = 'https://api.anthropic.com/v1/messages';
+    const model = getModelForPrompt('DAILY_BRIEFING_CLAUDE_PROMPT');
+
+    const payload = {
+      model: model,
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
+    };
+
+    const options = {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      Logger.log(`Claude API error for daily outlook: ${responseCode} - ${response.getContentText()}`);
+      return null;
+    }
+
+    const result = JSON.parse(response.getContentText());
+
+    if (result.content && result.content.length > 0) {
+      return result.content[0].text;
+    }
+
+    return null;
+
+  } catch (error) {
+    Logger.log(`Failed to generate daily outlook with Claude: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Builds the prompt for Claude daily outlook generation.
+ * Includes ALL available data: calendar, tasks, unread emails, drafts, conflicts.
+ *
+ * @param {Object} data - The compiled report data
+ * @param {Date} date - The report date
+ * @returns {string} The formatted prompt
+ */
+function buildDailyOutlookPrompt(data, date) {
+  // Build calendar section
+  let calendarSection = '';
+  if (data.meetings.length > 0) {
+    calendarSection = 'Today\'s Calendar:\n';
+    for (const meeting of data.meetings.sort((a, b) => a.start - b.start)) {
+      calendarSection += `- ${formatTime(meeting.start)} - ${formatTime(meeting.end)}: ${meeting.title}`;
+      if (meeting.clientName !== 'Unassigned') {
+        calendarSection += ` (${meeting.clientName})`;
+      }
+      if (!meeting.hasAgenda) {
+        calendarSection += ' [NO AGENDA]';
+      }
+      calendarSection += '\n';
+    }
+  } else {
+    calendarSection = 'Today\'s Calendar:\nNo meetings scheduled.\n';
+  }
+
+  // Build conflicts section
+  let conflictsSection = '';
+  if (data.conflicts.length > 0) {
+    conflictsSection = '\nSchedule Conflicts:\n';
+    for (const conflict of data.conflicts) {
+      conflictsSection += `- "${conflict.event1.title}" overlaps with "${conflict.event2.title}"\n`;
+    }
+  }
+
+  // Build tasks section
+  let tasksSection = '';
+  if (data.tasks.length > 0) {
+    tasksSection = 'Tasks Due Today or Overdue:\n';
+    for (const task of data.tasks) {
+      const overdueFlag = task.isOverdue ? ' [OVERDUE]' : '';
+      tasksSection += `- [${task.client.client_name}] ${task.content}${overdueFlag}\n`;
+    }
+  } else {
+    tasksSection = 'Tasks Due Today or Overdue:\nNo tasks due today.\n';
+  }
+
+  // Build unread emails section
+  let unreadSection = '';
+  if (data.includeUnreadEmails && data.unreadEmails.totalUnread > 0) {
+    unreadSection = `\nUnread Emails (${data.unreadEmails.totalUnread} total):\n`;
+
+    if (data.unreadEmails.recentUnread.length > 0) {
+      unreadSection += 'Recent (last 24 hours):\n';
+      for (const email of data.unreadEmails.recentUnread.slice(0, 10)) {
+        unreadSection += `- From: ${email.from}, Subject: ${email.subject}\n`;
+      }
+    }
+
+    if (data.unreadEmails.olderBacklog.length > 0) {
+      unreadSection += `Older backlog (${data.unreadEmails.olderBacklog.length} emails):\n`;
+      for (const email of data.unreadEmails.olderBacklog.slice(0, 5)) {
+        unreadSection += `- From: ${email.from}, Subject: ${email.subject} (${email.date})\n`;
+      }
+    }
+  }
+
+  // Get the prompt template
+  const template = getPrompt('DAILY_BRIEFING_CLAUDE_PROMPT');
+
+  // Apply variables to template
+  return applyTemplate(template, {
+    current_date: formatDate(date),
+    todays_calendar: calendarSection + conflictsSection,
+    todays_tasks: tasksSection,
+    urgent_emails: unreadSection || 'No unread emails to report.'
+  });
 }
 
 /**
@@ -287,6 +444,7 @@ function formatDailyOutlookHtml(data, date) {
 /**
  * Generates and sends the weekly outlook report.
  * Called at 7:00 AM every Monday.
+ * Uses Claude AI to generate strategic briefing from all data.
  */
 function generateWeeklyOutlook() {
   Logger.log('Generating weekly outlook...');
@@ -294,14 +452,223 @@ function generateWeeklyOutlook() {
   const today = new Date();
   const reportData = compileWeeklyData(today);
 
-  // Generate HTML report
-  const htmlReport = formatWeeklyOutlookHtml(reportData, today);
+  // Generate HTML report using AI
+  let htmlReport;
+  const aiGenerated = generateWeeklyOutlookWithClaude(reportData, today);
+
+  if (aiGenerated) {
+    htmlReport = aiGenerated;
+    Logger.log('Weekly outlook generated with AI');
+  } else {
+    // Fallback to template-based if AI fails
+    htmlReport = formatWeeklyOutlookHtml(reportData, today);
+    Logger.log('Weekly outlook generated with fallback template (AI unavailable)');
+  }
 
   // Send email
   const subject = `Weekly Outlook - Week of ${formatDate(today)}`;
   sendOutlookEmail(subject, htmlReport, 'Brief: Weekly');
 
   Logger.log('Weekly outlook sent');
+}
+
+/**
+ * Generates weekly outlook HTML using Claude AI.
+ * Passes ALL data through the AI prompt for strategic analysis.
+ *
+ * @param {Object} data - The compiled report data
+ * @param {Date} startDate - The start date of the week
+ * @returns {string|null} AI-generated HTML or null if failed
+ */
+function generateWeeklyOutlookWithClaude(data, startDate) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+
+  if (!apiKey) {
+    Logger.log('Claude API key not configured - falling back to template');
+    return null;
+  }
+
+  const prompt = buildWeeklyOutlookPrompt(data, startDate);
+
+  try {
+    const url = 'https://api.anthropic.com/v1/messages';
+    const model = getModelForPrompt('WEEKLY_BRIEFING_CLAUDE_PROMPT');
+
+    const payload = {
+      model: model,
+      max_tokens: 8000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
+    };
+
+    const options = {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      Logger.log(`Claude API error for weekly outlook: ${responseCode} - ${response.getContentText()}`);
+      return null;
+    }
+
+    const result = JSON.parse(response.getContentText());
+
+    if (result.content && result.content.length > 0) {
+      return result.content[0].text;
+    }
+
+    return null;
+
+  } catch (error) {
+    Logger.log(`Failed to generate weekly outlook with Claude: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Builds the prompt for Claude weekly outlook generation.
+ * Includes ALL available data: calendar, tasks, unread emails, drafts, conflicts.
+ *
+ * @param {Object} data - The compiled report data
+ * @param {Date} startDate - The start date of the week
+ * @returns {string} The formatted prompt
+ */
+function buildWeeklyOutlookPrompt(data, startDate) {
+  // Build calendar summary for the week
+  let calendarSummary = 'Week\'s Calendar Summary:\n';
+  const dayKeys = Object.keys(data.dayData).sort();
+
+  for (const dayKey of dayKeys) {
+    const dayInfo = data.dayData[dayKey];
+    const dayName = dayInfo.date.toLocaleDateString('en-US', { weekday: 'long' });
+    calendarSummary += `\n${dayName} (${dayKey}):\n`;
+
+    if (dayInfo.meetings.length === 0) {
+      calendarSummary += '  No meetings\n';
+    } else {
+      for (const meeting of dayInfo.meetings.sort((a, b) => a.start - b.start)) {
+        calendarSummary += `  - ${formatTime(meeting.start)}: ${meeting.title}`;
+        if (meeting.clientName !== 'Unassigned') {
+          calendarSummary += ` (${meeting.clientName})`;
+        }
+        if (!meeting.hasAgenda) {
+          calendarSummary += ' [NO AGENDA]';
+        }
+        calendarSummary += '\n';
+      }
+    }
+  }
+
+  // Add conflicts
+  if (data.conflicts.length > 0) {
+    calendarSummary += '\nSchedule Conflicts:\n';
+    for (const conflict of data.conflicts) {
+      calendarSummary += `- "${conflict.event1.title}" overlaps with "${conflict.event2.title}"\n`;
+    }
+  }
+
+  // Build tasks section (Todoist)
+  let todoistTasks = 'Tasks by Client:\n';
+  const clientNames = Object.keys(data.clientSummaries);
+
+  if (clientNames.length > 0) {
+    for (const clientName of clientNames) {
+      const summary = data.clientSummaries[clientName];
+      if (summary.tasks.length > 0) {
+        todoistTasks += `\n${clientName}:\n`;
+        for (const task of summary.tasks) {
+          const overdueFlag = task.isOverdue ? ' [OVERDUE]' : '';
+          const dueDate = task.due ? ` (Due: ${task.due})` : '';
+          todoistTasks += `  - ${task.content}${dueDate}${overdueFlag}\n`;
+        }
+      }
+    }
+  } else {
+    todoistTasks = 'Tasks by Client:\nNo tasks scheduled this week.\n';
+  }
+
+  // Build action today/this week emails section
+  let actionEmails = '';
+
+  // Fetch Action Today emails
+  const actionTodayLabel = GmailApp.getUserLabelByName('Action Today');
+  if (actionTodayLabel) {
+    const actionTodayThreads = actionTodayLabel.getThreads(0, 10);
+    if (actionTodayThreads.length > 0) {
+      actionEmails += 'Emails labeled "Action Today":\n';
+      for (const thread of actionTodayThreads) {
+        const firstMessage = thread.getMessages()[0];
+        actionEmails += `- From: ${firstMessage.getFrom()}, Subject: ${thread.getFirstMessageSubject()}\n`;
+      }
+      actionEmails += '\n';
+    }
+  }
+
+  // Fetch Action This Week emails
+  const actionWeekLabel = GmailApp.getUserLabelByName('Action This Week');
+  if (actionWeekLabel) {
+    const actionWeekThreads = actionWeekLabel.getThreads(0, 10);
+    if (actionWeekThreads.length > 0) {
+      actionEmails += 'Emails labeled "Action This Week":\n';
+      for (const thread of actionWeekThreads) {
+        const firstMessage = thread.getMessages()[0];
+        actionEmails += `- From: ${firstMessage.getFrom()}, Subject: ${thread.getFirstMessageSubject()}\n`;
+      }
+      actionEmails += '\n';
+    }
+  }
+
+  // Build unread emails section
+  if (data.includeUnreadEmails && data.unreadEmails.totalUnread > 0) {
+    actionEmails += `\nUnread Emails (${data.unreadEmails.totalUnread} total):\n`;
+
+    if (data.unreadEmails.recentUnread.length > 0) {
+      actionEmails += 'Recent (last 7 days):\n';
+      for (const email of data.unreadEmails.recentUnread.slice(0, 15)) {
+        actionEmails += `- From: ${email.from}, Subject: ${email.subject}\n`;
+      }
+    }
+
+    if (data.unreadEmails.olderBacklog.length > 0) {
+      actionEmails += `\nOlder backlog (${data.unreadEmails.olderBacklog.length} emails):\n`;
+      for (const email of data.unreadEmails.olderBacklog.slice(0, 10)) {
+        actionEmails += `- From: ${email.from}, Subject: ${email.subject} (${email.date})\n`;
+      }
+    }
+  }
+
+  // Build drafts section
+  if (data.drafts && data.drafts.length > 0) {
+    actionEmails += `\nUnsent Drafts (${data.drafts.length}):\n`;
+    for (const draft of data.drafts.slice(0, 10)) {
+      actionEmails += `- To: ${draft.to || 'No recipient'}, Subject: ${draft.subject || 'No subject'}\n`;
+    }
+  }
+
+  // Get the prompt template
+  const template = getPrompt('WEEKLY_BRIEFING_CLAUDE_PROMPT');
+
+  // Apply variables to template
+  return applyTemplate(template, {
+    current_date: formatDate(startDate),
+    action_today_emails: actionEmails || 'No action emails found.',
+    action_this_week_emails: '', // Already included in actionEmails
+    todoist_tasks: todoistTasks,
+    calendar_summary: calendarSummary
+  });
 }
 
 /**
