@@ -67,16 +67,19 @@ function syncLabelsAndFilters() {
  * @param {Object} client - The client object
  */
 function syncClientLabels(client) {
-  const baseLabelName = `Client: ${client.client_name}`;
+  // Use stored label names from Client_Registry, or default to standard pattern
+  const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;
+  const summaryLabelName = client.meeting_summaries_label || `${baseLabelName}/Meeting Summaries`;
+  const agendaLabelName = client.meeting_agendas_label || `${baseLabelName}/Meeting Agendas`;
 
   // Create base client label
   createLabelIfNotExists(baseLabelName);
 
   // Create sub-labels
-  createLabelIfNotExists(`${baseLabelName}/Meeting Summaries`);
-  createLabelIfNotExists(`${baseLabelName}/Meeting Agendas`);
+  createLabelIfNotExists(summaryLabelName);
+  createLabelIfNotExists(agendaLabelName);
 
-  Logger.log(`Synced labels for client: ${client.client_name}`);
+  Logger.log(`Synced labels for client: ${client.client_name} (base: ${baseLabelName})`);
 
   // Create filters (requires Gmail API Advanced Service)
   const contacts = parseCommaSeparatedList(client.contact_emails);
@@ -93,14 +96,14 @@ function syncClientLabels(client) {
     if (toCriteria) {
       const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
       const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
-      createGmailApiFilter(summaryCriteria, `${baseLabelName}/Meeting Summaries`);
+      createGmailApiFilter(summaryCriteria, summaryLabelName);
     }
   }
 
   // Filter for self-sent agendas (uses client name in subject)
   const agendaPattern = getAgendaFilterPatternForClient(client.client_name);
   const agendaCriteria = `from:me to:me subject:"${agendaPattern}"`;
-  createGmailApiFilter(agendaCriteria, `${baseLabelName}/Meeting Agendas`);
+  createGmailApiFilter(agendaCriteria, agendaLabelName);
 
   Logger.log(`Synced filters for client: ${client.client_name}`);
 }
@@ -326,9 +329,10 @@ function logFilterSpec(filterType, clientName, spec) {
 /**
  * Creates a Gmail filter using the Gmail API.
  * Requires the Gmail Advanced Service to be enabled.
+ * ONLY creates filters for system-managed labels.
  *
  * @param {string} criteria - The filter criteria (Gmail search query)
- * @param {string} labelName - The label to apply
+ * @param {string} labelName - The label to apply (must be a system-managed label)
  * @returns {Object|null} The created filter or null if failed
  */
 function createGmailApiFilter(criteria, labelName) {
@@ -336,6 +340,22 @@ function createGmailApiFilter(criteria, labelName) {
     // Check if Gmail API is available
     if (typeof Gmail === 'undefined' || !Gmail.Users) {
       Logger.log('Gmail Advanced Service not enabled - skipping filter creation');
+      return null;
+    }
+
+    // Safety check: Only create filters for system-managed labels
+    const props = PropertiesService.getScriptProperties();
+    const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
+    const weeklyLabel = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
+
+    const isSystemLabel = labelName.startsWith('Client: ') ||
+                         labelName === dailyLabel ||
+                         labelName === weeklyLabel ||
+                         labelName === 'Brief: Daily' ||
+                         labelName === 'Brief: Weekly';
+
+    if (!isSystemLabel) {
+      Logger.log(`SAFETY: Refusing to create filter for non-system label: ${labelName}`);
       return null;
     }
 
@@ -348,12 +368,16 @@ function createGmailApiFilter(criteria, labelName) {
       return null;
     }
 
-    // Check if filter already exists
+    // Check if identical filter already exists (same criteria AND same label)
     const existingFilters = listGmailFilters();
     for (const filter of existingFilters) {
       if (filter.criteria && filter.criteria.query === criteria) {
-        Logger.log(`Filter already exists for criteria: ${criteria}`);
-        return filter;
+        // Check if it applies the same label
+        const existingLabelIds = filter.action && filter.action.addLabelIds ? filter.action.addLabelIds : [];
+        if (existingLabelIds.includes(labelId)) {
+          Logger.log(`Filter already exists: ${criteria} -> ${labelName}`);
+          return filter;
+        }
       }
     }
 
@@ -424,19 +448,95 @@ function listGmailFilters() {
 
 /**
  * Deletes a Gmail filter by ID.
+ * SAFETY: Only deletes system-created filters.
  *
  * @param {string} filterId - The filter ID to delete
+ * @returns {boolean} True if deleted, false if skipped or failed
  */
 function deleteGmailFilter(filterId) {
-  // Note: This requires Gmail Advanced Service
-  /*
   try {
+    if (typeof Gmail === 'undefined' || !Gmail.Users) {
+      Logger.log('Gmail Advanced Service not enabled');
+      return false;
+    }
+
+    // Get the filter details first
+    const existingFilters = listGmailFilters();
+    const filter = existingFilters.find(f => f.id === filterId);
+
+    if (!filter) {
+      Logger.log(`Filter not found: ${filterId}`);
+      return false;
+    }
+
+    // CRITICAL SAFETY CHECK: Only delete system-created filters
+    if (!isSystemCreatedFilter(filter)) {
+      Logger.log(`SAFETY: Refusing to delete user-created filter: ${filterId}`);
+      logProcessing('FILTER_DELETE', null, `Blocked attempt to delete user filter: ${filterId}`, 'warning');
+      return false;
+    }
+
+    // Safe to delete - it's a system filter
     Gmail.Users.Settings.Filters.remove('me', filterId);
-    Logger.log(`Deleted filter: ${filterId}`);
+    Logger.log(`Deleted system filter: ${filterId}`);
+    return true;
+
   } catch (error) {
     Logger.log(`Failed to delete filter: ${error.message}`);
+    return false;
   }
-  */
+}
+
+/**
+ * Lists all system-managed filters.
+ * Useful for debugging and verification.
+ *
+ * @returns {Object[]} Array of system-managed filter objects
+ */
+function listSystemManagedFilters() {
+  try {
+    const allFilters = listGmailFilters();
+    const systemFilters = [];
+
+    for (const filter of allFilters) {
+      if (isSystemCreatedFilter(filter)) {
+        systemFilters.push({
+          id: filter.id,
+          criteria: filter.criteria ? filter.criteria.query : 'N/A',
+          labels: getLabelNamesFromFilter(filter)
+        });
+      }
+    }
+
+    Logger.log(`Found ${systemFilters.length} system-managed filters out of ${allFilters.length} total`);
+    return systemFilters;
+
+  } catch (error) {
+    Logger.log(`Error listing system filters: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Gets label names from a filter object.
+ *
+ * @param {Object} filter - The filter object
+ * @returns {string[]} Array of label names
+ */
+function getLabelNamesFromFilter(filter) {
+  if (!filter.action || !filter.action.addLabelIds) {
+    return [];
+  }
+
+  const labelNames = [];
+  for (const labelId of filter.action.addLabelIds) {
+    const name = getLabelNameById(labelId);
+    if (name) {
+      labelNames.push(name);
+    }
+  }
+
+  return labelNames;
 }
 
 // ============================================================================
@@ -577,8 +677,70 @@ function getAgendaFilterPatternForClient(clientName) {
 }
 
 /**
+ * Checks if a filter was created by this system.
+ * Only returns true if the filter applies labels managed by this system.
+ *
+ * System-managed labels:
+ * - Client: *
+ * - Client: [name]/Meeting Summaries
+ * - Client: [name]/Meeting Agendas
+ * - Brief: Daily (or custom daily label)
+ * - Brief: Weekly (or custom weekly label)
+ *
+ * @param {Object} filter - The Gmail filter object
+ * @returns {boolean} True if this is a system-created filter
+ */
+function isSystemCreatedFilter(filter) {
+  if (!filter.action || !filter.action.addLabelIds) {
+    return false;
+  }
+
+  try {
+    // Get all label IDs and names
+    if (typeof Gmail === 'undefined' || !Gmail.Users) {
+      return false;
+    }
+
+    const response = Gmail.Users.Labels.list('me');
+    const labels = response.labels || [];
+
+    // Map label IDs to names
+    const labelMap = {};
+    for (const label of labels) {
+      labelMap[label.id] = label.name;
+    }
+
+    // Check if ANY of the filter's labels are system-managed
+    for (const labelId of filter.action.addLabelIds) {
+      const labelName = labelMap[labelId];
+      if (!labelName) continue;
+
+      // Get custom briefing labels from settings
+      const props = PropertiesService.getScriptProperties();
+      const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
+      const weeklyLabel = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
+
+      // System-managed label patterns
+      if (labelName.startsWith('Client: ') ||
+          labelName === dailyLabel ||
+          labelName === weeklyLabel ||
+          labelName === 'Brief: Daily' ||
+          labelName === 'Brief: Weekly') {
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    Logger.log(`Error checking if filter is system-created: ${error.message}`);
+    return false;
+  }
+}
+
+/**
  * Updates Gmail filters for meeting summaries when the subject template changes.
- * Deletes old filters and creates new ones based on the current template.
+ * ONLY manages filters that were created by this system.
+ * Never touches user-created filters.
  */
 function updateMeetingSummaryFilters() {
   logProcessing('FILTER_UPDATE', null, 'Starting filter update...', 'info');
@@ -605,19 +767,36 @@ function updateMeetingSummaryFilters() {
     const existingFilters = listGmailFilters();
     let deletedCount = 0;
     let createdCount = 0;
+    let skippedUserFilters = 0;
 
-    // Find and delete old meeting summary filters
+    // Find and delete ONLY system-created meeting summary filters
     for (const filter of existingFilters) {
+      // CRITICAL SAFETY CHECK: Only process system-created filters
+      if (!isSystemCreatedFilter(filter)) {
+        skippedUserFilters++;
+        continue; // Skip user-created filters
+      }
+
       if (filter.criteria && filter.criteria.query) {
         const query = filter.criteria.query;
-        // Match old summary filter patterns (from:me with Meeting Summaries label)
-        if (query.includes('from:me') &&
-            (query.includes('Meeting Summary') ||
-             query.includes('Meeting notes') ||
-             query.includes('notes from'))) {
+
+        // Only delete system meeting summary filters
+        // (applies Client: */Meeting Summaries label)
+        const labelIds = filter.action.addLabelIds || [];
+        let isMeetingSummaryFilter = false;
+
+        for (const labelId of labelIds) {
+          const labelName = getLabelNameById(labelId);
+          if (labelName && labelName.includes('/Meeting Summaries')) {
+            isMeetingSummaryFilter = true;
+            break;
+          }
+        }
+
+        if (isMeetingSummaryFilter) {
           try {
             Gmail.Users.Settings.Filters.remove('me', filter.id);
-            logProcessing('FILTER_UPDATE', null, `Deleted old filter: ${query}`, 'info');
+            logProcessing('FILTER_UPDATE', null, `Deleted system filter: ${query}`, 'info');
             deletedCount++;
           } catch (e) {
             logProcessing('FILTER_UPDATE', null, `Failed to delete filter: ${e.message}`, 'error');
@@ -647,10 +826,37 @@ function updateMeetingSummaryFilters() {
       }
     }
 
-    logProcessing('FILTER_UPDATE', null, `Filter update complete. Deleted: ${deletedCount}, Created: ${createdCount}`, 'success');
+    logProcessing('FILTER_UPDATE', null, `Filter update complete. Deleted: ${deletedCount}, Created: ${createdCount}, User filters skipped: ${skippedUserFilters}`, 'success');
 
   } catch (error) {
     logProcessing('FILTER_UPDATE', null, `Failed to update filters: ${error.message}`, 'error');
     throw error;
+  }
+}
+
+/**
+ * Gets the label name by label ID.
+ *
+ * @param {string} labelId - The label ID
+ * @returns {string|null} The label name or null
+ */
+function getLabelNameById(labelId) {
+  try {
+    if (typeof Gmail === 'undefined' || !Gmail.Users) {
+      return null;
+    }
+
+    const response = Gmail.Users.Labels.list('me');
+    const labels = response.labels || [];
+
+    for (const label of labels) {
+      if (label.id === labelId) {
+        return label.name;
+      }
+    }
+    return null;
+  } catch (error) {
+    Logger.log(`Failed to get label name: ${error.message}`);
+    return null;
   }
 }

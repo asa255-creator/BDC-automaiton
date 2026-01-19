@@ -45,8 +45,10 @@ function generateDailyOutlook() {
   }
 
   // Send email
+  const props = PropertiesService.getScriptProperties();
+  const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
   const subject = `Daily Outlook - ${formatDate(today)}`;
-  sendOutlookEmail(subject, htmlReport, 'Brief: Daily');
+  sendOutlookEmail(subject, htmlReport, dailyLabel);
 
   Logger.log('Daily outlook sent');
 }
@@ -466,8 +468,10 @@ function generateWeeklyOutlook() {
   }
 
   // Send email
+  const props = PropertiesService.getScriptProperties();
+  const weeklyLabel = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
   const subject = `Weekly Outlook - Week of ${formatDate(today)}`;
-  sendOutlookEmail(subject, htmlReport, 'Brief: Weekly');
+  sendOutlookEmail(subject, htmlReport, weeklyLabel);
 
   Logger.log('Weekly outlook sent');
 }

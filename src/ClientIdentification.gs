@@ -38,13 +38,36 @@ function identifyClient(emails) {
   // Check for exact contact email match
   for (const client of clients) {
     const contactEmails = parseCommaSeparatedList(client.contact_emails);
+    const isInternalClient = client.client_name.toLowerCase().includes('internal');
 
+    // Check if any meeting email matches this client
+    let hasMatch = false;
     for (const email of normalizedEmails) {
       if (contactEmails.includes(email)) {
-        Logger.log(`Client identified by contact email: ${client.client_name} (${email})`);
-        return client;
+        hasMatch = true;
+        break;
       }
     }
+
+    if (!hasMatch) {
+      continue; // No match for this client, try next one
+    }
+
+    // Special handling for "Internal" clients
+    if (isInternalClient) {
+      // For Internal clients, ONLY match if ALL meeting participants are internal
+      const allEmailsAreInternal = normalizedEmails.every(email => contactEmails.includes(email));
+
+      if (!allEmailsAreInternal) {
+        // Some participants are not internal, skip this client and check others
+        Logger.log(`Skipping Internal client - not all participants are internal`);
+        continue;
+      }
+    }
+
+    // We have a match (and passed Internal client check if applicable)
+    Logger.log(`Client identified by contact email: ${client.client_name}`);
+    return client;
   }
 
   // No match found
@@ -77,14 +100,19 @@ function identifyClientFromParticipants(participants) {
  * @returns {Object|null} Client object if found, null otherwise
  */
 function identifyClientFromCalendarEvent(event) {
-  const guestList = event.getGuestList();
-  const emails = guestList.map(guest => guest.getEmail());
+  const emails = [];
 
-  // Also check the event organizer if not the current user
-  const creatorEmail = event.getCreators()[0];
-  if (creatorEmail && creatorEmail !== Session.getActiveUser().getEmail()) {
-    emails.push(creatorEmail);
+  // Get ALL attendees including the owner
+  // getGuestList(true) includes the event owner/organizer
+  const attendees = event.getGuestList(true);
+  for (const attendee of attendees) {
+    const email = attendee.getEmail();
+    if (email) {
+      emails.push(email);
+    }
   }
+
+  Logger.log(`Calendar event "${event.getTitle()}" - collected ${emails.length} attendee emails: ${emails.join(', ')}`);
 
   return identifyClient(emails);
 }

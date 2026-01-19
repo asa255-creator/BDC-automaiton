@@ -585,14 +585,22 @@ function getPromptModel(promptKey) {
 }
 
 /**
- * Gets the full model ID for a prompt (resolves tier to actual model ID).
+ * Gets the full model ID for a prompt from the Prompts sheet.
+ * The model_preference column stores the complete model ID (e.g., "claude-3-haiku-20240307").
  *
  * @param {string} promptKey - The prompt key
  * @returns {string} The actual model ID to use
  */
 function getModelForPrompt(promptKey) {
-  const tier = getPromptModel(promptKey);
-  return getModelIdForTier(tier);
+  const modelId = getPromptModel(promptKey);
+
+  // If the stored value looks like a full model ID, use it directly
+  if (modelId && modelId.startsWith('claude-')) {
+    return modelId;
+  }
+
+  // Fallback for legacy tier-based storage or missing values
+  return 'claude-3-haiku-20240307';
 }
 
 /**

@@ -57,8 +57,49 @@ function syncDriveFolders() {
     url: rootFolder.getUrl()
   });
 
-  // Recursively collect all subfolders
+  // Recursively collect all subfolders from My Drive
   collectFolders(rootFolder, 'My Drive', folders, 0);
+
+  // Collect shared folders (folders shared with me)
+  try {
+    const sharedFolders = DriveApp.searchFolders('sharedWithMe = true');
+    const processedSharedIds = new Set(); // Track to avoid duplicates
+
+    while (sharedFolders.hasNext()) {
+      const folder = sharedFolders.next();
+      const folderId = folder.getId();
+
+      // Skip if already processed (might be in "My Drive" via sharing)
+      if (processedSharedIds.has(folderId)) {
+        continue;
+      }
+      processedSharedIds.add(folderId);
+
+      // Check if this folder is already in our list (from My Drive scan)
+      const alreadyExists = folders.some(f => f.id === folderId);
+      if (alreadyExists) {
+        continue;
+      }
+
+      // Build the path for shared folders
+      const folderName = folder.getName();
+      const ownerEmail = folder.getOwner() ? folder.getOwner().getEmail() : 'Unknown';
+      const sharedPath = `Shared/${folderName} (${ownerEmail})`;
+
+      folders.push({
+        path: sharedPath,
+        id: folderId,
+        url: folder.getUrl()
+      });
+
+      // Recursively collect subfolders of shared folders
+      collectFolders(folder, sharedPath, folders, 0);
+    }
+
+    Logger.log(`Found ${processedSharedIds.size} shared folders`);
+  } catch (error) {
+    Logger.log(`Error scanning shared folders: ${error.message}`);
+  }
 
   // Sort folders alphabetically by path
   folders.sort((a, b) => a.path.localeCompare(b.path));
