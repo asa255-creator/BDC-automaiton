@@ -2385,6 +2385,9 @@ function importClientsFromWizard(importData) {
 
     logProcessing('MIGRATION_WIZARD', client.client_name, `Row added to Client_Registry at row ${rowNumber}`, 'info');
 
+    // COUNT IT NOW - row is in the sheet, that's what matters
+    imported++;
+
     // NOW create the doc if needed
     let googleDocUrl = '';
     if (client.doc_mode === 'existing' && client.existing_doc_url) {
@@ -2442,8 +2445,7 @@ function importClientsFromWizard(importData) {
       }
     }
 
-    logProcessing('MIGRATION_WIZARD', client.client_name, `Added to Client_Registry with ${contacts.length} contacts`, 'success');
-    imported++;
+    logProcessing('MIGRATION_WIZARD', client.client_name, `Completed setup with ${contacts.length} contacts, labels and filters created`, 'success');
   }
 
   const summary = `Import complete: ${imported} added, ${skipped} skipped (duplicates)`;
