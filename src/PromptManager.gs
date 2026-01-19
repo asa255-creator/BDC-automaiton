@@ -585,6 +585,23 @@ function getPromptModel(promptKey) {
 }
 
 /**
+ * Maps model tier to actual model ID.
+ *
+ * @param {string} tier - The model tier ('haiku', 'sonnet', 'opus')
+ * @returns {string} The actual Claude model ID
+ */
+function getModelIdForTier(tier) {
+  // Map tier names to actual model IDs
+  const tierMap = {
+    'haiku': 'claude-3-haiku-20240307',
+    'sonnet': 'claude-sonnet-4-20250514',
+    'opus': 'claude-opus-4-20241120'
+  };
+
+  return tierMap[tier] || tierMap['haiku']; // Default to haiku if unknown tier
+}
+
+/**
  * Gets the full model ID for a prompt (resolves tier to actual model ID).
  *
  * @param {string} promptKey - The prompt key

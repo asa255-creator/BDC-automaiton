@@ -17,23 +17,23 @@
  * Called hourly during business hours (8 AM - 6 PM).
  */
 function generateAgendas() {
-  Logger.log('Starting agenda generation...');
+  logProcessing('AGENDA_GEN', null, 'Starting agenda generation scan', 'info');
 
   // Get today's remaining calendar events
   const events = getTodaysRemainingEvents();
 
   if (events.length === 0) {
-    Logger.log('No remaining events for today');
+    logProcessing('AGENDA_GEN', null, 'No remaining events for today', 'info');
     return;
   }
 
-  Logger.log(`Found ${events.length} remaining events`);
+  logProcessing('AGENDA_GEN', null, `Found ${events.length} remaining events to process`, 'info');
 
   for (const event of events) {
     processEventForAgenda(event);
   }
 
-  Logger.log('Agenda generation completed');
+  logProcessing('AGENDA_GEN', null, 'Agenda generation scan completed', 'success');
 }
 
 /**
@@ -45,31 +45,37 @@ function processEventForAgenda(event) {
   const eventId = event.getId();
   const eventTitle = event.getTitle();
 
-  Logger.log(`Processing event: ${eventTitle}`);
+  logProcessing('AGENDA_GEN', null, `Processing event: ${eventTitle}`, 'info');
 
   // Identify client from event guests
   const client = identifyClientFromCalendarEvent(event);
 
   if (!client) {
     // Log to unmatched and skip
-    const guestEmails = event.getGuestList().map(g => g.getEmail());
+    const guestEmails = event.getGuestList(true).map(g => g.getEmail());
     logUnmatched(
       'meeting',
       `Calendar Event: ${eventTitle} at ${event.getStartTime()}`,
       guestEmails
     );
-    Logger.log(`No client match for event: ${eventTitle}`);
+    logProcessing('AGENDA_GEN', null, `No client match for event: ${eventTitle}`, 'info');
     return;
   }
 
+  logProcessing('AGENDA_GEN', client.client_name, `Matched event "${eventTitle}" to client`, 'info');
+
   // Ensure running meeting notes doc is attached to the event
   if (client.google_doc_url) {
-    attachDocToEventIfMissing(event, client);
+    try {
+      attachDocToEventIfMissing(event, client);
+    } catch (error) {
+      logProcessing('AGENDA_GEN', client.client_name, `Failed to attach doc to event: ${error.message}`, 'warning');
+    }
   }
 
   // Check if agenda already generated
   if (isAgendaGenerated(eventId)) {
-    Logger.log(`Agenda already generated for: ${eventTitle}`);
+    logProcessing('AGENDA_GEN', client.client_name, `Agenda already generated for: ${eventTitle}`, 'info');
     return;
   }
 
@@ -77,13 +83,8 @@ function processEventForAgenda(event) {
   try {
     generateAgendaForEvent(event, client);
   } catch (error) {
-    Logger.log(`Failed to generate agenda for ${eventTitle}: ${error.message}`);
-    logProcessing(
-      'AGENDA_ERROR',
-      client.client_name,
-      `Failed to generate agenda: ${error.message}`,
-      'error'
-    );
+    const errorMsg = `Failed to generate agenda for ${eventTitle}: ${error.message}\nStack: ${error.stack}`;
+    logProcessing('AGENDA_ERROR', client.client_name, errorMsg, 'error');
   }
 }
 
@@ -384,7 +385,7 @@ function generateAgendaWithClaude(event, client, context) {
   const apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
 
   if (!apiKey) {
-    Logger.log('Claude API key not configured');
+    logProcessing('AGENDA_ERROR', client.client_name, 'Claude API key not configured - cannot generate agenda', 'error');
     return null;
   }
 
@@ -395,6 +396,7 @@ function generateAgendaWithClaude(event, client, context) {
 
     // Use model preference from Prompts sheet (allows user to choose haiku vs sonnet)
     const model = getModelForPrompt('AGENDA_CLAUDE_PROMPT');
+    logProcessing('AGENDA_GEN', client.client_name, `Using Claude model: ${model}`, 'info');
 
     const payload = {
       model: model,
@@ -422,20 +424,24 @@ function generateAgendaWithClaude(event, client, context) {
     const responseCode = response.getResponseCode();
 
     if (responseCode !== 200) {
-      Logger.log(`Claude API error: ${responseCode} - ${response.getContentText()}`);
+      const errorDetail = `Claude API returned ${responseCode}: ${response.getContentText()}`;
+      logProcessing('AGENDA_ERROR', client.client_name, errorDetail, 'error');
       return null;
     }
 
     const result = JSON.parse(response.getContentText());
 
     if (result.content && result.content.length > 0) {
+      logProcessing('AGENDA_GEN', client.client_name, 'Successfully generated agenda with Claude', 'success');
       return result.content[0].text;
     }
 
+    logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty content', 'error');
     return null;
 
   } catch (error) {
-    Logger.log(`Failed to call Claude API: ${error.message}`);
+    const errorDetail = `Failed to call Claude API: ${error.message}\nStack: ${error.stack}`;
+    logProcessing('AGENDA_ERROR', client.client_name, errorDetail, 'error');
     return null;
   }
 }
