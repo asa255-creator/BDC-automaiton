@@ -1169,8 +1169,127 @@ function loadLatestFathomMeeting() {
 // ============================================================================
 
 /**
+ * TEST FUNCTION: Check document access for all clients.
+ * Run this from Apps Script editor - results go to Execution Log.
+ * Tests if the script can open each client's Google Doc.
+ */
+function testDocumentAccess() {
+  Logger.log('=== TESTING DOCUMENT ACCESS FOR ALL CLIENTS ===');
+
+  const allClients = getClientRegistry();
+  const clients = allClients.filter(client => client.setup_complete === true);
+
+  if (clients.length === 0) {
+    Logger.log('ERROR: No clients with setup_complete found');
+    return;
+  }
+
+  Logger.log(`Found ${clients.length} clients to test\n`);
+
+  for (const client of clients) {
+    Logger.log(`--- ${client.client_name} ---`);
+    Logger.log(`  Doc URL: ${client.google_doc_url || 'NOT SET'}`);
+
+    if (!client.google_doc_url) {
+      Logger.log(`  Result: SKIPPED - No URL configured`);
+      continue;
+    }
+
+    try {
+      const docId = extractDocIdFromUrl(client.google_doc_url);
+      Logger.log(`  Extracted Doc ID: ${docId}`);
+
+      const doc = DocumentApp.openById(docId);
+      const title = doc.getName();
+      Logger.log(`  Doc Title: ${title}`);
+      Logger.log(`  Result: SUCCESS - Document accessible`);
+    } catch (error) {
+      Logger.log(`  Result: FAILED - ${error.message}`);
+    }
+    Logger.log('');
+  }
+
+  Logger.log('=== TEST COMPLETE ===');
+}
+
+/**
+ * TEST FUNCTION: Try to append meeting notes for a specific client.
+ * Edit the CLIENT_NAME variable below, then run from Apps Script editor.
+ */
+function testAppendForClient() {
+  // ========= EDIT THIS =========
+  const CLIENT_NAME = 'YOUR_CLIENT_NAME_HERE';
+  // =============================
+
+  Logger.log(`=== TESTING MEETING NOTES APPEND FOR: ${CLIENT_NAME} ===`);
+
+  const allClients = getClientRegistry();
+  const client = allClients.find(c => c.client_name === CLIENT_NAME);
+
+  if (!client) {
+    Logger.log(`ERROR: Client "${CLIENT_NAME}" not found`);
+    Logger.log('Available clients:');
+    allClients.forEach(c => Logger.log(`  - ${c.client_name}`));
+    return;
+  }
+
+  Logger.log(`Client found: ${client.client_name}`);
+  Logger.log(`Doc URL: ${client.google_doc_url || 'NOT SET'}`);
+
+  if (!client.google_doc_url) {
+    Logger.log('ERROR: No Google Doc URL configured for this client');
+    return;
+  }
+
+  // Test document access
+  try {
+    const docId = extractDocIdFromUrl(client.google_doc_url);
+    Logger.log(`Extracted Doc ID: ${docId}`);
+
+    const doc = DocumentApp.openById(docId);
+    Logger.log(`Doc Title: ${doc.getName()}`);
+    Logger.log('Document access: SUCCESS');
+  } catch (error) {
+    Logger.log(`Document access: FAILED - ${error.message}`);
+    return;
+  }
+
+  // Find most recent meeting summary
+  const labelName = `Client: ${client.client_name}/Meeting Summaries`;
+  Logger.log(`\nLooking for label: ${labelName}`);
+
+  const label = GmailApp.getUserLabelByName(labelName);
+  if (!label) {
+    Logger.log('ERROR: Label not found');
+    return;
+  }
+
+  const threads = label.getThreads(0, 1);
+  if (threads.length === 0) {
+    Logger.log('ERROR: No threads in label');
+    return;
+  }
+
+  const messages = threads[0].getMessages();
+  if (messages.length === 0) {
+    Logger.log('ERROR: No messages in thread');
+    return;
+  }
+
+  const message = messages[0];
+  Logger.log(`Found message: ${message.getSubject()}`);
+  Logger.log(`Date: ${message.getDate()}`);
+
+  // Actually append (uncomment to run)
+  Logger.log('\n--- To actually append, uncomment the line below and re-run ---');
+  // appendMeetingNotesToDoc(message, client);
+
+  Logger.log('=== TEST COMPLETE ===');
+}
+
+/**
  * Manual function to retry appending meeting notes for the most recent summary.
- * Call this from Apps Script editor to debug document access issues.
+ * Call this from spreadsheet menu (BDC Automation > Retry Meeting Notes Append).
  * Shows dialog to select client, then tries to append their most recent meeting summary.
  */
 function retryLastMeetingNotesAppend() {
