@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Google Sans', Arial, sans-serif;
+      font-size: 14px;
+      margin: 0;
+      padding: 20px;
+      background: #f8f9fa;
+    }
+    h2 {
+      color: #202124;
+      margin-top: 0;
+      font-size: 18px;
+    }
+    h3 {
+      color: #5f6368;
+      font-size: 14px;
+      margin: 16px 0 8px 0;
+    }
+    .wizard-container {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    .step {
+      display: none;
+    }
+    .step.active {
+      display: block;
+    }
+    .client-row {
+      background: #f8f9fa;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 12px;
+      border: 1px solid #e8eaed;
+    }
+    .client-name {
+      font-weight: 500;
+      color: #202124;
+      margin-bottom: 8px;
+    }
+    .field-group {
+      margin-bottom: 10px;
+    }
+    .field-group label {
+      display: block;
+      font-size: 12px;
+      color: #5f6368;
+      margin-bottom: 4px;
+    }
+    select, input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    select:focus, input[type="text"]:focus {
+      outline: none;
+      border-color: #1a73e8;
+    }
+    .search-container {
+      display: flex;
+      gap: 8px;
+    }
+    .search-container input {
+      flex: 1;
+    }
+    .search-container button {
+      padding: 8px 12px;
+      background: #f1f3f4;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .search-container button:hover {
+      background: #e8eaed;
+    }
+    .doc-options {
+      margin-top: 8px;
+    }
+    .doc-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .doc-option input[type="radio"] {
+      margin: 0;
+    }
+    .doc-results, .autocomplete-results {
+      max-height: 120px;
+      overflow-y: auto;
+      margin-top: 4px;
+      border: 1px solid #e8eaed;
+      border-radius: 4px;
+      position: absolute;
+      background: white;
+      z-index: 100;
+      width: calc(100% - 24px);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    .doc-result-item, .autocomplete-item {
+      padding: 8px 10px;
+      cursor: pointer;
+      border-bottom: 1px solid #e8eaed;
+      font-size: 12px;
+    }
+    .doc-result-item:last-child, .autocomplete-item:last-child {
+      border-bottom: none;
+    }
+    .doc-result-item:hover, .autocomplete-item:hover {
+      background: #e8f0fe;
+    }
+    .doc-result-item.selected {
+      background: #e8f0fe;
+      font-weight: 500;
+    }
+    .buttons {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #e8eaed;
+    }
+    .btn {
+      padding: 10px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-primary {
+      background: #1a73e8;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #1557b0;
+    }
+    .btn-primary:disabled {
+      background: #dadce0;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: white;
+      border: 1px solid #dadce0;
+      color: #5f6368;
+    }
+    .btn-secondary:hover {
+      background: #f8f9fa;
+    }
+    .progress {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .progress-step {
+      flex: 1;
+      height: 4px;
+      background: #e8eaed;
+      border-radius: 2px;
+    }
+    .progress-step.complete {
+      background: #1a73e8;
+    }
+    .progress-step.active {
+      background: #8ab4f8;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #5f6368;
+    }
+    .loading-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #e8eaed;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .empty-state {
+      text-align: center;
+      padding: 30px;
+      color: #5f6368;
+    }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .checkbox-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+    }
+    .summary-item {
+      padding: 8px 0;
+      border-bottom: 1px solid #e8eaed;
+    }
+    .summary-item:last-child {
+      border-bottom: none;
+    }
+    .summary-label {
+      font-size: 12px;
+      color: #5f6368;
+    }
+    .summary-value {
+      font-weight: 500;
+    }
+    .alert {
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }
+    .alert-info {
+      background: #e8f0fe;
+      color: #1a73e8;
+    }
+    .alert-warning {
+      background: #fef7e0;
+      color: #e37400;
+    }
+    /* Email tags styles */
+    .email-tags-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 6px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      min-height: 38px;
+      cursor: text;
+      background: white;
+    }
+    .email-tags-container:focus-within {
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+    }
+    .email-tag {
+      display: inline-flex;
+      align-items: center;
+      background: #e8f0fe;
+      color: #1a73e8;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      gap: 4px;
+    }
+    .email-tag-remove {
+      cursor: pointer;
+      font-weight: bold;
+      opacity: 0.7;
+    }
+    .email-tag-remove:hover {
+      opacity: 1;
+    }
+    .email-input {
+      border: none;
+      outline: none;
+      flex: 1;
+      min-width: 150px;
+      padding: 4px;
+      font-size: 13px;
+    }
+    .autocomplete-wrapper {
+      position: relative;
+    }
+    /* Folder search styles */
+    .folder-search-wrapper {
+      position: relative;
+    }
+    .folder-search-input {
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="progress">
+    <div class="progress-step" id="prog1"></div>
+    <div class="progress-step" id="prog2"></div>
+    <div class="progress-step" id="prog3"></div>
+  </div>
+
+  <!-- Loading State -->
+  <div id="loading" class="loading">
+    <div class="loading-spinner"></div>
+    <div>Scanning for existing clients...</div>
+  </div>
+
+  <!-- Step 1: Review Discovered Clients -->
+  <div id="step1" class="step wizard-container">
+    <h2>Step 1: Review Discovered Clients</h2>
+    <p style="color: #5f6368; margin-bottom: 16px;">
+      We found existing Gmail labels and Todoist projects. Select which clients to import, match them up, and add contact emails.
+    </p>
+    <div id="clientList"></div>
+    <div class="buttons">
+      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+      <button class="btn btn-primary" onclick="goToStep(2)">Next: Configure Docs</button>
+    </div>
+  </div>
+
+  <!-- Step 2: Configure Google Docs -->
+  <div id="step2" class="step wizard-container">
+    <h2>Step 2: Configure Google Docs</h2>
+    <p style="color: #5f6368; margin-bottom: 16px;">
+      For each client, search for an existing Google Doc or create a new one.
+    </p>
+    <div id="docConfigList"></div>
+    <div class="buttons">
+      <button class="btn btn-secondary" onclick="goToStep(1)">Back</button>
+      <button class="btn btn-primary" onclick="goToStep(3)">Next: Review</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Review & Import -->
+  <div id="step3" class="step wizard-container">
+    <h2>Step 3: Review & Import</h2>
+    <p style="color: #5f6368; margin-bottom: 16px;">
+      Review your selections before importing.
+    </p>
+    <div id="summaryList"></div>
+    <div class="buttons">
+      <button class="btn btn-secondary" onclick="goToStep(2)">Back</button>
+      <button class="btn btn-primary" id="importBtn" onclick="doImport()">Import Clients</button>
+    </div>
+  </div>
+
+  <!-- Importing State -->
+  <div id="importing" class="step" style="display: none;">
+    <div class="wizard-container">
+      <div class="loading">
+        <div class="loading-spinner"></div>
+        <div id="importStatus">Importing clients...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Complete State -->
+  <div id="complete" class="step" style="display: none;">
+    <div class="wizard-container">
+      <div class="empty-state">
+        <div style="font-size: 48px; margin-bottom: 16px;">&#10003;</div>
+        <h2>Import Complete!</h2>
+        <p id="completeMessage"></p>
+        <button class="btn btn-primary" onclick="google.script.host.close()" style="margin-top: 16px;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Global state
+    let discoveredData = null;
+    let selectedClients = {};
+    let docConfigs = {};
+    let folders = [];
+    let emailCache = {}; // Cache for email autocomplete results
+
+    // Initialize wizard
+    document.addEventListener('DOMContentLoaded', function() {
+      updateProgress(0);
+      loadDiscoveredClients();
+    });
+
+    function updateProgress(step) {
+      for (let i = 1; i <= 3; i++) {
+        const el = document.getElementById('prog' + i);
+        el.className = 'progress-step';
+        if (i < step) el.className += ' complete';
+        if (i === step) el.className += ' active';
+      }
+    }
+
+    function loadDiscoveredClients() {
+      document.getElementById('loading').style.display = 'block';
+
+      // Load folders and discovered data in parallel
+      google.script.run
+        .withSuccessHandler(function(data) {
+          folders = data || [];
+        })
+        .getFoldersForWizard();
+
+      google.script.run
+        .withSuccessHandler(function(data) {
+          discoveredData = data;
+          document.getElementById('loading').style.display = 'none';
+          renderStep1();
+          goToStep(1);
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById('loading').innerHTML =
+            '<div class="alert alert-warning">Error: ' + error.message + '</div>' +
+            '<button class="btn btn-secondary" onclick="google.script.host.close()">Close</button>';
+        })
+        .scanForMigration();
+    }
+
+    function renderStep1() {
+      const container = document.getElementById('clientList');
+
+      if (!discoveredData ||
+          (discoveredData.todoistProjects.length === 0 && discoveredData.gmailLabels.length === 0)) {
+        container.innerHTML = '<div class="empty-state">No existing clients found.<br>You can add clients manually in the Client_Registry sheet.</div>';
+        return;
+      }
+
+      let html = '';
+
+      // Build list of potential clients from Todoist projects
+      discoveredData.todoistProjects.forEach(function(project, idx) {
+        const clientKey = 'todoist_' + idx;
+        selectedClients[clientKey] = {
+          selected: true,
+          name: project.projectName,
+          todoistId: project.projectId,
+          gmailLabel: '',
+          emails: []
+        };
+
+        html += '<div class="client-row">';
+        html += '<div class="checkbox-row">';
+        html += '<input type="checkbox" id="sel_' + clientKey + '" checked onchange="toggleClient(\'' + clientKey + '\')">';
+        html += '<span class="client-name">Todoist: ' + escapeHtml(project.projectName) + '</span>';
+        html += '</div>';
+
+        // Gmail label matcher dropdown
+        html += '<div class="field-group">';
+        html += '<label>Match to Gmail Label:</label>';
+        html += '<select id="gmail_' + clientKey + '" onchange="updateGmailMatch(\'' + clientKey + '\')">';
+        html += '<option value="">-- No Gmail label --</option>';
+        html += '<option value="__create__">Create new label: Client: ' + escapeHtml(project.projectName) + '</option>';
+
+        discoveredData.gmailLabels.forEach(function(label) {
+          const selected = label.clientName.toLowerCase() === project.projectName.toLowerCase() ? ' selected' : '';
+          html += '<option value="' + escapeHtml(label.labelName) + '"' + selected + '>' + escapeHtml(label.labelName) + '</option>';
+        });
+
+        html += '</select>';
+        html += '</div>';
+
+        // Email input with autocomplete
+        html += renderEmailInput(clientKey);
+
+        html += '</div>';
+      });
+
+      // Show Gmail labels without Todoist projects
+      discoveredData.gmailLabels.forEach(function(label, idx) {
+        const alreadyMatched = discoveredData.todoistProjects.some(function(p) {
+          return p.projectName.toLowerCase() === label.clientName.toLowerCase();
+        });
+
+        if (!alreadyMatched) {
+          const clientKey = 'gmail_' + idx;
+          selectedClients[clientKey] = {
+            selected: true,
+            name: label.clientName,
+            todoistId: '',
+            gmailLabel: label.labelName,
+            emails: []
+          };
+
+          html += '<div class="client-row">';
+          html += '<div class="checkbox-row">';
+          html += '<input type="checkbox" id="sel_' + clientKey + '" checked onchange="toggleClient(\'' + clientKey + '\')">';
+          html += '<span class="client-name">Gmail: ' + escapeHtml(label.clientName) + '</span>';
+          html += '</div>';
+
+          html += '<div class="field-group">';
+          html += '<label>Todoist Project:</label>';
+          html += '<select id="todoist_' + clientKey + '" onchange="updateTodoistMatch(\'' + clientKey + '\')">';
+          html += '<option value="">-- No Todoist project --</option>';
+          html += '<option value="__create__">Create new project</option>';
+          discoveredData.todoistProjects.forEach(function(project) {
+            html += '<option value="' + project.projectId + '">' + escapeHtml(project.projectName) + '</option>';
+          });
+          html += '</select>';
+          html += '</div>';
+
+          // Email input with autocomplete
+          html += renderEmailInput(clientKey);
+
+          html += '</div>';
+        }
+      });
+
+      container.innerHTML = html;
+
+      // Initialize gmail matches for todoist projects
+      discoveredData.todoistProjects.forEach(function(project, idx) {
+        updateGmailMatch('todoist_' + idx);
+      });
+
+      // Setup email input event listeners
+      setupEmailInputs();
+    }
+
+    function renderEmailInput(clientKey) {
+      let html = '<div class="field-group">';
+      html += '<label>Contact Emails (type to search Gmail contacts):</label>';
+      html += '<div class="autocomplete-wrapper">';
+      html += '<div class="email-tags-container" id="emailContainer_' + clientKey + '" onclick="focusEmailInput(\'' + clientKey + '\')">';
+      html += '<input type="text" class="email-input" id="emailInput_' + clientKey + '" placeholder="Type email or name to search...">';
+      html += '</div>';
+      html += '<div class="autocomplete-results" id="emailResults_' + clientKey + '" style="display: none;"></div>';
+      html += '</div>';
+      html += '</div>';
+      return html;
+    }
+
+    function setupEmailInputs() {
+      Object.keys(selectedClients).forEach(function(key) {
+        const input = document.getElementById('emailInput_' + key);
+        if (!input) return;
+
+        let debounceTimer;
+
+        input.addEventListener('input', function() {
+          clearTimeout(debounceTimer);
+          const query = this.value.trim();
+
+          if (query.length < 2) {
+            hideEmailResults(key);
+            return;
+          }
+
+          debounceTimer = setTimeout(function() {
+            searchEmails(key, query);
+          }, 300);
+        });
+
+        input.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            const email = this.value.trim().replace(/,/g, '');
+            if (email && isValidEmail(email)) {
+              addEmailTag(key, email);
+              this.value = '';
+              hideEmailResults(key);
+            }
+          } else if (e.key === 'Backspace' && this.value === '') {
+            // Remove last email tag
+            const emails = selectedClients[key].emails;
+            if (emails.length > 0) {
+              emails.pop();
+              renderEmailTags(key);
+            }
+          }
+        });
+
+        input.addEventListener('blur', function() {
+          // Delay hiding to allow click on results
+          setTimeout(function() {
+            hideEmailResults(key);
+          }, 200);
+        });
+      });
+    }
+
+    function searchEmails(key, query) {
+      const resultsDiv = document.getElementById('emailResults_' + key);
+      resultsDiv.innerHTML = '<div class="autocomplete-item" style="color: #5f6368;">Searching...</div>';
+      resultsDiv.style.display = 'block';
+
+      google.script.run
+        .withSuccessHandler(function(emails) {
+          if (!emails || emails.length === 0) {
+            resultsDiv.innerHTML = '<div class="autocomplete-item" style="color: #5f6368;">No contacts found. Press Enter to add manually.</div>';
+            return;
+          }
+
+          let html = '';
+          emails.forEach(function(contact) {
+            const displayName = contact.name ? contact.name + ' <' + contact.email + '>' : contact.email;
+            html += '<div class="autocomplete-item" onclick="selectEmail(\'' + key + '\', \'' + escapeHtml(contact.email) + '\')">';
+            html += escapeHtml(displayName);
+            html += '</div>';
+          });
+          resultsDiv.innerHTML = html;
+        })
+        .withFailureHandler(function(error) {
+          resultsDiv.innerHTML = '<div class="autocomplete-item" style="color: #5f6368;">Press Enter to add email manually.</div>';
+        })
+        .searchGmailContacts(query);
+    }
+
+    function selectEmail(key, email) {
+      addEmailTag(key, email);
+      document.getElementById('emailInput_' + key).value = '';
+      hideEmailResults(key);
+    }
+
+    function addEmailTag(key, email) {
+      if (!selectedClients[key].emails.includes(email)) {
+        selectedClients[key].emails.push(email);
+        renderEmailTags(key);
+      }
+    }
+
+    function removeEmailTag(key, email) {
+      selectedClients[key].emails = selectedClients[key].emails.filter(function(e) {
+        return e !== email;
+      });
+      renderEmailTags(key);
+    }
+
+    function renderEmailTags(key) {
+      const container = document.getElementById('emailContainer_' + key);
+      const input = document.getElementById('emailInput_' + key);
+      const emails = selectedClients[key].emails;
+
+      // Remove existing tags
+      container.querySelectorAll('.email-tag').forEach(function(tag) {
+        tag.remove();
+      });
+
+      // Add tags before input
+      emails.forEach(function(email) {
+        const tag = document.createElement('span');
+        tag.className = 'email-tag';
+        tag.innerHTML = escapeHtml(email) + ' <span class="email-tag-remove" onclick="removeEmailTag(\'' + key + '\', \'' + escapeHtml(email) + '\')">&times;</span>';
+        container.insertBefore(tag, input);
+      });
+    }
+
+    function hideEmailResults(key) {
+      const resultsDiv = document.getElementById('emailResults_' + key);
+      if (resultsDiv) {
+        resultsDiv.style.display = 'none';
+      }
+    }
+
+    function focusEmailInput(key) {
+      document.getElementById('emailInput_' + key).focus();
+    }
+
+    function isValidEmail(email) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+
+    function toggleClient(key) {
+      const checkbox = document.getElementById('sel_' + key);
+      selectedClients[key].selected = checkbox.checked;
+    }
+
+    function updateGmailMatch(key) {
+      const select = document.getElementById('gmail_' + key);
+      selectedClients[key].gmailLabel = select.value;
+    }
+
+    function updateTodoistMatch(key) {
+      const select = document.getElementById('todoist_' + key);
+      selectedClients[key].todoistId = select.value;
+    }
+
+    function goToStep(step) {
+      document.querySelectorAll('.step').forEach(function(el) {
+        el.classList.remove('active');
+      });
+
+      updateProgress(step);
+
+      if (step === 2) {
+        renderStep2();
+      } else if (step === 3) {
+        renderStep3();
+      }
+
+      document.getElementById('step' + step).classList.add('active');
+    }
+
+    function renderStep2() {
+      const container = document.getElementById('docConfigList');
+      let html = '';
+
+      const activeClients = Object.keys(selectedClients).filter(function(k) {
+        return selectedClients[k].selected;
+      });
+
+      if (activeClients.length === 0) {
+        html = '<div class="empty-state">No clients selected.<br>Go back and select at least one client.</div>';
+        container.innerHTML = html;
+        return;
+      }
+
+      activeClients.forEach(function(key) {
+        const client = selectedClients[key];
+
+        if (!docConfigs[key]) {
+          docConfigs[key] = {
+            mode: 'create',
+            existingDocUrl: '',
+            existingDocName: '',
+            createFolder: ''
+          };
+        }
+
+        html += '<div class="client-row">';
+        html += '<div class="client-name">' + escapeHtml(client.name) + '</div>';
+
+        html += '<div class="doc-options">';
+        html += '<div class="doc-option">';
+        html += '<input type="radio" name="docmode_' + key + '" id="docmode_create_' + key + '" value="create" checked onchange="setDocMode(\'' + key + '\', \'create\')">';
+        html += '<label for="docmode_create_' + key + '">Create new Google Doc</label>';
+        html += '</div>';
+
+        // Folder search input
+        html += '<div id="createOptions_' + key + '" class="field-group" style="margin-left: 24px;">';
+        html += '<label>In folder (type to search):</label>';
+        html += '<div class="folder-search-wrapper">';
+        html += '<input type="text" class="folder-search-input" id="folderSearch_' + key + '" placeholder="Type folder name..." oninput="searchFolders(\'' + key + '\')" onfocus="searchFolders(\'' + key + '\')">';
+        html += '<div class="autocomplete-results" id="folderResults_' + key + '" style="display: none;"></div>';
+        html += '</div>';
+        html += '<div id="selectedFolder_' + key + '" style="margin-top: 4px; font-size: 12px; color: #1a73e8;"></div>';
+        html += '</div>';
+
+        html += '<div class="doc-option">';
+        html += '<input type="radio" name="docmode_' + key + '" id="docmode_existing_' + key + '" value="existing" onchange="setDocMode(\'' + key + '\', \'existing\')">';
+        html += '<label for="docmode_existing_' + key + '">Use existing Google Doc</label>';
+        html += '</div>';
+
+        html += '<div id="existingOptions_' + key + '" class="field-group" style="margin-left: 24px; display: none;">';
+        html += '<label>Search for document:</label>';
+        html += '<div class="search-container">';
+        html += '<input type="text" id="docsearch_' + key + '" placeholder="Type document name...">';
+        html += '<button onclick="searchDocs(\'' + key + '\')">Search</button>';
+        html += '</div>';
+        html += '<div id="docresults_' + key + '" class="doc-results" style="display: none; position: relative;"></div>';
+        html += '<div id="selecteddoc_' + key + '" style="margin-top: 8px; font-size: 12px; color: #1a73e8;"></div>';
+        html += '</div>';
+
+        html += '</div>';
+        html += '</div>';
+      });
+
+      container.innerHTML = html;
+
+      // Setup folder search blur handlers
+      activeClients.forEach(function(key) {
+        const folderInput = document.getElementById('folderSearch_' + key);
+        if (folderInput) {
+          folderInput.addEventListener('blur', function() {
+            setTimeout(function() {
+              const resultsDiv = document.getElementById('folderResults_' + key);
+              if (resultsDiv) resultsDiv.style.display = 'none';
+            }, 200);
+          });
+        }
+      });
+    }
+
+    function searchFolders(key) {
+      const input = document.getElementById('folderSearch_' + key);
+      const resultsDiv = document.getElementById('folderResults_' + key);
+      const query = input.value.toLowerCase().trim();
+
+      // Filter folders based on query
+      let filteredFolders = folders;
+      if (query) {
+        filteredFolders = folders.filter(function(folder) {
+          return folder.folder_path.toLowerCase().includes(query);
+        });
+      }
+
+      if (filteredFolders.length === 0) {
+        resultsDiv.innerHTML = '<div class="autocomplete-item" style="color: #5f6368;">No folders found</div>';
+        resultsDiv.style.display = 'block';
+        return;
+      }
+
+      let html = '';
+      // Add "No folder (root)" option
+      html += '<div class="autocomplete-item" onclick="selectFolder(\'' + key + '\', \'\', \'(Root folder)\')">-- No folder (root) --</div>';
+
+      filteredFolders.forEach(function(folder) {
+        html += '<div class="autocomplete-item" onclick="selectFolder(\'' + key + '\', \'' + escapeHtml(folder.folder_path) + '\', \'' + escapeHtml(folder.folder_path) + '\')">';
+        html += escapeHtml(folder.folder_path);
+        html += '</div>';
+      });
+
+      resultsDiv.innerHTML = html;
+      resultsDiv.style.display = 'block';
+    }
+
+    function selectFolder(key, folderPath, displayName) {
+      docConfigs[key].createFolder = folderPath;
+
+      const input = document.getElementById('folderSearch_' + key);
+      const selectedDiv = document.getElementById('selectedFolder_' + key);
+      const resultsDiv = document.getElementById('folderResults_' + key);
+
+      input.value = '';
+      selectedDiv.innerHTML = 'Selected: ' + displayName;
+      resultsDiv.style.display = 'none';
+    }
+
+    function setDocMode(key, mode) {
+      docConfigs[key].mode = mode;
+
+      const createOptions = document.getElementById('createOptions_' + key);
+      const existingOptions = document.getElementById('existingOptions_' + key);
+
+      if (mode === 'create') {
+        createOptions.style.display = 'block';
+        existingOptions.style.display = 'none';
+      } else {
+        createOptions.style.display = 'none';
+        existingOptions.style.display = 'block';
+      }
+    }
+
+    function searchDocs(key) {
+      const searchInput = document.getElementById('docsearch_' + key);
+      const resultsDiv = document.getElementById('docresults_' + key);
+      const query = searchInput.value.trim();
+
+      if (!query) {
+        resultsDiv.style.display = 'none';
+        return;
+      }
+
+      resultsDiv.innerHTML = '<div style="padding: 10px; color: #5f6368;">Searching...</div>';
+      resultsDiv.style.display = 'block';
+
+      google.script.run
+        .withSuccessHandler(function(docs) {
+          if (!docs || docs.length === 0) {
+            resultsDiv.innerHTML = '<div style="padding: 10px; color: #5f6368;">No documents found</div>';
+            return;
+          }
+
+          let html = '';
+          docs.forEach(function(doc) {
+            html += '<div class="doc-result-item" onclick="selectDoc(\'' + key + '\', \'' + escapeHtml(doc.url) + '\', \'' + escapeHtml(doc.name) + '\')">';
+            html += escapeHtml(doc.name);
+            html += '</div>';
+          });
+          resultsDiv.innerHTML = html;
+        })
+        .withFailureHandler(function(error) {
+          resultsDiv.innerHTML = '<div style="padding: 10px; color: #d93025;">Error: ' + error.message + '</div>';
+        })
+        .searchGoogleDocs(query);
+    }
+
+    function selectDoc(key, url, name) {
+      docConfigs[key].existingDocUrl = url;
+      docConfigs[key].existingDocName = name;
+
+      const resultsDiv = document.getElementById('docresults_' + key);
+      const selectedDiv = document.getElementById('selecteddoc_' + key);
+
+      resultsDiv.style.display = 'none';
+      selectedDiv.innerHTML = 'Selected: ' + name;
+    }
+
+    function renderStep3() {
+      const container = document.getElementById('summaryList');
+      let html = '';
+
+      const activeClients = Object.keys(selectedClients).filter(function(k) {
+        return selectedClients[k].selected;
+      });
+
+      if (activeClients.length === 0) {
+        html = '<div class="empty-state">No clients selected.</div>';
+        container.innerHTML = html;
+        return;
+      }
+
+      html += '<div class="alert alert-info">' + activeClients.length + ' client(s) will be imported</div>';
+
+      activeClients.forEach(function(key) {
+        const client = selectedClients[key];
+        const doc = docConfigs[key] || {};
+
+        html += '<div class="summary-item">';
+        html += '<div class="summary-value">' + escapeHtml(client.name) + '</div>';
+        html += '<div class="summary-label">';
+
+        // Emails
+        if (client.emails && client.emails.length > 0) {
+          html += 'Emails: ' + escapeHtml(client.emails.join(', ')) + '<br>';
+        } else {
+          html += 'Emails: None (add later)<br>';
+        }
+
+        // Todoist
+        if (client.todoistId === '__create__') {
+          html += 'Todoist: Create new project<br>';
+        } else if (client.todoistId) {
+          html += 'Todoist: Link to existing project<br>';
+        } else {
+          html += 'Todoist: None<br>';
+        }
+
+        // Gmail
+        if (client.gmailLabel === '__create__') {
+          html += 'Gmail: Create new label<br>';
+        } else if (client.gmailLabel) {
+          html += 'Gmail: ' + escapeHtml(client.gmailLabel) + '<br>';
+        } else {
+          html += 'Gmail: Will create label<br>';
+        }
+
+        // Doc
+        if (doc.mode === 'existing' && doc.existingDocUrl) {
+          html += 'Doc: ' + escapeHtml(doc.existingDocName);
+        } else if (doc.createFolder) {
+          html += 'Doc: Create new in ' + escapeHtml(doc.createFolder);
+        } else {
+          html += 'Doc: Create new (root folder)';
+        }
+
+        html += '</div>';
+        html += '</div>';
+      });
+
+      container.innerHTML = html;
+    }
+
+    function doImport() {
+      const importBtn = document.getElementById('importBtn');
+      importBtn.disabled = true;
+
+      document.querySelectorAll('.step').forEach(function(el) {
+        el.style.display = 'none';
+      });
+      document.getElementById('importing').style.display = 'block';
+
+      const importData = [];
+
+      Object.keys(selectedClients).forEach(function(key) {
+        const client = selectedClients[key];
+        if (!client.selected) return;
+
+        const doc = docConfigs[key] || {};
+
+        importData.push({
+          client_name: client.name,
+          contact_emails: client.emails.join(', '),
+          todoist_project_id: client.todoistId === '__create__' ? '' : client.todoistId,
+          create_todoist: client.todoistId === '__create__',
+          gmail_label: client.gmailLabel === '__create__' ? '' : client.gmailLabel,
+          create_gmail_label: client.gmailLabel === '__create__' || !client.gmailLabel,
+          doc_mode: doc.mode || 'create',
+          existing_doc_url: doc.existingDocUrl || '',
+          create_folder: doc.createFolder || ''
+        });
+      });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          document.getElementById('importing').style.display = 'none';
+          document.getElementById('complete').style.display = 'block';
+          document.getElementById('completeMessage').innerHTML =
+            'Successfully imported ' + result.imported + ' client(s).<br>' +
+            'Check the Client_Registry sheet for details.';
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById('importStatus').innerHTML =
+            '<span style="color: #d93025;">Error: ' + error.message + '</span><br>' +
+            '<button class="btn btn-secondary" onclick="google.script.host.close()" style="margin-top: 16px;">Close</button>';
+        })
+        .importClientsFromWizard(importData);
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

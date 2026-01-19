@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Google Sans', Arial, sans-serif;
+      font-size: 14px;
+      margin: 0;
+      padding: 0;
+      background: #f8f9fa;
+    }
+
+    /* Tab Navigation */
+    .tab-nav {
+      display: flex;
+      background: white;
+      border-bottom: 1px solid #e8eaed;
+      padding: 0 16px;
+    }
+    .tab-btn {
+      padding: 14px 20px;
+      border: none;
+      background: none;
+      font-size: 14px;
+      font-weight: 500;
+      color: #5f6368;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .tab-btn:hover {
+      color: #1a73e8;
+    }
+    .tab-btn.active {
+      color: #1a73e8;
+      border-bottom-color: #1a73e8;
+    }
+
+    /* Tab Content */
+    .tab-content {
+      display: none;
+      padding: 20px;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
+    .settings-container {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+    .setting-group {
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #e8eaed;
+    }
+    .setting-group:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+    .setting-label {
+      font-weight: 500;
+      color: #202124;
+      margin-bottom: 4px;
+    }
+    .setting-description {
+      font-size: 12px;
+      color: #5f6368;
+      margin-bottom: 8px;
+    }
+    input[type="text"], input[type="password"], input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+    }
+    textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 80px;
+    }
+    .placeholder-hint {
+      font-size: 11px;
+      color: #5f6368;
+      margin-top: 4px;
+      font-family: monospace;
+      background: #f8f9fa;
+      padding: 4px 8px;
+      border-radius: 3px;
+    }
+    .input-row {
+      display: flex;
+      gap: 12px;
+    }
+    .input-row .input-col {
+      flex: 1;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      margin-left: 8px;
+    }
+    .status-set {
+      background: #e8f5e9;
+      color: #1b5e20;
+    }
+    .status-not-set {
+      background: #fce8e6;
+      color: #c5221f;
+    }
+    .buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 16px 20px;
+      background: white;
+      border-top: 1px solid #e8eaed;
+    }
+    .btn {
+      padding: 10px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-primary {
+      background: #1a73e8;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #1557b0;
+    }
+    .btn-primary:disabled {
+      background: #dadce0;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: white;
+      border: 1px solid #dadce0;
+      color: #5f6368;
+    }
+    .btn-secondary:hover {
+      background: #f8f9fa;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #5f6368;
+    }
+    .status-message {
+      padding: 12px;
+      border-radius: 4px;
+      margin: 16px 20px 0;
+      display: none;
+    }
+    .status-message.success {
+      display: block;
+      background: #e8f5e9;
+      color: #1b5e20;
+    }
+    .status-message.error {
+      display: block;
+      background: #fce8e6;
+      color: #c5221f;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #5f6368;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+      margin-top: 8px;
+    }
+    .section-title:first-child {
+      margin-top: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading">Loading settings...</div>
+
+  <div id="content" style="display: none;">
+    <div id="statusMessage" class="status-message"></div>
+
+    <!-- Tab Navigation -->
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="showTab('general')">General</button>
+      <button class="tab-btn" onclick="showTab('email')">Email Templates</button>
+      <button class="tab-btn" onclick="showTab('integrations')">Integrations</button>
+      <button class="tab-btn" onclick="showTab('schedule')">Schedule</button>
+    </div>
+
+    <!-- General Tab -->
+    <div id="tab-general" class="tab-content active">
+      <div class="settings-container">
+        <div class="section-title">User Settings</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Your Name</div>
+          <div class="setting-description">Used in email signatures (e.g., "TC", "John")</div>
+          <input type="text" id="user_name" placeholder="Enter your name">
+        </div>
+
+        <div class="section-title">Document Settings</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Document Name Template</div>
+          <div class="setting-description">Template for client meeting notes Google Docs</div>
+          <input type="text" id="doc_template" placeholder="Client Notes - {client_name}">
+          <div class="placeholder-hint">Placeholders: {client_name}</div>
+        </div>
+
+        <div class="section-title">Email Inbox Management</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Include Unread Emails in Briefings</div>
+          <div class="setting-description">When enabled, daily and weekly outlook emails will include a section showing unread emails</div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <input type="checkbox" id="include_unread_emails" style="width: auto;">
+            <span>Include unread emails in briefings</span>
+          </label>
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Auto-Mark Emails as Read</div>
+          <div class="setting-description">Automatically mark unread emails as read if older than X days (0 = disabled)</div>
+          <input type="number" id="auto_mark_read_days" min="0" max="365" placeholder="0">
+          <div class="placeholder-hint">Set to 0 to disable, or enter days (e.g., 30 for 1 month)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Email Templates Tab -->
+    <div id="tab-email" class="tab-content">
+      <div class="settings-container">
+        <div class="section-title">Meeting Summary Emails</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Subject Line</div>
+          <div class="setting-description">Subject format for meeting summary emails sent after Fathom meetings</div>
+          <input type="text" id="meeting_subject_template" placeholder="Team {client_name} - Meeting notes from &quot;{meeting_title}&quot; {date}">
+          <div class="placeholder-hint">Placeholders: {client_name}, {meeting_title}, {date}</div>
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Signature</div>
+          <div class="setting-description">Closing text for meeting summary emails</div>
+          <textarea id="meeting_signature" placeholder="Did I miss anything?
+
+Thanks,
+{user_name}"></textarea>
+          <div class="placeholder-hint">Placeholders: {user_name}</div>
+        </div>
+
+        <div class="section-title">Meeting Agenda Emails</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Subject Line</div>
+          <div class="setting-description">Subject format for pre-meeting agenda emails sent to yourself</div>
+          <input type="text" id="agenda_subject_template" placeholder="Agenda: {client_name} - {meeting_title} ({date})">
+          <div class="placeholder-hint">Placeholders: {client_name}, {meeting_title}, {date}</div>
+        </div>
+
+        <div class="section-title">Gmail Filters</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Update Filters</div>
+          <div class="setting-description">Filters auto-update when you save changes. Click below to manually refresh all email filters.</div>
+          <button class="btn btn-secondary" id="updateFiltersBtn" onclick="updateFilters()" style="margin-top: 8px;">Update Filters Now</button>
+          <div id="filterStatus" class="setting-description" style="margin-top: 8px; color: #666;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Integrations Tab -->
+    <div id="tab-integrations" class="tab-content">
+      <div class="settings-container">
+        <div class="section-title">Fathom (Meeting Recording)</div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            API Key
+            <span id="fathomStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from Fathom Settings > Integrations > API. Used for "Load Latest Meeting" testing.</div>
+          <input type="password" id="fathom_key" placeholder="Enter Fathom API key">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            Webhook Secret
+            <span id="fathomWebhookStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from Fathom when creating a webhook. Used to verify incoming meeting data.</div>
+          <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret">
+        </div>
+
+        <div class="section-title">Todoist (Task Management)</div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            API Token
+            <span id="todoistStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from Todoist Settings > Integrations > Developer</div>
+          <input type="password" id="todoist_token" placeholder="Enter Todoist API token">
+        </div>
+
+        <div class="section-title">Claude AI (Content Generation)</div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            API Key
+            <span id="claudeStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from console.anthropic.com. Used for AI-generated content.</div>
+          <input type="password" id="claude_key" placeholder="Enter Claude API key">
+        </div>
+
+        <div class="section-title">HubSpot (CRM - Future)</div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            API Key
+            <span id="hubspotStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Get from HubSpot Settings > Integrations > Private Apps. For future CRM integration.</div>
+          <input type="password" id="hubspot_key" placeholder="Enter HubSpot API key">
+        </div>
+      </div>
+    </div>
+
+    <!-- Schedule Tab -->
+    <div id="tab-schedule" class="tab-content">
+      <div class="settings-container">
+        <div class="section-title">Business Hours</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Active Hours</div>
+          <div class="setting-description">Agendas are only generated during these hours (24-hour format)</div>
+          <div class="input-row">
+            <div class="input-col">
+              <div class="setting-description">Start Hour</div>
+              <input type="number" id="hours_start" min="0" max="23" placeholder="8">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">End Hour</div>
+              <input type="number" id="hours_end" min="1" max="24" placeholder="18">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">Save Changes</button>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', loadSettings);
+
+    function showTab(tabName) {
+      // Hide all tabs
+      document.querySelectorAll('.tab-content').forEach(function(tab) {
+        tab.classList.remove('active');
+      });
+      document.querySelectorAll('.tab-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+      });
+
+      // Show selected tab
+      document.getElementById('tab-' + tabName).classList.add('active');
+      event.target.classList.add('active');
+    }
+
+    function loadSettings() {
+      google.script.run
+        .withSuccessHandler(function(settings) {
+          // General tab
+          document.getElementById('user_name').value = settings.USER_NAME || '';
+          document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
+          document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
+          document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
+
+          // Email Templates tab
+          document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+          document.getElementById('meeting_signature').value = settings.MEETING_SIGNATURE || 'Did I miss anything?\n\nThanks,\n{user_name}';
+          document.getElementById('agenda_subject_template').value = settings.AGENDA_SUBJECT_TEMPLATE || 'Agenda: {client_name} - {meeting_title} ({date})';
+
+          // Integrations tab
+          document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
+          document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
+          document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
+          document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
+          document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
+
+          // Schedule tab
+          document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
+          document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
+
+          // Update status badges
+          updateBadge('fathomStatus', settings.FATHOM_API_KEY);
+          updateBadge('fathomWebhookStatus', settings.FATHOM_WEBHOOK_SECRET);
+          updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
+          updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
+          updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
+
+          // Show content
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('content').style.display = 'block';
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById('loading').innerHTML = 'Error loading settings: ' + error.message;
+        })
+        .getSettingsForEditor();
+    }
+
+    function updateBadge(elementId, value) {
+      const badge = document.getElementById(elementId);
+      if (value) {
+        badge.textContent = 'SET';
+        badge.className = 'status-badge status-set';
+      } else {
+        badge.textContent = 'NOT SET';
+        badge.className = 'status-badge status-not-set';
+      }
+    }
+
+    function saveSettings() {
+      const saveBtn = document.getElementById('saveBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      const settings = {
+        // General
+        USER_NAME: document.getElementById('user_name').value.trim(),
+        DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
+        INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
+        AUTO_MARK_READ_AFTER_DAYS: document.getElementById('auto_mark_read_days').value.trim() || '0',
+        // Email Templates
+        MEETING_SUBJECT_TEMPLATE: document.getElementById('meeting_subject_template').value.trim(),
+        MEETING_SIGNATURE: document.getElementById('meeting_signature').value,
+        AGENDA_SUBJECT_TEMPLATE: document.getElementById('agenda_subject_template').value.trim(),
+        // Integrations
+        FATHOM_API_KEY: document.getElementById('fathom_key').value.trim(),
+        FATHOM_WEBHOOK_SECRET: document.getElementById('fathom_webhook_secret').value.trim(),
+        HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
+        TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
+        CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
+        // Schedule
+        BUSINESS_HOURS_START: document.getElementById('hours_start').value.trim(),
+        BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim()
+      };
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const msgEl = document.getElementById('statusMessage');
+          msgEl.textContent = 'Settings saved successfully!';
+          msgEl.className = 'status-message success';
+
+          // Update badges
+          updateBadge('fathomStatus', settings.FATHOM_API_KEY);
+          updateBadge('fathomWebhookStatus', settings.FATHOM_WEBHOOK_SECRET);
+          updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
+          updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
+          updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
+
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save Changes';
+
+          // Close after delay
+          setTimeout(function() {
+            google.script.host.close();
+          }, 1000);
+        })
+        .withFailureHandler(function(error) {
+          const msgEl = document.getElementById('statusMessage');
+          msgEl.textContent = 'Error: ' + error.message;
+          msgEl.className = 'status-message error';
+
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save Changes';
+        })
+        .saveSettingsFromEditor(settings);
+    }
+
+    function updateFilters() {
+      const btn = document.getElementById('updateFiltersBtn');
+      const statusEl = document.getElementById('filterStatus');
+
+      btn.disabled = true;
+      btn.textContent = 'Updating...';
+      statusEl.textContent = '';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false;
+          btn.textContent = 'Update Filters Now';
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          btn.disabled = false;
+          btn.textContent = 'Update Filters Now';
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .updateFiltersFromEditor();
+    }
+  </script>
+</body>
+</html>
