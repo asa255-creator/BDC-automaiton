@@ -108,15 +108,7 @@ function generateAgendaForEvent(event, client) {
     return;
   }
 
-  // Ensure Gmail labels and filters are synced for this client before sending
-  try {
-    syncClientLabels(client);
-    logProcessing('AGENDA_GEN', client.client_name, 'Synced Gmail labels and filters', 'info');
-  } catch (error) {
-    logProcessing('AGENDA_GEN', client.client_name, `Failed to sync labels/filters: ${error.message}`, 'warning');
-  }
-
-  // Send agenda email
+  // Send agenda email (will apply label from Client Registry)
   sendAgendaEmail(event, client, agendaContent);
 
   // Append to client's Google Doc
@@ -573,6 +565,27 @@ function sendAgendaEmail(event, client, agendaContent) {
   });
 
   Logger.log(`Sent agenda email for: ${event.getTitle()}`);
+
+  // Apply label from Client Registry immediately after sending
+  try {
+    const labelName = client.meeting_agendas_label;
+    if (labelName) {
+      // Search for the just-sent email
+      const query = `from:me to:me subject:"${subject}" newer_than:5m`;
+      Utilities.sleep(2000); // Wait 2 seconds for email to appear in Gmail
+      const threads = GmailApp.search(query, 0, 1);
+
+      if (threads.length > 0) {
+        const label = createLabelIfNotExists(labelName);
+        threads[0].addLabel(label);
+        logProcessing('AGENDA_EMAIL', client.client_name, `Applied label: ${labelName}`, 'success');
+      } else {
+        logProcessing('AGENDA_EMAIL', client.client_name, 'Could not find sent email to label', 'warning');
+      }
+    }
+  } catch (error) {
+    logProcessing('AGENDA_EMAIL', client.client_name, `Failed to apply label: ${error.message}`, 'warning');
+  }
 }
 
 /**
