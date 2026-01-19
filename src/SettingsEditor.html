@@ -235,6 +235,15 @@
         <div class="section-title">Email Inbox Management</div>
 
         <div class="setting-group">
+          <div class="setting-label">Include Unread Emails in Briefings</div>
+          <div class="setting-description">When enabled, daily and weekly outlook emails will include a section showing unread emails</div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <input type="checkbox" id="include_unread_emails" style="width: auto;">
+            <span>Include unread emails in briefings</span>
+          </label>
+        </div>
+
+        <div class="setting-group">
           <div class="setting-label">Auto-Mark Emails as Read</div>
           <div class="setting-description">Automatically mark unread emails as read if older than X days (0 = disabled)</div>
           <input type="number" id="auto_mark_read_days" min="0" max="365" placeholder="0">
@@ -394,6 +403,7 @@ Thanks,
           // General tab
           document.getElementById('user_name').value = settings.USER_NAME || '';
           document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
+          document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
           document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
 
           // Email Templates tab
@@ -449,6 +459,7 @@ Thanks,
         // General
         USER_NAME: document.getElementById('user_name').value.trim(),
         DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
+        INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
         AUTO_MARK_READ_AFTER_DAYS: document.getElementById('auto_mark_read_days').value.trim() || '0',
         // Email Templates
         MEETING_SUBJECT_TEMPLATE: document.getElementById('meeting_subject_template').value.trim(),

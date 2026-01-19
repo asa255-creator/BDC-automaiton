@@ -1712,6 +1712,7 @@ function getSettingsForEditor() {
     BUSINESS_HOURS_START: props.getProperty('BUSINESS_HOURS_START') || '8',
     BUSINESS_HOURS_END: props.getProperty('BUSINESS_HOURS_END') || '18',
     DOC_NAME_TEMPLATE: props.getProperty('DOC_NAME_TEMPLATE') || 'Client Notes - {client_name}',
+    INCLUDE_UNREAD_EMAILS: props.getProperty('INCLUDE_UNREAD_EMAILS') || 'false',
     AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0'
   };
 }
@@ -1783,6 +1784,11 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.AGENDA_SUBJECT_TEMPLATE) {
     props.setProperty('AGENDA_SUBJECT_TEMPLATE', settings.AGENDA_SUBJECT_TEMPLATE);
+  }
+
+  // Include unread emails in briefings setting
+  if (settings.INCLUDE_UNREAD_EMAILS !== undefined) {
+    props.setProperty('INCLUDE_UNREAD_EMAILS', settings.INCLUDE_UNREAD_EMAILS);
   }
 
   // Auto-mark-read setting (allow 0 to disable)

@@ -54,11 +54,19 @@ function compileDailyData(date) {
     conflicts: [],
     missingAgendas: [],
     overdueTasks: [],
-    unreadEmails: { recentUnread: [], olderBacklog: [], totalUnread: 0 }
+    unreadEmails: { recentUnread: [], olderBacklog: [], totalUnread: 0 },
+    includeUnreadEmails: false
   };
 
-  // Fetch unread emails from last 1 day for daily report
-  data.unreadEmails = fetchUnreadEmails(1);
+  // Check if unread emails should be included (controlled by settings)
+  const props = PropertiesService.getScriptProperties();
+  const includeUnreadEmails = props.getProperty('INCLUDE_UNREAD_EMAILS') === 'true';
+  data.includeUnreadEmails = includeUnreadEmails;
+
+  if (includeUnreadEmails) {
+    // Fetch unread emails from last 1 day for daily report
+    data.unreadEmails = fetchUnreadEmails(1);
+  }
 
   // Get today's events
   const calendar = CalendarApp.getDefaultCalendar();
@@ -244,25 +252,27 @@ function formatDailyOutlookHtml(data, date) {
     }
   }
 
-  // Unread Emails Section (last 24 hours)
-  html += `<h2>📧 Inbox Status</h2>`;
-  if (data.unreadEmails.totalUnread === 0) {
-    html += `<p style="color: #28a745;">✓ No unread emails!</p>`;
-  } else {
-    // Recent unread (last 24 hours)
-    html += formatUnreadEmailsHtml(
-      data.unreadEmails.recentUnread,
-      '📬 Unread Emails - Last 24 Hours',
-      '#17a2b8'
-    );
-
-    // Older backlog (if any)
-    if (data.unreadEmails.olderBacklog.length > 0) {
+  // Unread Emails Section (last 24 hours) - only if enabled in settings
+  if (data.includeUnreadEmails) {
+    html += `<h2>📧 Inbox Status</h2>`;
+    if (data.unreadEmails.totalUnread === 0) {
+      html += `<p style="color: #28a745;">✓ No unread emails!</p>`;
+    } else {
+      // Recent unread (last 24 hours)
       html += formatUnreadEmailsHtml(
-        data.unreadEmails.olderBacklog,
-        '⚠️ Older Unread Emails (Backlog)',
-        '#dc3545'
+        data.unreadEmails.recentUnread,
+        '📬 Unread Emails - Last 24 Hours',
+        '#17a2b8'
       );
+
+      // Older backlog (if any)
+      if (data.unreadEmails.olderBacklog.length > 0) {
+        html += formatUnreadEmailsHtml(
+          data.unreadEmails.olderBacklog,
+          '⚠️ Older Unread Emails (Backlog)',
+          '#dc3545'
+        );
+      }
     }
   }
 
@@ -310,13 +320,21 @@ function compileWeeklyData(startDate) {
     allMeetings: [],
     allTasks: [],
     unreadEmails: { recentUnread: [], olderBacklog: [], totalUnread: 0 },
-    drafts: []
+    drafts: [],
+    includeUnreadEmails: false
   };
 
-  // Fetch unread emails from last 7 days for weekly report (older ones go to backlog)
-  data.unreadEmails = fetchUnreadEmails(7);
+  // Check if unread emails should be included (controlled by settings)
+  const props = PropertiesService.getScriptProperties();
+  const includeUnreadEmails = props.getProperty('INCLUDE_UNREAD_EMAILS') === 'true';
+  data.includeUnreadEmails = includeUnreadEmails;
 
-  // Fetch unsent drafts
+  if (includeUnreadEmails) {
+    // Fetch unread emails from last 7 days for weekly report (older ones go to backlog)
+    data.unreadEmails = fetchUnreadEmails(7);
+  }
+
+  // Fetch unsent drafts (always include these)
   data.drafts = fetchUnsentDrafts();
 
   // Initialize day data for each day of the week
@@ -565,25 +583,27 @@ function formatWeeklyOutlookHtml(data, startDate) {
     }
   }
 
-  // Unread Emails Section
-  html += `<h2>📧 Inbox Status</h2>`;
-  if (data.unreadEmails.totalUnread === 0) {
-    html += `<p style="color: #28a745;">✓ No unread emails!</p>`;
-  } else {
-    // Recent unread (last 7 days)
-    html += formatUnreadEmailsHtml(
-      data.unreadEmails.recentUnread,
-      '📬 Unread Emails - Last 7 Days',
-      '#17a2b8'
-    );
-
-    // Older backlog
-    if (data.unreadEmails.olderBacklog.length > 0) {
+  // Unread Emails Section - only if enabled in settings
+  if (data.includeUnreadEmails) {
+    html += `<h2>📧 Inbox Status</h2>`;
+    if (data.unreadEmails.totalUnread === 0) {
+      html += `<p style="color: #28a745;">✓ No unread emails!</p>`;
+    } else {
+      // Recent unread (last 7 days)
       html += formatUnreadEmailsHtml(
-        data.unreadEmails.olderBacklog,
-        '⚠️ Older Unread Emails (Backlog)',
-        '#dc3545'
+        data.unreadEmails.recentUnread,
+        '📬 Unread Emails - Last 7 Days',
+        '#17a2b8'
       );
+
+      // Older backlog
+      if (data.unreadEmails.olderBacklog.length > 0) {
+        html += formatUnreadEmailsHtml(
+          data.unreadEmails.olderBacklog,
+          '⚠️ Older Unread Emails (Backlog)',
+          '#dc3545'
+        );
+      }
     }
   }
 
