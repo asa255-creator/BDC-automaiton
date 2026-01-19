@@ -2386,9 +2386,7 @@ function importClientsFromWizard(importData) {
     sheet.appendRow(rowData);
     SpreadsheetApp.flush(); // Force immediate write to spreadsheet
 
-    // Create Gmail labels and filters
-    const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;
-
+    // Create Gmail labels and filters (baseLabelName already declared above for duplicate check)
     // Create the base label if needed
     createLabelIfNotExists(baseLabelName);
 
