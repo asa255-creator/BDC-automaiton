@@ -679,8 +679,8 @@ function getAgendaFilterPatternForClient(clientName) {
  *
  * System-managed labels:
  * - Client: *
- * - Client: */Meeting Summaries
- * - Client: */Meeting Agendas
+ * - Client: [name]/Meeting Summaries
+ * - Client: [name]/Meeting Agendas
  * - Brief: Daily (or custom daily label)
  * - Brief: Weekly (or custom weekly label)
  *
