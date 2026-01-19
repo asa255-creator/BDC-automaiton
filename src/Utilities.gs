@@ -2363,6 +2363,18 @@ function importClientsFromWizard(importData) {
       todoistProjectId = createTodoistProject(client.client_name) || '';
     }
 
+    // Find the first empty row (check column A for first empty cell)
+    const clientNameColumn = sheet.getRange(2, 1, sheet.getMaxRows() - 1, 1).getValues();
+    let targetRow = 2; // Start from row 2 (row 1 is header)
+    for (let i = 0; i < clientNameColumn.length; i++) {
+      if (!clientNameColumn[i][0]) {
+        targetRow = i + 2; // +2 because array is 0-indexed and we started at row 2
+        break;
+      }
+    }
+
+    logProcessing('MIGRATION_WIZARD', client.client_name, `Inserting at first empty row: ${targetRow}`, 'info');
+
     // Add to sheet FIRST with empty doc URL
     const rowData = [
       client.client_name,
@@ -2373,29 +2385,20 @@ function importClientsFromWizard(importData) {
       todoistProjectId
     ];
 
-    const beforeRowCount = sheet.getLastRow();
-    logProcessing('MIGRATION_WIZARD', client.client_name, `Before append: ${beforeRowCount} rows`, 'info');
-
-    sheet.appendRow(rowData);
+    // Write to the specific row
+    sheet.getRange(targetRow, 1, 1, 6).setValues([rowData]);
     SpreadsheetApp.flush(); // Force write
 
-    const afterRowCount = sheet.getLastRow();
-    logProcessing('MIGRATION_WIZARD', client.client_name, `After append and flush: ${afterRowCount} rows`, 'info');
-
-    // Verify row count increased
-    if (afterRowCount <= beforeRowCount) {
-      logProcessing('MIGRATION_WIZARD', client.client_name, `FAILED - Row count did not increase (before: ${beforeRowCount}, after: ${afterRowCount})`, 'error');
-      continue;
-    }
+    logProcessing('MIGRATION_WIZARD', client.client_name, `Written to row ${targetRow}, verifying...`, 'info');
 
     // Verify the data is actually there
-    const verifyRow = sheet.getRange(afterRowCount, 1, 1, 6).getValues()[0];
+    const verifyRow = sheet.getRange(targetRow, 1, 1, 6).getValues()[0];
     if (verifyRow[0] !== client.client_name) {
       logProcessing('MIGRATION_WIZARD', client.client_name, `FAILED - Data verification failed (expected "${client.client_name}", got "${verifyRow[0]}")`, 'error');
       continue;
     }
 
-    logProcessing('MIGRATION_WIZARD', client.client_name, `SUCCESS - Row ${afterRowCount} verified in Client_Registry`, 'success');
+    logProcessing('MIGRATION_WIZARD', client.client_name, `SUCCESS - Row ${targetRow} verified in Client_Registry`, 'success');
 
     // COUNT IT NOW - row is in the sheet, that's what matters
     imported++;
@@ -2411,7 +2414,7 @@ function importClientsFromWizard(importData) {
 
     // Update the row with the doc URL if we have one
     if (googleDocUrl) {
-      sheet.getRange(afterRowCount, 5).setValue(googleDocUrl);
+      sheet.getRange(targetRow, 5).setValue(googleDocUrl);
       SpreadsheetApp.flush();
     }
 
