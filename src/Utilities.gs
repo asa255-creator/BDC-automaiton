@@ -1135,6 +1135,155 @@ function createClientRegistrySheet(ss) {
 }
 
 /**
+ * Ensures label columns exist in Client_Registry.
+ * Adds them if missing (for backwards compatibility with older versions).
+ *
+ * @returns {boolean} True if columns were added, false if they already existed
+ */
+function ensureLabelColumnsExist() {
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!spreadsheetId) {
+    throw new Error('SPREADSHEET_ID not set');
+  }
+
+  const ss = SpreadsheetApp.openById(spreadsheetId);
+  const sheet = ss.getSheetByName('Client_Registry');
+
+  if (!sheet) {
+    throw new Error('Client_Registry sheet not found');
+  }
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  // Check if label columns already exist
+  const hasGmailLabel = headers.includes('gmail_label');
+  const hasSummaryLabel = headers.includes('meeting_summaries_label');
+  const hasAgendaLabel = headers.includes('meeting_agendas_label');
+
+  if (hasGmailLabel && hasSummaryLabel && hasAgendaLabel) {
+    logProcessing('LABEL_COLUMNS', null, 'Label columns already exist in Client_Registry', 'info');
+    return false; // Already exist
+  }
+
+  // Add missing columns
+  const newColumns = [];
+  if (!hasGmailLabel) newColumns.push('gmail_label');
+  if (!hasSummaryLabel) newColumns.push('meeting_summaries_label');
+  if (!hasAgendaLabel) newColumns.push('meeting_agendas_label');
+
+  const startCol = sheet.getLastColumn() + 1;
+  sheet.getRange(1, startCol, 1, newColumns.length).setValues([newColumns]);
+  sheet.getRange(1, startCol, 1, newColumns.length).setFontWeight('bold');
+
+  logProcessing('LABEL_COLUMNS', null, `Added ${newColumns.length} label columns to Client_Registry: ${newColumns.join(', ')}`, 'success');
+  return true;
+}
+
+/**
+ * Detects if default pattern Gmail labels exist for a client.
+ * Returns label names if found, null if not found.
+ *
+ * @param {string} clientName - The client name
+ * @returns {Object|null} Object with gmailLabel, summaryLabel, agendaLabel, or null if not found
+ */
+function detectDefaultLabelsForClient(clientName) {
+  const defaultBaseName = `Client: ${clientName}`;
+  const defaultSummaryName = `${defaultBaseName}/Meeting Summaries`;
+  const defaultAgendaName = `${defaultBaseName}/Meeting Agendas`;
+
+  try {
+    const baseLabel = GmailApp.getUserLabelByName(defaultBaseName);
+    const summaryLabel = GmailApp.getUserLabelByName(defaultSummaryName);
+    const agendaLabel = GmailApp.getUserLabelByName(defaultAgendaName);
+
+    if (baseLabel) {
+      return {
+        gmailLabel: defaultBaseName,
+        summaryLabel: summaryLabel ? defaultSummaryName : null,
+        agendaLabel: agendaLabel ? defaultAgendaName : null
+      };
+    }
+
+    return null;
+  } catch (error) {
+    logProcessing('LABEL_DETECTION', clientName, `Error detecting labels: ${error.message}`, 'error');
+    return null;
+  }
+}
+
+/**
+ * Populates empty label columns in Client_Registry by detecting default labels in Gmail.
+ * Only updates rows where label columns are empty.
+ *
+ * @returns {number} Number of clients updated
+ */
+function populateDefaultLabelsForExistingClients() {
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!spreadsheetId) {
+    throw new Error('SPREADSHEET_ID not set');
+  }
+
+  const ss = SpreadsheetApp.openById(spreadsheetId);
+  const sheet = ss.getSheetByName('Client_Registry');
+
+  if (!sheet) {
+    throw new Error('Client_Registry sheet not found');
+  }
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) {
+    return 0; // No data rows
+  }
+
+  const headers = data[0];
+  const clientNameIdx = headers.indexOf('client_name');
+  const gmailLabelIdx = headers.indexOf('gmail_label');
+  const summaryLabelIdx = headers.indexOf('meeting_summaries_label');
+  const agendaLabelIdx = headers.indexOf('meeting_agendas_label');
+
+  if (clientNameIdx === -1 || gmailLabelIdx === -1 || summaryLabelIdx === -1 || agendaLabelIdx === -1) {
+    logProcessing('LABEL_POPULATION', null, 'Required columns not found in Client_Registry', 'error');
+    return 0;
+  }
+
+  let updatedCount = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const clientName = row[clientNameIdx];
+
+    if (!clientName) continue;
+
+    // Only populate if all three label columns are empty
+    const hasEmptyLabels = !row[gmailLabelIdx] && !row[summaryLabelIdx] && !row[agendaLabelIdx];
+
+    if (hasEmptyLabels) {
+      const detectedLabels = detectDefaultLabelsForClient(clientName);
+
+      if (detectedLabels && detectedLabels.gmailLabel) {
+        const rowNum = i + 1;
+        sheet.getRange(rowNum, gmailLabelIdx + 1).setValue(detectedLabels.gmailLabel);
+
+        if (detectedLabels.summaryLabel) {
+          sheet.getRange(rowNum, summaryLabelIdx + 1).setValue(detectedLabels.summaryLabel);
+        }
+
+        if (detectedLabels.agendaLabel) {
+          sheet.getRange(rowNum, agendaLabelIdx + 1).setValue(detectedLabels.agendaLabel);
+        }
+
+        logProcessing('LABEL_POPULATION', clientName, `Auto-populated default labels`, 'success');
+        updatedCount++;
+      }
+    }
+  }
+
+  SpreadsheetApp.flush();
+  logProcessing('LABEL_POPULATION', null, `Auto-populated labels for ${updatedCount} clients`, 'success');
+  return updatedCount;
+}
+
+/**
  * Creates a sheet with headers if it doesn't exist.
  *
  * @param {Spreadsheet} ss - The spreadsheet
@@ -2050,6 +2199,192 @@ function scanForMigration() {
   }
 
   return discovered;
+}
+
+/**
+ * Loads existing clients from Client_Registry for label review.
+ * Ensures label columns exist and auto-populates them if empty.
+ *
+ * @returns {Object[]} Array of client objects with their current label mappings
+ */
+function loadClientsForReview() {
+  // Ensure label columns exist (adds them if missing)
+  ensureLabelColumnsExist();
+
+  // Auto-populate labels for clients with empty label columns
+  populateDefaultLabelsForExistingClients();
+
+  // Load all clients
+  const clients = getClientRegistry();
+
+  // Get all available Gmail labels for dropdown options
+  const allLabels = GmailApp.getUserLabels();
+  const availableLabels = [];
+
+  for (const label of allLabels) {
+    const labelName = label.getName();
+    availableLabels.push({
+      labelName: labelName,
+      isParent: !labelName.includes('/'),
+      subLabels: []
+    });
+  }
+
+  logProcessing('LABEL_REVIEW', null, `Loaded ${clients.length} clients for review with ${availableLabels.length} available labels`, 'success');
+
+  return {
+    clients: clients,
+    availableLabels: availableLabels
+  };
+}
+
+/**
+ * Updates label mappings for existing clients and optionally deletes old labels.
+ *
+ * @param {Object[]} updates - Array of update objects with clientName, new labels, and deleteOld flag
+ * @returns {Object} Result with updated count and any errors
+ */
+function updateClientLabels(updates) {
+  if (!updates || updates.length === 0) {
+    return { updated: 0, errors: [] };
+  }
+
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!spreadsheetId) {
+    throw new Error('SPREADSHEET_ID not set');
+  }
+
+  const ss = SpreadsheetApp.openById(spreadsheetId);
+  const sheet = ss.getSheetByName('Client_Registry');
+
+  if (!sheet) {
+    throw new Error('Client_Registry sheet not found');
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const clientNameIdx = headers.indexOf('client_name');
+  const gmailLabelIdx = headers.indexOf('gmail_label');
+  const summaryLabelIdx = headers.indexOf('meeting_summaries_label');
+  const agendaLabelIdx = headers.indexOf('meeting_agendas_label');
+  const contactEmailsIdx = headers.indexOf('contact_emails');
+
+  let updatedCount = 0;
+  const errors = [];
+
+  for (const update of updates) {
+    try {
+      logProcessing('LABEL_UPDATE', update.clientName, `Processing label update`, 'info');
+
+      // Find the client row
+      let rowNum = -1;
+      let oldLabels = { gmail: '', summary: '', agenda: '' };
+
+      for (let i = 1; i < data.length; i++) {
+        if (data[i][clientNameIdx] === update.clientName) {
+          rowNum = i + 1; // 1-indexed for sheet
+          oldLabels.gmail = data[i][gmailLabelIdx] || '';
+          oldLabels.summary = data[i][summaryLabelIdx] || '';
+          oldLabels.agenda = data[i][agendaLabelIdx] || '';
+          break;
+        }
+      }
+
+      if (rowNum === -1) {
+        errors.push(`Client "${update.clientName}" not found in registry`);
+        continue;
+      }
+
+      // Update the sheet with new labels
+      if (update.gmailLabel) {
+        sheet.getRange(rowNum, gmailLabelIdx + 1).setValue(update.gmailLabel);
+      }
+      if (update.summaryLabel) {
+        sheet.getRange(rowNum, summaryLabelIdx + 1).setValue(update.summaryLabel);
+      }
+      if (update.agendaLabel) {
+        sheet.getRange(rowNum, agendaLabelIdx + 1).setValue(update.agendaLabel);
+      }
+
+      SpreadsheetApp.flush();
+
+      // Delete old labels if requested and they match default pattern
+      if (update.deleteOldLabels) {
+        const defaultPattern = `Client: ${update.clientName}`;
+
+        if (oldLabels.gmail && oldLabels.gmail.startsWith(defaultPattern)) {
+          deleteGmailLabelIfExists(oldLabels.gmail);
+          logProcessing('LABEL_UPDATE', update.clientName, `Deleted old label: ${oldLabels.gmail}`, 'success');
+        }
+
+        if (oldLabels.summary && oldLabels.summary.includes(defaultPattern)) {
+          deleteGmailLabelIfExists(oldLabels.summary);
+        }
+
+        if (oldLabels.agenda && oldLabels.agenda.includes(defaultPattern)) {
+          deleteGmailLabelIfExists(oldLabels.agenda);
+        }
+      }
+
+      // Recreate filters with new labels
+      const contactEmails = data[rowNum - 1][contactEmailsIdx] || '';
+      const contacts = parseCommaSeparatedList(contactEmails);
+
+      // Delete old filters (if they exist)
+      // Note: Gmail API doesn't have a direct way to list filters by label,
+      // so we'll just create new filters which will override
+
+      // Create new filters with updated labels
+      if (update.gmailLabel && contacts.length > 0) {
+        const fromCriteria = buildFromCriteria(contacts);
+        if (fromCriteria) {
+          createGmailApiFilter(fromCriteria, update.gmailLabel);
+        }
+      }
+
+      if (update.summaryLabel && contacts.length > 0) {
+        const toCriteria = buildToCriteria(contacts);
+        if (toCriteria) {
+          const subjectPattern = getSubjectFilterPatternForClient(update.clientName);
+          const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
+          createGmailApiFilter(summaryCriteria, update.summaryLabel);
+        }
+      }
+
+      if (update.agendaLabel) {
+        const agendaPattern = getAgendaFilterPatternForClient(update.clientName);
+        const agendaCriteria = `from:me to:me subject:"${agendaPattern}"`;
+        createGmailApiFilter(agendaCriteria, update.agendaLabel);
+      }
+
+      logProcessing('LABEL_UPDATE', update.clientName, `Updated labels and filters successfully`, 'success');
+      updatedCount++;
+
+    } catch (error) {
+      const errorMsg = `Error updating ${update.clientName}: ${error.message}`;
+      logProcessing('LABEL_UPDATE', update.clientName, errorMsg, 'error');
+      errors.push(errorMsg);
+    }
+  }
+
+  return { updated: updatedCount, errors: errors };
+}
+
+/**
+ * Deletes a Gmail label if it exists.
+ *
+ * @param {string} labelName - The label name to delete
+ */
+function deleteGmailLabelIfExists(labelName) {
+  try {
+    const label = GmailApp.getUserLabelByName(labelName);
+    if (label) {
+      label.deleteLabel();
+      logProcessing('LABEL_DELETE', null, `Deleted Gmail label: ${labelName}`, 'success');
+    }
+  } catch (error) {
+    logProcessing('LABEL_DELETE', null, `Error deleting label "${labelName}": ${error.message}`, 'error');
+  }
 }
 
 /**

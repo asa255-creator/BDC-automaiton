@@ -315,6 +315,18 @@
       color: #c5221f;
       border: 1px solid #f6aea9;
     }
+    .status-notification.warning {
+      background: #fef7e0;
+      color: #ea8600;
+      border: 1px solid #fdd663;
+    }
+    .mode-option {
+      transition: all 0.2s ease;
+    }
+    .mode-option:hover {
+      border-color: #1a73e8 !important;
+      background: #e8f0fe !important;
+    }
   </style>
 </head>
 <body>
@@ -330,7 +342,32 @@
   <!-- Loading State -->
   <div id="loading" class="loading">
     <div class="loading-spinner"></div>
-    <div>Scanning for existing clients...</div>
+    <div id="loadingMessage">Scanning for existing clients...</div>
+  </div>
+
+  <!-- Step 0: Mode Selection -->
+  <div id="step0" class="step wizard-container active">
+    <h2>Migration Wizard</h2>
+    <p style="color: #5f6368; margin-bottom: 24px;">
+      Choose what you'd like to do:
+    </p>
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div class="mode-option" onclick="selectMode('import')" style="cursor: pointer; padding: 16px; border: 2px solid #dadce0; border-radius: 8px; background: #f8f9fa;">
+        <h3 style="margin: 0 0 8px 0; color: #202124;">Import New Clients</h3>
+        <p style="margin: 0; color: #5f6368; font-size: 13px;">
+          Scan for existing Gmail labels and Todoist projects to import as new clients
+        </p>
+      </div>
+      <div class="mode-option" onclick="selectMode('review')" style="cursor: pointer; padding: 16px; border: 2px solid #dadce0; border-radius: 8px; background: #f8f9fa;">
+        <h3 style="margin: 0 0 8px 0; color: #202124;">Review Current Clients</h3>
+        <p style="margin: 0; color: #5f6368; font-size: 13px;">
+          Review and update Gmail label mappings for existing clients in your registry
+        </p>
+      </div>
+    </div>
+    <div class="buttons">
+      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+    </div>
   </div>
 
   <!-- Step 1: Review Discovered Clients -->
@@ -382,12 +419,25 @@
     </div>
   </div>
 
+  <!-- Step Review: Review Current Clients -->
+  <div id="stepReview" class="step wizard-container" style="display: none;">
+    <h2>Review Current Clients</h2>
+    <p style="color: #5f6368; margin-bottom: 16px;">
+      Update label mappings for your existing clients. Select new labels from the dropdowns and optionally delete old default labels.
+    </p>
+    <div id="reviewClientList"></div>
+    <div class="buttons">
+      <button class="btn btn-secondary" onclick="goToModeSelect()">Back</button>
+      <button class="btn btn-primary" id="updateLabelsBtn" onclick="doUpdateLabels()">Update Labels</button>
+    </div>
+  </div>
+
   <!-- Complete State -->
   <div id="complete" class="step" style="display: none;">
     <div class="wizard-container">
       <div class="empty-state">
         <div style="font-size: 48px; margin-bottom: 16px;">&#10003;</div>
-        <h2>Import Complete!</h2>
+        <h2>Complete!</h2>
         <p id="completeMessage"></p>
         <button class="btn btn-primary" onclick="google.script.host.close()" style="margin-top: 16px;">Close</button>
       </div>
@@ -396,16 +446,20 @@
 
   <script>
     // Global state
+    let wizardMode = null; // 'import' or 'review'
     let discoveredData = null;
     let selectedClients = {};
     let docConfigs = {};
     let folders = [];
     let emailCache = {}; // Cache for email autocomplete results
+    let reviewData = null; // For review mode
+    let labelUpdates = {}; // For review mode updates
 
     // Initialize wizard
     document.addEventListener('DOMContentLoaded', function() {
       updateProgress(0);
-      loadDiscoveredClients();
+      // Show mode selection, don't auto-load
+      document.getElementById('step0').style.display = 'block';
     });
 
     function updateProgress(step) {
@@ -427,6 +481,160 @@
       setTimeout(function() {
         notification.style.display = 'none';
       }, 3000);
+    }
+
+    function selectMode(mode) {
+      wizardMode = mode;
+      document.getElementById('step0').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+
+      if (mode === 'import') {
+        document.getElementById('loadingMessage').textContent = 'Scanning for existing clients...';
+        loadDiscoveredClients();
+      } else if (mode === 'review') {
+        document.getElementById('loadingMessage').textContent = 'Loading current clients...';
+        loadClientsForReview();
+      }
+    }
+
+    function goToModeSelect() {
+      // Hide all steps
+      document.querySelectorAll('.step').forEach(el => el.style.display = 'none');
+      document.getElementById('step0').style.display = 'block';
+      updateProgress(0);
+    }
+
+    function loadClientsForReview() {
+      google.script.run
+        .withSuccessHandler(function(data) {
+          reviewData = data;
+          document.getElementById('loading').style.display = 'none';
+          renderReviewStep();
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById('loading').style.display = 'none';
+          showStatus('Error loading clients: ' + error.message, 'error');
+        })
+        .loadClientsForReview();
+    }
+
+    function renderReviewStep() {
+      if (!reviewData || !reviewData.clients || reviewData.clients.length === 0) {
+        document.getElementById('reviewClientList').innerHTML =
+          '<div class="empty-state"><p>No clients found in Client_Registry</p></div>';
+        document.getElementById('stepReview').style.display = 'block';
+        return;
+      }
+
+      let html = '';
+
+      for (const client of reviewData.clients) {
+        const key = client.client_name;
+        labelUpdates[key] = {
+          clientName: client.client_name,
+          gmailLabel: client.gmail_label || '',
+          summaryLabel: client.meeting_summaries_label || '',
+          agendaLabel: client.meeting_agendas_label || '',
+          deleteOldLabels: false
+        };
+
+        html += `<div class="client-row">
+          <div class="client-name">${escapeHtml(client.client_name)}</div>
+
+          <div class="field-group">
+            <label>Gmail Label (Base)</label>
+            <select id="gmail_${key}" onchange="updateLabelSelection('${key}', 'gmail', this.value)">
+              <option value="">-- Select Gmail Label --</option>`;
+
+        for (const label of reviewData.availableLabels) {
+          if (label.isParent) {
+            const selected = label.labelName === client.gmail_label ? 'selected' : '';
+            html += `<option value="${escapeHtml(label.labelName)}" ${selected}>${escapeHtml(label.labelName)}</option>`;
+          }
+        }
+
+        html += `</select>
+            <div style="font-size: 11px; color: #5f6368; margin-top: 4px;">Current: ${escapeHtml(client.gmail_label || 'Not set')}</div>
+          </div>
+
+          <div class="field-group">
+            <label>Meeting Summaries Label</label>
+            <select id="summary_${key}" onchange="updateLabelSelection('${key}', 'summary', this.value)">
+              <option value="">-- Select Label --</option>`;
+
+        for (const label of reviewData.availableLabels) {
+          const selected = label.labelName === client.meeting_summaries_label ? 'selected' : '';
+          html += `<option value="${escapeHtml(label.labelName)}" ${selected}>${escapeHtml(label.labelName)}</option>`;
+        }
+
+        html += `</select>
+            <div style="font-size: 11px; color: #5f6368; margin-top: 4px;">Current: ${escapeHtml(client.meeting_summaries_label || 'Not set')}</div>
+          </div>
+
+          <div class="field-group">
+            <label>Meeting Agendas Label</label>
+            <select id="agenda_${key}" onchange="updateLabelSelection('${key}', 'agenda', this.value)">
+              <option value="">-- Select Label --</option>`;
+
+        for (const label of reviewData.availableLabels) {
+          const selected = label.labelName === client.meeting_agendas_label ? 'selected' : '';
+          html += `<option value="${escapeHtml(label.labelName)}" ${selected}>${escapeHtml(label.labelName)}</option>`;
+        }
+
+        html += `</select>
+            <div style="font-size: 11px; color: #5f6368; margin-top: 4px;">Current: ${escapeHtml(client.meeting_agendas_label || 'Not set')}</div>
+          </div>
+
+          <div class="field-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="delete_${key}" onchange="labelUpdates['${key}'].deleteOldLabels = this.checked" style="margin: 0;">
+              <span>Delete old label from Gmail (if it matches default pattern)</span>
+            </label>
+          </div>
+        </div>`;
+      }
+
+      document.getElementById('reviewClientList').innerHTML = html;
+      document.getElementById('stepReview').style.display = 'block';
+    }
+
+    function updateLabelSelection(key, type, value) {
+      if (type === 'gmail') {
+        labelUpdates[key].gmailLabel = value;
+      } else if (type === 'summary') {
+        labelUpdates[key].summaryLabel = value;
+      } else if (type === 'agenda') {
+        labelUpdates[key].agendaLabel = value;
+      }
+    }
+
+    function doUpdateLabels() {
+      const updates = Object.values(labelUpdates).filter(u =>
+        u.gmailLabel || u.summaryLabel || u.agendaLabel
+      );
+
+      if (updates.length === 0) {
+        showStatus('No changes to apply', 'warning');
+        return;
+      }
+
+      document.getElementById('stepReview').style.display = 'none';
+      document.getElementById('importing').style.display = 'block';
+      document.getElementById('importStatus').textContent = 'Updating label mappings...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          document.getElementById('importing').style.display = 'none';
+          document.getElementById('complete').style.display = 'block';
+          document.getElementById('completeMessage').textContent =
+            `Updated ${result.updated} client(s). ${result.errors.length > 0 ? 'Errors: ' + result.errors.join(', ') : ''}`;
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById('importing').style.display = 'none';
+          showStatus('Error updating labels: ' + error.message, 'error');
+          document.getElementById('stepReview').style.display = 'block';
+        })
+        .updateClientLabels(updates);
     }
 
     function loadDiscoveredClients() {
