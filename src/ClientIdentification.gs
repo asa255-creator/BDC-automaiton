@@ -100,14 +100,32 @@ function identifyClientFromParticipants(participants) {
  * @returns {Object|null} Client object if found, null otherwise
  */
 function identifyClientFromCalendarEvent(event) {
-  const guestList = event.getGuestList();
-  const emails = guestList.map(guest => guest.getEmail());
+  const emails = [];
 
-  // Also check the event organizer if not the current user
-  const creatorEmail = event.getCreators()[0];
-  if (creatorEmail && creatorEmail !== Session.getActiveUser().getEmail()) {
-    emails.push(creatorEmail);
+  // Get ALL guests/attendees
+  const guestList = event.getGuestList();
+  for (const guest of guestList) {
+    const email = guest.getEmail();
+    if (email) {
+      emails.push(email);
+    }
   }
+
+  // Get ALL organizers/creators
+  const creators = event.getCreators();
+  for (const creator of creators) {
+    if (creator) {
+      emails.push(creator);
+    }
+  }
+
+  // Add current user (you)
+  const currentUserEmail = Session.getActiveUser().getEmail();
+  if (currentUserEmail) {
+    emails.push(currentUserEmail);
+  }
+
+  Logger.log(`Calendar event "${event.getTitle()}" - collected ${emails.length} emails: ${emails.join(', ')}`);
 
   return identifyClient(emails);
 }

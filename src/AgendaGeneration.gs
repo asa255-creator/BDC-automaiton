@@ -679,16 +679,9 @@ function getTodaysRemainingEvents() {
 
   const events = calendar.getEvents(now, endOfDay);
 
-  // Filter out all-day events and events without guests
+  // Filter out all-day events only
   return events.filter(event => {
-    // Skip all-day events
-    if (event.isAllDayEvent()) {
-      return false;
-    }
-
-    // Only include events with external guests
-    const guests = event.getGuestList();
-    return guests.length > 0;
+    return !event.isAllDayEvent();
   });
 }
 
