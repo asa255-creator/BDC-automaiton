@@ -231,6 +231,15 @@
           <input type="text" id="doc_template" placeholder="Client Notes - {client_name}">
           <div class="placeholder-hint">Placeholders: {client_name}</div>
         </div>
+
+        <div class="section-title">Email Inbox Management</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Auto-Mark Emails as Read</div>
+          <div class="setting-description">Automatically mark unread emails as read if older than X days (0 = disabled)</div>
+          <input type="number" id="auto_mark_read_days" min="0" max="365" placeholder="0">
+          <div class="placeholder-hint">Set to 0 to disable, or enter days (e.g., 30 for 1 month)</div>
+        </div>
       </div>
     </div>
 
@@ -385,6 +394,7 @@ Thanks,
           // General tab
           document.getElementById('user_name').value = settings.USER_NAME || '';
           document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
+          document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
 
           // Email Templates tab
           document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
@@ -439,6 +449,7 @@ Thanks,
         // General
         USER_NAME: document.getElementById('user_name').value.trim(),
         DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
+        AUTO_MARK_READ_AFTER_DAYS: document.getElementById('auto_mark_read_days').value.trim() || '0',
         // Email Templates
         MEETING_SUBJECT_TEMPLATE: document.getElementById('meeting_subject_template').value.trim(),
         MEETING_SIGNATURE: document.getElementById('meeting_signature').value,

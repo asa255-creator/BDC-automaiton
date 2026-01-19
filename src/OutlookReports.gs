@@ -24,6 +24,9 @@
 function generateDailyOutlook() {
   Logger.log('Generating daily outlook...');
 
+  // Run auto-mark-read before generating report (if enabled)
+  autoMarkOldEmailsAsRead();
+
   const today = new Date();
   const reportData = compileDailyData(today);
 
@@ -50,8 +53,12 @@ function compileDailyData(date) {
     clientSummaries: {},
     conflicts: [],
     missingAgendas: [],
-    overdueTasks: []
+    overdueTasks: [],
+    unreadEmails: { recentUnread: [], olderBacklog: [], totalUnread: 0 }
   };
+
+  // Fetch unread emails from last 1 day for daily report
+  data.unreadEmails = fetchUnreadEmails(1);
 
   // Get today's events
   const calendar = CalendarApp.getDefaultCalendar();
@@ -237,6 +244,28 @@ function formatDailyOutlookHtml(data, date) {
     }
   }
 
+  // Unread Emails Section (last 24 hours)
+  html += `<h2>📧 Inbox Status</h2>`;
+  if (data.unreadEmails.totalUnread === 0) {
+    html += `<p style="color: #28a745;">✓ No unread emails!</p>`;
+  } else {
+    // Recent unread (last 24 hours)
+    html += formatUnreadEmailsHtml(
+      data.unreadEmails.recentUnread,
+      '📬 Unread Emails - Last 24 Hours',
+      '#17a2b8'
+    );
+
+    // Older backlog (if any)
+    if (data.unreadEmails.olderBacklog.length > 0) {
+      html += formatUnreadEmailsHtml(
+        data.unreadEmails.olderBacklog,
+        '⚠️ Older Unread Emails (Backlog)',
+        '#dc3545'
+      );
+    }
+  }
+
   html += `</body></html>`;
   return html;
 }
@@ -279,8 +308,16 @@ function compileWeeklyData(startDate) {
     missingAgendas: [],
     overdueTasks: [],
     allMeetings: [],
-    allTasks: []
+    allTasks: [],
+    unreadEmails: { recentUnread: [], olderBacklog: [], totalUnread: 0 },
+    drafts: []
   };
+
+  // Fetch unread emails from last 7 days for weekly report (older ones go to backlog)
+  data.unreadEmails = fetchUnreadEmails(7);
+
+  // Fetch unsent drafts
+  data.drafts = fetchUnsentDrafts();
 
   // Initialize day data for each day of the week
   for (let i = 0; i < 7; i++) {
@@ -528,6 +565,36 @@ function formatWeeklyOutlookHtml(data, startDate) {
     }
   }
 
+  // Unread Emails Section
+  html += `<h2>📧 Inbox Status</h2>`;
+  if (data.unreadEmails.totalUnread === 0) {
+    html += `<p style="color: #28a745;">✓ No unread emails!</p>`;
+  } else {
+    // Recent unread (last 7 days)
+    html += formatUnreadEmailsHtml(
+      data.unreadEmails.recentUnread,
+      '📬 Unread Emails - Last 7 Days',
+      '#17a2b8'
+    );
+
+    // Older backlog
+    if (data.unreadEmails.olderBacklog.length > 0) {
+      html += formatUnreadEmailsHtml(
+        data.unreadEmails.olderBacklog,
+        '⚠️ Older Unread Emails (Backlog)',
+        '#dc3545'
+      );
+    }
+  }
+
+  // Unsent Drafts Section
+  html += `<h2>📝 Unsent Drafts</h2>`;
+  if (data.drafts.length === 0) {
+    html += `<p style="color: #28a745;">✓ No unsent drafts!</p>`;
+  } else {
+    html += formatDraftsHtml(data.drafts);
+  }
+
   html += `</body></html>`;
   return html;
 }
@@ -634,4 +701,246 @@ function sendOutlookEmail(subject, htmlBody, labelName) {
 function getDayName(date) {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   return days[date.getDay()];
+}
+
+// ============================================================================
+// UNREAD EMAILS & DRAFTS
+// ============================================================================
+
+/**
+ * Fetches unread emails from inbox with filtering.
+ *
+ * @param {number} daysBack - How many days back to search
+ * @returns {Object} Object with recentUnread and olderUnread arrays
+ */
+function fetchUnreadEmails(daysBack) {
+  const result = {
+    recentUnread: [],    // Unread from last `daysBack` days
+    olderBacklog: [],    // Unread older than `daysBack` days
+    totalUnread: 0
+  };
+
+  try {
+    // Get all unread emails
+    const threads = GmailApp.search('is:unread -from:me', 0, 100);
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+
+    for (const thread of threads) {
+      const messages = thread.getMessages();
+      const lastMessage = messages[messages.length - 1];
+      const date = lastMessage.getDate();
+
+      // Get labels for context
+      const labels = thread.getLabels().map(l => l.getName());
+
+      const emailInfo = {
+        subject: thread.getFirstMessageSubject(),
+        from: lastMessage.getFrom(),
+        date: date,
+        snippet: lastMessage.getPlainBody().substring(0, 200),
+        labels: labels,
+        isStarred: thread.hasStarredMessages(),
+        messageCount: messages.length
+      };
+
+      if (date >= cutoffDate) {
+        result.recentUnread.push(emailInfo);
+      } else {
+        result.olderBacklog.push(emailInfo);
+      }
+
+      result.totalUnread++;
+    }
+
+    // Sort by date descending (newest first)
+    result.recentUnread.sort((a, b) => b.date - a.date);
+    result.olderBacklog.sort((a, b) => b.date - a.date);
+
+  } catch (error) {
+    Logger.log(`Error fetching unread emails: ${error.message}`);
+  }
+
+  return result;
+}
+
+/**
+ * Fetches unsent drafts from Gmail.
+ *
+ * @returns {Object[]} Array of draft info objects
+ */
+function fetchUnsentDrafts() {
+  const drafts = [];
+
+  try {
+    const gmailDrafts = GmailApp.getDrafts();
+
+    for (const draft of gmailDrafts) {
+      const message = draft.getMessage();
+      const to = message.getTo();
+      const subject = message.getSubject();
+      const date = message.getDate();
+
+      // Calculate age
+      const ageMs = Date.now() - date.getTime();
+      const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
+
+      drafts.push({
+        subject: subject || '(No subject)',
+        to: to || '(No recipient)',
+        date: date,
+        ageDays: ageDays,
+        snippet: message.getPlainBody().substring(0, 150),
+        draftId: draft.getId()
+      });
+    }
+
+    // Sort by date descending (newest first)
+    drafts.sort((a, b) => b.date - a.date);
+
+  } catch (error) {
+    Logger.log(`Error fetching drafts: ${error.message}`);
+  }
+
+  return drafts;
+}
+
+/**
+ * Marks unread emails older than specified days as read.
+ * Only runs if enabled in settings.
+ *
+ * @returns {Object} Result with count of emails marked
+ */
+function autoMarkOldEmailsAsRead() {
+  const props = PropertiesService.getScriptProperties();
+  const daysThreshold = parseInt(props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0', 10);
+
+  if (daysThreshold <= 0) {
+    return { success: true, count: 0, message: 'Auto-mark-read is disabled' };
+  }
+
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysThreshold);
+
+    // Search for unread emails older than threshold
+    const query = `is:unread before:${formatDateForGmail(cutoffDate)}`;
+    const threads = GmailApp.search(query, 0, 50);
+
+    let markedCount = 0;
+    for (const thread of threads) {
+      thread.markRead();
+      markedCount++;
+    }
+
+    if (markedCount > 0) {
+      logProcessing('AUTO_MARK_READ', null, `Marked ${markedCount} old emails as read`, 'success');
+    }
+
+    return { success: true, count: markedCount, message: `Marked ${markedCount} emails as read` };
+
+  } catch (error) {
+    logProcessing('AUTO_MARK_READ', null, `Error: ${error.message}`, 'error');
+    return { success: false, count: 0, message: error.message };
+  }
+}
+
+/**
+ * Formats a date for Gmail search query (YYYY/MM/DD).
+ *
+ * @param {Date} date - The date to format
+ * @returns {string} Formatted date string
+ */
+function formatDateForGmail(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}/${month}/${day}`;
+}
+
+/**
+ * Formats unread emails section for HTML output.
+ *
+ * @param {Object[]} emails - Array of email info objects
+ * @param {string} title - Section title
+ * @param {string} bgColor - Background color for header
+ * @returns {string} HTML string
+ */
+function formatUnreadEmailsHtml(emails, title, bgColor) {
+  if (emails.length === 0) {
+    return '';
+  }
+
+  let html = `<div style="margin-bottom: 20px; border: 1px solid #dee2e6; border-radius: 5px; overflow: hidden;">`;
+  html += `<h3 style="background-color: ${bgColor}; color: white; padding: 10px; margin: 0;">${title} (${emails.length})</h3>`;
+  html += `<div style="padding: 15px;">`;
+  html += `<p style="font-size: 12px; color: #666; margin-top: 0;"><em>⚠️ THESE ARE UNREAD EMAILS IN YOUR INBOX - NOT SENT BY YOU</em></p>`;
+  html += `<table style="width: 100%; border-collapse: collapse; font-size: 13px;">`;
+  html += `<tr style="background: #f8f9fa;"><th style="text-align: left; padding: 8px;">From</th><th style="text-align: left; padding: 8px;">Subject</th><th style="text-align: left; padding: 8px;">Date</th><th style="text-align: left; padding: 8px;">Labels</th></tr>`;
+
+  for (const email of emails.slice(0, 15)) {
+    const labelsStr = email.labels.length > 0 ? email.labels.join(', ') : '-';
+    const starIcon = email.isStarred ? '⭐ ' : '';
+    html += `<tr style="border-bottom: 1px solid #eee;">`;
+    html += `<td style="padding: 8px;">${escapeHtml(email.from.split('<')[0].trim())}</td>`;
+    html += `<td style="padding: 8px;">${starIcon}${escapeHtml(email.subject)}</td>`;
+    html += `<td style="padding: 8px; white-space: nowrap;">${formatDateShort(email.date)}</td>`;
+    html += `<td style="padding: 8px; font-size: 11px;">${escapeHtml(labelsStr)}</td>`;
+    html += `</tr>`;
+  }
+
+  if (emails.length > 15) {
+    html += `<tr><td colspan="4" style="padding: 8px; text-align: center; color: #666;">... and ${emails.length - 15} more</td></tr>`;
+  }
+
+  html += `</table></div></div>`;
+  return html;
+}
+
+/**
+ * Formats drafts section for HTML output.
+ *
+ * @param {Object[]} drafts - Array of draft info objects
+ * @returns {string} HTML string
+ */
+function formatDraftsHtml(drafts) {
+  if (drafts.length === 0) {
+    return '';
+  }
+
+  let html = `<div style="margin-bottom: 20px; border: 1px solid #dee2e6; border-radius: 5px; overflow: hidden;">`;
+  html += `<h3 style="background-color: #6c757d; color: white; padding: 10px; margin: 0;">📝 Unsent Drafts (${drafts.length})</h3>`;
+  html += `<div style="padding: 15px;">`;
+  html += `<p style="font-size: 12px; color: #dc3545; margin-top: 0;"><strong>⚠️ THESE ARE UNSENT DRAFTS - NOT SENT EMAILS</strong></p>`;
+  html += `<table style="width: 100%; border-collapse: collapse; font-size: 13px;">`;
+  html += `<tr style="background: #f8f9fa;"><th style="text-align: left; padding: 8px;">To</th><th style="text-align: left; padding: 8px;">Subject</th><th style="text-align: left; padding: 8px;">Age</th></tr>`;
+
+  for (const draft of drafts) {
+    const ageStr = draft.ageDays === 0 ? 'Today' : draft.ageDays === 1 ? '1 day' : `${draft.ageDays} days`;
+    const ageColor = draft.ageDays > 7 ? '#dc3545' : draft.ageDays > 3 ? '#ffc107' : '#28a745';
+    html += `<tr style="border-bottom: 1px solid #eee;">`;
+    html += `<td style="padding: 8px;">${escapeHtml(draft.to)}</td>`;
+    html += `<td style="padding: 8px;">${escapeHtml(draft.subject)}</td>`;
+    html += `<td style="padding: 8px; color: ${ageColor}; font-weight: bold;">${ageStr}</td>`;
+    html += `</tr>`;
+  }
+
+  html += `</table></div></div>`;
+  return html;
+}
+
+/**
+ * Escapes HTML special characters.
+ *
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped text
+ */
+function escapeHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

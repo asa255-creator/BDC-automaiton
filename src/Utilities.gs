@@ -1711,7 +1711,8 @@ function getSettingsForEditor() {
     AGENDA_SUBJECT_TEMPLATE: props.getProperty('AGENDA_SUBJECT_TEMPLATE') || 'Agenda: {client_name} - {meeting_title} ({date})',
     BUSINESS_HOURS_START: props.getProperty('BUSINESS_HOURS_START') || '8',
     BUSINESS_HOURS_END: props.getProperty('BUSINESS_HOURS_END') || '18',
-    DOC_NAME_TEMPLATE: props.getProperty('DOC_NAME_TEMPLATE') || 'Client Notes - {client_name}'
+    DOC_NAME_TEMPLATE: props.getProperty('DOC_NAME_TEMPLATE') || 'Client Notes - {client_name}',
+    AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0'
   };
 }
 
@@ -1782,6 +1783,11 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.AGENDA_SUBJECT_TEMPLATE) {
     props.setProperty('AGENDA_SUBJECT_TEMPLATE', settings.AGENDA_SUBJECT_TEMPLATE);
+  }
+
+  // Auto-mark-read setting (allow 0 to disable)
+  if (settings.AUTO_MARK_READ_AFTER_DAYS !== undefined) {
+    props.setProperty('AUTO_MARK_READ_AFTER_DAYS', settings.AUTO_MARK_READ_AFTER_DAYS.toString());
   }
 
   logProcessing('SETTINGS', null, 'Settings updated via editor', 'info');
