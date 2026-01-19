@@ -728,7 +728,7 @@ function savePromptsFromEditor(prompts) {
 
 /**
  * Compresses a prompt using Claude AI while preserving all requirements.
- * Uses Haiku for cost efficiency.
+ * Uses Sonnet for better comprehension (Haiku is too aggressive).
  *
  * @param {string} promptText - The original prompt text to compress
  * @param {string} promptKey - Optional prompt key to look up available variables
@@ -746,38 +746,55 @@ function compressPromptWithAI(promptText, promptKey) {
   if (promptKey && PROMPT_METADATA[promptKey] && PROMPT_METADATA[promptKey].variables) {
     const variables = PROMPT_METADATA[promptKey].variables;
     variablesSection = `
-Available variables for this prompt (MUST be preserved exactly):
+CRITICAL - These variables MUST appear in your output exactly as shown:
 ${variables.join(', ')}
-
-These variables will be replaced with actual data at runtime. Do not remove, rename, or modify them.
 `;
   }
 
-  const compressionPrompt = `You are a prompt compression expert. Your task is to rewrite the following prompt to use fewer tokens while preserving ALL requirements, instructions, sections, and formatting rules.
+  const compressionPrompt = `You are a CONSERVATIVE prompt editor. Your goal is to make MINOR optimizations to reduce token count while keeping the prompt's meaning, structure, and instructions fully intact.
 
-Rules for compression:
-1. Keep ALL sections and requirements - do not remove anything
-2. Use concise language - remove redundant words and phrases
-3. Use bullet points and short syntax where possible
-4. Preserve all variable placeholders like {variable_name} exactly as-is
-5. Keep all emojis and formatting markers
-6. Maintain the same tone and intent
-7. The compressed version must produce identical output when used
+THIS IS NOT AGGRESSIVE COMPRESSION. You are making small edits, not rewriting.
+
+WHAT YOU MUST KEEP (do not remove or summarize):
+- ALL instructions (every single instruction must remain)
+- ALL section headers and labels
+- ALL formatting requirements (HTML, timezone, styling rules)
+- ALL variable placeholders like {variable_name} or {{variable_name}} exactly as written
+- ALL context descriptions (what data is being provided)
+- ALL output format specifications
+- ALL constraints and rules
+- ALL examples if present
 ${variablesSection}
-Original prompt to compress:
+WHAT YOU CAN DO (minor optimizations only):
+- Remove filler words ("please", "kindly", "make sure to")
+- Shorten wordy phrases ("in order to" → "to", "make sure that" → "ensure")
+- Remove redundant repetition of the same instruction
+- Combine adjacent sentences that say the same thing
+
+WHAT YOU CANNOT DO:
+- Remove any instruction, even if it seems obvious
+- Summarize multiple instructions into one
+- Remove context about what the variables contain
+- Change the structure or organization
+- Remove formatting/output requirements
+- Strip out section labels or headers
+
+The compressed prompt MUST produce IDENTICAL output when used. If in doubt, keep it.
+
+Original prompt:
 ---
 ${promptText}
 ---
 
-Return ONLY the compressed prompt text, nothing else. Do not add explanations or commentary.`;
+Return the optimized prompt. Keep it nearly identical to the original - only make minor word-level improvements.`;
 
   try {
     const url = 'https://api.anthropic.com/v1/messages';
 
-    // Use cheapest available model (prefer haiku) for compression
+    // Use Sonnet for better comprehension - Haiku is too aggressive
     const models = fetchAvailableModelsFromAPI(false);
-    const haiku = models.find(m => m.id.includes('haiku'));
-    const model = haiku ? haiku.id : models[0]?.id || FALLBACK_MODELS[1].id;
+    const sonnet = models.find(m => m.id.includes('sonnet'));
+    const model = sonnet ? sonnet.id : models[0]?.id || FALLBACK_MODELS[0].id;
 
     const payload = {
       model: model,
