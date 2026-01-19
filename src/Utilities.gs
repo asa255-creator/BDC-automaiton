@@ -1879,19 +1879,49 @@ function scanForMigration() {
   // Scan Gmail labels for "Client: *" pattern
   try {
     const allLabels = GmailApp.getUserLabels();
+    const labelMap = {}; // Map parent labels to their sub-labels
 
+    // First pass: collect all client labels
     for (const label of allLabels) {
       const labelName = label.getName();
 
-      // Match "Client: ClientName" but not sublabels
-      if (labelName.startsWith('Client: ') && !labelName.includes('/')) {
-        const clientName = labelName.replace('Client: ', '');
-        discovered.gmailLabels.push({
-          labelName: labelName,
-          clientName: clientName
-        });
+      if (labelName.startsWith('Client: ')) {
+        // Check if this is a parent label or sub-label
+        if (!labelName.includes('/')) {
+          // Parent label
+          const clientName = labelName.replace('Client: ', '');
+          labelMap[labelName] = {
+            labelName: labelName,
+            clientName: clientName,
+            subLabels: []
+          };
+        } else {
+          // Sub-label - extract parent and sub-label name
+          const parts = labelName.split('/');
+          const parentLabel = parts[0]; // e.g., "Client: Acme Corp"
+          const subLabelName = parts.slice(1).join('/'); // e.g., "Meeting Summaries"
+
+          // Ensure parent exists in map
+          if (!labelMap[parentLabel]) {
+            const clientName = parentLabel.replace('Client: ', '');
+            labelMap[parentLabel] = {
+              labelName: parentLabel,
+              clientName: clientName,
+              subLabels: []
+            };
+          }
+
+          // Add sub-label to parent
+          labelMap[parentLabel].subLabels.push({
+            fullLabelName: labelName,
+            subLabelName: subLabelName
+          });
+        }
       }
     }
+
+    // Convert map to array
+    discovered.gmailLabels = Object.values(labelMap);
   } catch (error) {
     Logger.log(`Failed to scan Gmail labels: ${error.message}`);
   }
