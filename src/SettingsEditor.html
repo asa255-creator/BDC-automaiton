@@ -376,16 +376,18 @@ Thanks,
 
         <div class="setting-group">
           <div class="setting-label">Daily Briefing Label</div>
-          <div class="setting-description">Gmail label to apply to daily outlook emails (leave blank for default "Brief: Daily")</div>
-          <input type="text" id="daily_label" placeholder="Brief: Daily">
-          <div class="placeholder-hint">Examples: "Daily Briefing", "Brief/Daily", "Admin/Daily"</div>
+          <div class="setting-description">Select Gmail label to apply to daily outlook emails</div>
+          <select id="daily_label" style="width: 100%;">
+            <option value="">Loading labels...</option>
+          </select>
         </div>
 
         <div class="setting-group">
           <div class="setting-label">Weekly Briefing Label</div>
-          <div class="setting-description">Gmail label to apply to weekly outlook emails (leave blank for default "Brief: Weekly")</div>
-          <input type="text" id="weekly_label" placeholder="Brief: Weekly">
-          <div class="placeholder-hint">Examples: "Weekly Briefing", "Brief/Weekly", "Admin/Weekly"</div>
+          <div class="setting-description">Select Gmail label to apply to weekly outlook emails</div>
+          <select id="weekly_label" style="width: 100%;">
+            <option value="">Loading labels...</option>
+          </select>
         </div>
       </div>
     </div>
@@ -413,7 +415,23 @@ Thanks,
       event.target.classList.add('active');
     }
 
+    let allLabels = [];
+
     function loadSettings() {
+      // Load labels first
+      google.script.run
+        .withSuccessHandler(function(labels) {
+          allLabels = labels || [];
+          populateLabelDropdowns();
+        })
+        .withFailureHandler(function(error) {
+          console.error('Failed to load labels:', error);
+          allLabels = [];
+          populateLabelDropdowns();
+        })
+        .getAllGmailLabelsForSettings();
+
+      // Load settings
       google.script.run
         .withSuccessHandler(function(settings) {
           // General tab
@@ -437,8 +455,12 @@ Thanks,
           // Schedule tab
           document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
           document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
-          document.getElementById('daily_label').value = settings.DAILY_BRIEFING_LABEL || 'Brief: Daily';
-          document.getElementById('weekly_label').value = settings.WEEKLY_BRIEFING_LABEL || 'Brief: Weekly';
+
+          // Set label dropdowns after they're populated
+          setTimeout(function() {
+            setLabelDropdown('daily_label', settings.DAILY_BRIEFING_LABEL || 'Brief: Daily');
+            setLabelDropdown('weekly_label', settings.WEEKLY_BRIEFING_LABEL || 'Brief: Weekly');
+          }, 500);
 
           // Update status badges
           updateBadge('fathomStatus', settings.FATHOM_API_KEY);
@@ -455,6 +477,44 @@ Thanks,
           document.getElementById('loading').innerHTML = 'Error loading settings: ' + error.message;
         })
         .getSettingsForEditor();
+    }
+
+    function populateLabelDropdowns() {
+      const dailySelect = document.getElementById('daily_label');
+      const weeklySelect = document.getElementById('weekly_label');
+
+      // Clear existing options
+      dailySelect.innerHTML = '';
+      weeklySelect.innerHTML = '';
+
+      // Add default options
+      const defaultDaily = document.createElement('option');
+      defaultDaily.value = 'Brief: Daily';
+      defaultDaily.textContent = 'Brief: Daily (default)';
+      dailySelect.appendChild(defaultDaily);
+
+      const defaultWeekly = document.createElement('option');
+      defaultWeekly.value = 'Brief: Weekly';
+      defaultWeekly.textContent = 'Brief: Weekly (default)';
+      weeklySelect.appendChild(defaultWeekly);
+
+      // Add all Gmail labels
+      allLabels.forEach(function(labelName) {
+        const dailyOption = document.createElement('option');
+        dailyOption.value = labelName;
+        dailyOption.textContent = labelName;
+        dailySelect.appendChild(dailyOption);
+
+        const weeklyOption = document.createElement('option');
+        weeklyOption.value = labelName;
+        weeklyOption.textContent = labelName;
+        weeklySelect.appendChild(weeklyOption);
+      });
+    }
+
+    function setLabelDropdown(elementId, value) {
+      const select = document.getElementById(elementId);
+      select.value = value;
     }
 
     function updateBadge(elementId, value) {

@@ -1720,6 +1720,30 @@ function getSettingsForEditor() {
 }
 
 /**
+ * Gets all Gmail labels for the settings editor dropdowns.
+ *
+ * @returns {string[]} Array of label names sorted alphabetically
+ */
+function getAllGmailLabelsForSettings() {
+  try {
+    const allLabels = GmailApp.getUserLabels();
+    const labelNames = [];
+
+    for (const label of allLabels) {
+      labelNames.push(label.getName());
+    }
+
+    // Sort alphabetically
+    labelNames.sort();
+
+    return labelNames;
+  } catch (error) {
+    Logger.log(`Error getting labels for settings: ${error.message}`);
+    return [];
+  }
+}
+
+/**
  * Saves settings from the editor.
  * Only updates non-empty values.
  *
