@@ -2306,9 +2306,25 @@ function importClientsFromWizard(importData) {
   // Get existing clients to avoid duplicates
   const existingData = sheet.getDataRange().getValues();
   const existingNames = [];
+  const existingTodoistIds = [];
+  const existingLabelsByClientName = new Map(); // Map client name to their Gmail label
+
   for (let i = 1; i < existingData.length; i++) {
+    // Column 0: client_name
     if (existingData[i][0]) {
-      existingNames.push(existingData[i][0].toLowerCase());
+      const clientName = existingData[i][0];
+      existingNames.push(clientName.toLowerCase());
+
+      // Derive the Gmail label used for this client
+      // Default pattern is "Client: {name}", but could be custom
+      const derivedLabel = `Client: ${clientName}`;
+      existingLabelsByClientName.set(derivedLabel.toLowerCase(), clientName);
+      // Also map just the client name in case it was used as the label
+      existingLabelsByClientName.set(clientName.toLowerCase(), clientName);
+    }
+    // Column 5: todoist_project_id
+    if (existingData[i][5]) {
+      existingTodoistIds.push(existingData[i][5]);
     }
   }
 
@@ -2316,9 +2332,25 @@ function importClientsFromWizard(importData) {
   let skipped = 0;
 
   for (const client of importData) {
-    // Skip duplicates
+    // Check 1: Duplicate client name
     if (existingNames.includes(client.client_name.toLowerCase())) {
       logProcessing('MIGRATION_WIZARD', client.client_name, 'Skipped - duplicate client name', 'warning');
+      skipped++;
+      continue;
+    }
+
+    // Check 2: Duplicate Todoist project ID (if linking to existing project)
+    if (client.todoist_project_id && client.todoist_project_id !== '__create__' && existingTodoistIds.includes(client.todoist_project_id)) {
+      logProcessing('MIGRATION_WIZARD', client.client_name, `Skipped - Todoist project already linked to another client`, 'warning');
+      skipped++;
+      continue;
+    }
+
+    // Check 3: Duplicate Gmail label (if using existing label)
+    const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;
+    if (existingLabelsByClientName.has(baseLabelName.toLowerCase())) {
+      const existingClient = existingLabelsByClientName.get(baseLabelName.toLowerCase());
+      logProcessing('MIGRATION_WIZARD', client.client_name, `Skipped - Gmail label "${baseLabelName}" already used by client "${existingClient}"`, 'warning');
       skipped++;
       continue;
     }
