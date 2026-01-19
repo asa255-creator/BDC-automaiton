@@ -1215,7 +1215,6 @@ function testLastMeetingSummary() {
 
   Logger.log('\nDone. Check the Google Doc.');
 }
-}
 
 /**
  * Manual function to retry appending meeting notes for the most recent summary.
