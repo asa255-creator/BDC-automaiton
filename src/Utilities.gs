@@ -1876,56 +1876,78 @@ function scanForMigration() {
     todoistProjects: []
   };
 
-  // Scan Gmail labels for "Client: *" pattern
+  // Scan Gmail labels for client patterns
+  // Supports: "Client: Name", "Client:Name", "Clients: Name", etc.
   try {
     const allLabels = GmailApp.getUserLabels();
     Logger.log(`Total Gmail labels found: ${allLabels.length}`);
 
+    // Log a sample of label names for debugging
+    Logger.log('Sample of first 20 labels:');
+    for (let i = 0; i < Math.min(20, allLabels.length); i++) {
+      Logger.log(`  "${allLabels[i].getName()}"`);
+    }
+
     const labelMap = {}; // Map parent labels to their sub-labels
+    const patterns = [
+      { prefix: 'Client: ', name: 'Client: ' },
+      { prefix: 'Client:', name: 'Client:' },
+      { prefix: 'Clients: ', name: 'Clients: ' },
+      { prefix: 'Clients:', name: 'Clients:' }
+    ];
 
     // First pass: collect all client labels
     for (const label of allLabels) {
       const labelName = label.getName();
 
-      // Debug: log all labels to see what we're working with
-      if (labelName.startsWith('Client:')) {
-        Logger.log(`Found client label: "${labelName}"`);
-      }
+      // Try each pattern
+      for (const pattern of patterns) {
+        if (labelName.startsWith(pattern.prefix)) {
+          Logger.log(`Found label matching pattern "${pattern.name}": "${labelName}"`);
 
-      if (labelName.startsWith('Client: ')) {
-        // Check if this is a parent label or sub-label
-        if (!labelName.includes('/')) {
-          // Parent label
-          const clientName = labelName.replace('Client: ', '');
-          Logger.log(`Adding parent label: ${labelName} (client: ${clientName})`);
-          labelMap[labelName] = {
-            labelName: labelName,
-            clientName: clientName,
-            subLabels: []
-          };
-        } else {
-          // Sub-label - extract parent and sub-label name
-          const parts = labelName.split('/');
-          const parentLabel = parts[0]; // e.g., "Client: Acme Corp"
-          const subLabelName = parts.slice(1).join('/'); // e.g., "Meeting Summaries"
+          // Check if this is a parent label or sub-label
+          if (!labelName.includes('/')) {
+            // Parent label - extract client name
+            const clientName = labelName.substring(pattern.prefix.length).trim();
 
-          Logger.log(`Adding sub-label: ${labelName} (parent: ${parentLabel}, sub: ${subLabelName})`);
+            if (clientName) { // Only add if there's actually a name after the prefix
+              Logger.log(`Adding parent label: ${labelName} (client: ${clientName})`);
+              labelMap[labelName] = {
+                labelName: labelName,
+                clientName: clientName,
+                subLabels: []
+              };
+            }
+          } else {
+            // Sub-label - extract parent and sub-label name
+            const parts = labelName.split('/');
+            const parentLabel = parts[0];
+            const subLabelName = parts.slice(1).join('/');
 
-          // Ensure parent exists in map
-          if (!labelMap[parentLabel]) {
-            const clientName = parentLabel.replace('Client: ', '');
-            labelMap[parentLabel] = {
-              labelName: parentLabel,
-              clientName: clientName,
-              subLabels: []
-            };
+            Logger.log(`Adding sub-label: ${labelName} (parent: ${parentLabel}, sub: ${subLabelName})`);
+
+            // Ensure parent exists in map
+            if (!labelMap[parentLabel]) {
+              const clientName = parentLabel.substring(pattern.prefix.length).trim();
+              if (clientName) {
+                labelMap[parentLabel] = {
+                  labelName: parentLabel,
+                  clientName: clientName,
+                  subLabels: []
+                };
+              }
+            }
+
+            // Add sub-label to parent if parent exists
+            if (labelMap[parentLabel]) {
+              labelMap[parentLabel].subLabels.push({
+                fullLabelName: labelName,
+                subLabelName: subLabelName
+              });
+            }
           }
 
-          // Add sub-label to parent
-          labelMap[parentLabel].subLabels.push({
-            fullLabelName: labelName,
-            subLabelName: subLabelName
-          });
+          break; // Found a matching pattern, no need to try others
         }
       }
     }
@@ -1933,9 +1955,19 @@ function scanForMigration() {
     // Convert map to array
     discovered.gmailLabels = Object.values(labelMap);
     Logger.log(`Total client labels discovered: ${discovered.gmailLabels.length}`);
-    discovered.gmailLabels.forEach(function(label) {
-      Logger.log(`  - ${label.labelName} with ${label.subLabels.length} sub-labels`);
-    });
+
+    if (discovered.gmailLabels.length === 0) {
+      Logger.log('');
+      Logger.log('No client labels found!');
+      Logger.log('Expected label patterns: "Client: ClientName", "Client:ClientName", "Clients: ClientName"');
+      Logger.log('If you have existing client labels with a different naming pattern, you may need to:');
+      Logger.log('1. Rename them to match "Client: ClientName" format, OR');
+      Logger.log('2. Add clients manually to Client_Registry sheet');
+    } else {
+      discovered.gmailLabels.forEach(function(label) {
+        Logger.log(`  - ${label.labelName} with ${label.subLabels.length} sub-labels`);
+      });
+    }
   } catch (error) {
     Logger.log(`ERROR scanning Gmail labels: ${error.message}`);
     Logger.log(`Stack trace: ${error.stack}`);
