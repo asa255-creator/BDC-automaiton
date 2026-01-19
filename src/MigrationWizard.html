@@ -572,8 +572,9 @@
             html += '<span style="font-size: 12px;">Create new "Meeting Summaries" sub-label</span>';
             html += '</label>';
             label.subLabels.forEach(function(subLabel) {
+              const safeValue = subLabel.fullLabelName.replace(/'/g, "\\'");
               html += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
-              html += '<input type="radio" name="summary_' + clientKey + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setSummarySubLabel(\'' + clientKey + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+              html += '<input type="radio" name="summary_' + clientKey + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setSummarySubLabel(\'' + clientKey + '\', \'' + safeValue + '\')">';
               html += '<span style="font-size: 12px;">Use "' + escapeHtml(subLabel.subLabelName) + '"</span>';
               html += '</label>';
             });
@@ -585,8 +586,9 @@
             html += '<span style="font-size: 12px;">Create new "Meeting Agendas" sub-label</span>';
             html += '</label>';
             label.subLabels.forEach(function(subLabel) {
+              const safeValue = subLabel.fullLabelName.replace(/'/g, "\\'");
               html += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
-              html += '<input type="radio" name="agenda_' + clientKey + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setAgendaSubLabel(\'' + clientKey + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+              html += '<input type="radio" name="agenda_' + clientKey + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setAgendaSubLabel(\'' + clientKey + '\', \'' + safeValue + '\')">';
               html += '<span style="font-size: 12px;">Use "' + escapeHtml(subLabel.subLabelName) + '"</span>';
               html += '</label>';
             });
@@ -811,8 +813,9 @@
         summaryHtml += '</label>';
 
         selectedLabel.subLabels.forEach(function(subLabel) {
+          const safeValue = subLabel.fullLabelName.replace(/'/g, "\\'");
           summaryHtml += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
-          summaryHtml += '<input type="radio" name="summary_' + key + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setSummarySubLabel(\'' + key + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+          summaryHtml += '<input type="radio" name="summary_' + key + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setSummarySubLabel(\'' + key + '\', \'' + safeValue + '\')">';
           summaryHtml += '<span style="font-size: 12px;">Use "' + escapeHtml(subLabel.subLabelName) + '"</span>';
           summaryHtml += '</label>';
         });
@@ -825,8 +828,9 @@
         agendaHtml += '</label>';
 
         selectedLabel.subLabels.forEach(function(subLabel) {
+          const safeValue = subLabel.fullLabelName.replace(/'/g, "\\'");
           agendaHtml += '<label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">';
-          agendaHtml += '<input type="radio" name="agenda_' + key + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setAgendaSubLabel(\'' + key + '\', \'' + escapeHtml(subLabel.fullLabelName) + '\')">';
+          agendaHtml += '<input type="radio" name="agenda_' + key + '" value="' + escapeHtml(subLabel.fullLabelName) + '" onchange="setAgendaSubLabel(\'' + key + '\', \'' + safeValue + '\')">';
           agendaHtml += '<span style="font-size: 12px;">Use "' + escapeHtml(subLabel.subLabelName) + '"</span>';
           agendaHtml += '</label>';
         });
