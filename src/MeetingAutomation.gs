@@ -871,7 +871,7 @@ function appendMeetingNotesToDoc(message, client) {
     logProcessing(
       'DOC_APPEND_ERROR',
       client.client_name,
-      `Failed to append meeting notes: ${error.message}`,
+      `Failed to append meeting notes: ${error.message} | URL: ${client.google_doc_url}`,
       'error'
     );
   }
