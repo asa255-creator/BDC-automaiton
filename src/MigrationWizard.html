@@ -425,6 +425,20 @@
     <p style="color: #5f6368; margin-bottom: 16px;">
       Update label mappings for your existing clients. Select new labels from the dropdowns and optionally delete old default labels.
     </p>
+    <div id="duplicateActionBar" style="display: none; background: #fef7e0; padding: 12px; border-radius: 4px; border: 1px solid #fdd663; margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <span style="color: #ea8600; font-weight: 500;">⚠️ Duplicate emails detected</span>
+          <span id="duplicateCount" style="color: #5f6368; font-size: 12px; margin-left: 8px;"></span>
+        </div>
+        <button class="btn btn-secondary" onclick="removeAllDuplicates()" style="background: #ea8600; color: white; border-color: #ea8600;">
+          Remove All Duplicate Emails
+        </button>
+      </div>
+      <div style="font-size: 11px; color: #5f6368; margin-top: 8px;">
+        This will keep each email on the first client (alphabetically) and remove from all others
+      </div>
+    </div>
     <div id="reviewClientList"></div>
     <div class="buttons">
       <button class="btn btn-secondary" onclick="goToModeSelect()">Back</button>
@@ -617,7 +631,61 @@
       }
 
       document.getElementById('reviewClientList').innerHTML = html;
+
+      // Check if there are any duplicates and show the action bar
+      let totalDuplicates = 0;
+      for (const client of reviewData.clients) {
+        if (client.duplicateEmails && client.duplicateEmails.length > 0) {
+          totalDuplicates += client.duplicateEmails.length;
+        }
+      }
+
+      if (totalDuplicates > 0) {
+        document.getElementById('duplicateActionBar').style.display = 'block';
+        document.getElementById('duplicateCount').textContent = `(${totalDuplicates} duplicate email(s) found)`;
+      } else {
+        document.getElementById('duplicateActionBar').style.display = 'none';
+      }
+
       document.getElementById('stepReview').style.display = 'block';
+    }
+
+    function removeAllDuplicates() {
+      if (!reviewData || !reviewData.clients) return;
+
+      // Build a map of email -> list of clients that have it
+      const emailToClients = {};
+      for (const client of reviewData.clients) {
+        if (client.duplicateEmails && client.duplicateEmails.length > 0) {
+          for (const dup of client.duplicateEmails) {
+            const normalizedEmail = dup.email.toLowerCase().trim();
+            if (!emailToClients[normalizedEmail]) {
+              emailToClients[normalizedEmail] = [];
+            }
+            emailToClients[normalizedEmail].push(client.client_name);
+          }
+        }
+      }
+
+      // For each duplicate email, keep it on the first client alphabetically
+      let removedCount = 0;
+      for (const email in emailToClients) {
+        const clients = emailToClients[email].sort();
+        const keeperClient = clients[0];
+
+        // Mark the keeper
+        emailKeepers[email] = keeperClient;
+
+        // Check the checkbox for the keeper
+        const keeperCheckbox = document.getElementById(`keep_${keeperClient}_${email}`);
+        if (keeperCheckbox) {
+          keeperCheckbox.checked = true;
+        }
+
+        removedCount++;
+      }
+
+      showStatus(`Will keep ${removedCount} duplicate email(s) on their first client and remove from others`, 'success');
     }
 
     function updateLabelSelection(key, type, value) {
