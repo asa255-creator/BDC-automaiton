@@ -585,48 +585,22 @@ function getPromptModel(promptKey) {
 }
 
 /**
- * Maps model tier to actual model ID using available models from API.
- *
- * @param {string} tier - The model tier ('haiku', 'sonnet', 'opus')
- * @returns {string} The actual Claude model ID
- */
-function getModelIdForTier(tier) {
-  // Fetch available models (uses cache if available)
-  const availableModels = fetchAvailableModelsFromAPI(false);
-
-  // Normalize tier
-  const normalizedTier = (tier || 'haiku').toLowerCase();
-
-  // Find the first model that matches the tier in its ID or name
-  const matchedModel = availableModels.find(model => {
-    const modelId = model.id.toLowerCase();
-    const modelName = model.name.toLowerCase();
-    return modelId.includes(normalizedTier) || modelName.includes(normalizedTier);
-  });
-
-  if (matchedModel) {
-    return matchedModel.id;
-  }
-
-  // Fallback: if no match found, return first available model or hardcoded haiku
-  if (availableModels.length > 0) {
-    Logger.log(`No ${normalizedTier} model found, using ${availableModels[0].id}`);
-    return availableModels[0].id;
-  }
-
-  // Last resort fallback
-  return 'claude-3-haiku-20240307';
-}
-
-/**
- * Gets the full model ID for a prompt (resolves tier to actual model ID).
+ * Gets the full model ID for a prompt from the Prompts sheet.
+ * The model_preference column stores the complete model ID (e.g., "claude-3-haiku-20240307").
  *
  * @param {string} promptKey - The prompt key
  * @returns {string} The actual model ID to use
  */
 function getModelForPrompt(promptKey) {
-  const tier = getPromptModel(promptKey);
-  return getModelIdForTier(tier);
+  const modelId = getPromptModel(promptKey);
+
+  // If the stored value looks like a full model ID, use it directly
+  if (modelId && modelId.startsWith('claude-')) {
+    return modelId;
+  }
+
+  // Fallback for legacy tier-based storage or missing values
+  return 'claude-3-haiku-20240307';
 }
 
 /**
