@@ -108,7 +108,7 @@ function generateAgendaForEvent(event, client) {
     return;
   }
 
-  // Send agenda email
+  // Send agenda email (will apply label from Client Registry)
   sendAgendaEmail(event, client, agendaContent);
 
   // Append to client's Google Doc
@@ -433,7 +433,20 @@ function generateAgendaWithClaude(event, client, context) {
 
     if (result.content && result.content.length > 0) {
       logProcessing('AGENDA_GEN', client.client_name, 'Successfully generated agenda with Claude', 'success');
-      return result.content[0].text;
+      let content = result.content[0].text;
+
+      // Strip markdown code fences if present (Claude sometimes wraps HTML in ```html ... ```)
+      content = content.replace(/^```html\s*/i, '').replace(/\s*```$/, '');
+      content = content.trim();
+
+      // Extract body content from full HTML document if present
+      // Claude sometimes returns full HTML with <!DOCTYPE>, <head>, <style>, etc.
+      const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      if (bodyMatch) {
+        content = bodyMatch[1].trim();
+      }
+
+      return content;
     }
 
     logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty content', 'error');
@@ -559,6 +572,98 @@ function sendAgendaEmail(event, client, agendaContent) {
   });
 
   Logger.log(`Sent agenda email for: ${event.getTitle()}`);
+
+  // Apply label from Client Registry immediately after sending
+  try {
+    const labelName = client.meeting_agendas_label;
+    if (labelName) {
+      // Search for the just-sent email
+      const query = `from:me to:me subject:"${subject}" newer_than:5m`;
+      Utilities.sleep(2000); // Wait 2 seconds for email to appear in Gmail
+      const threads = GmailApp.search(query, 0, 1);
+
+      if (threads.length > 0) {
+        const label = createLabelIfNotExists(labelName);
+        threads[0].addLabel(label);
+        logProcessing('AGENDA_EMAIL', client.client_name, `Applied label: ${labelName}`, 'success');
+      } else {
+        logProcessing('AGENDA_EMAIL', client.client_name, 'Could not find sent email to label', 'warning');
+      }
+    }
+  } catch (error) {
+    logProcessing('AGENDA_EMAIL', client.client_name, `Failed to apply label: ${error.message}`, 'warning');
+  }
+}
+
+/**
+ * Converts HTML content to plain text suitable for Google Docs.
+ * Strips HTML tags and converts common entities to readable text.
+ *
+ * @param {string} html - The HTML content
+ * @returns {string} Plain text version
+ */
+function htmlToPlainText(html) {
+  if (!html) return '';
+
+  let text = html;
+
+  // First, aggressively remove everything in <head>, <style>, and <script> tags
+  // Use global flag and handle multiline content
+  text = text.replace(/<head[\s\S]*?<\/head>/gi, '');
+  text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
+  text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
+
+  // Strip DOCTYPE and root HTML tags
+  text = text.replace(/<!DOCTYPE[^>]*>/gi, '');
+  text = text.replace(/<html[^>]*>/gi, '');
+  text = text.replace(/<\/html>/gi, '');
+  text = text.replace(/<body[^>]*>/gi, '');
+  text = text.replace(/<\/body>/gi, '');
+
+  // Extract just body content if body tags still exist (redundant safety check)
+  const bodyMatch = text.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  if (bodyMatch) {
+    text = bodyMatch[1];
+  }
+
+  // Convert block elements to newlines BEFORE stripping tags
+  text = text.replace(/<\/p>/gi, '\n\n');
+  text = text.replace(/<p[^>]*>/gi, '');
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/div>/gi, '\n');
+  text = text.replace(/<div[^>]*>/gi, '');
+  text = text.replace(/<\/h[1-6]>/gi, '\n\n');
+  text = text.replace(/<h[1-6][^>]*>/gi, '');
+
+  // Convert list items
+  text = text.replace(/<\/li>/gi, '\n');
+  text = text.replace(/<li[^>]*>/gi, '  • ');
+  text = text.replace(/<\/ul>/gi, '\n');
+  text = text.replace(/<ul[^>]*>/gi, '');
+  text = text.replace(/<\/ol>/gi, '\n');
+  text = text.replace(/<ol[^>]*>/gi, '');
+
+  // Strip ALL remaining HTML tags (including any stray style/script that weren't caught)
+  text = text.replace(/<[^>]+>/g, '');
+
+  // Decode common HTML entities
+  text = text.replace(/&nbsp;/g, ' ');
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&#39;/g, "'");
+  text = text.replace(/&mdash;/g, '—');
+  text = text.replace(/&ndash;/g, '–');
+  text = text.replace(/&bull;/g, '•');
+
+  // Clean up excessive whitespace
+  text = text.replace(/\n{3,}/g, '\n\n'); // Max 2 consecutive newlines
+  text = text.replace(/[ \t]+/g, ' '); // Multiple spaces to single space
+  text = text.replace(/^\s+/gm, ''); // Remove leading whitespace from each line
+  text = text.trim();
+
+  return text;
 }
 
 /**
@@ -567,7 +672,7 @@ function sendAgendaEmail(event, client, agendaContent) {
  *
  * @param {CalendarEvent} event - The calendar event
  * @param {Object} client - The client object
- * @param {string} agendaContent - The generated agenda
+ * @param {string} agendaContent - The generated agenda (HTML format)
  */
 function appendAgendaToDoc(event, client, agendaContent) {
   if (!client.google_doc_url) {
@@ -582,6 +687,9 @@ function appendAgendaToDoc(event, client, agendaContent) {
 
     const formattedDate = formatDate(event.getStartTime());
 
+    // Convert HTML to plain text for the doc
+    const plainTextContent = htmlToPlainText(agendaContent);
+
     // Add blank line before for separation
     body.appendParagraph('');
 
@@ -595,8 +703,8 @@ function appendAgendaToDoc(event, client, agendaContent) {
     // Add content delimiter
     body.appendParagraph('───────────────────────────────────────────────────────────');
 
-    // Add agenda content
-    body.appendParagraph(agendaContent);
+    // Add agenda content as plain text
+    body.appendParagraph(plainTextContent);
 
     // Add end delimiter
     body.appendParagraph('───────────────────────────────────────────────────────────');

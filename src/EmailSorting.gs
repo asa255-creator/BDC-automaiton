@@ -91,8 +91,13 @@ function syncClientLabels(client) {
       createGmailApiFilter(fromCriteria, baseLabelName);
     }
 
-    // Filter for sent meeting summaries to client (uses client name in subject)
+    // Filter for outgoing emails to client contacts
     const toCriteria = buildToCriteria(contacts);
+    if (toCriteria) {
+      createGmailApiFilter(toCriteria, baseLabelName);
+    }
+
+    // Filter for sent meeting summaries to client (uses client name in subject)
     if (toCriteria) {
       const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
       const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
