@@ -108,35 +108,9 @@ function generateDailyOutlookWithClaude(data, date) {
     const result = JSON.parse(response.getContentText());
 
     if (result.content && result.content.length > 0) {
-      let content = result.content[0].text;
-
-      if (!content || content.trim().length === 0) {
-        Logger.log('Claude returned empty text content for daily outlook');
-        return null;
-      }
-
-      // Strip markdown code fences if present
-      content = content.replace(/^```html\s*/i, '').replace(/\s*```$/, '');
-      content = content.replace(/^```\s*/i, '').replace(/\s*```$/, '');
-      content = content.trim();
-
-      // Extract body content from full HTML document if present
-      const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-      if (bodyMatch && bodyMatch[1].trim().length > 0) {
-        content = bodyMatch[1].trim();
-        Logger.log('Extracted body content from full HTML document (daily outlook)');
-      }
-
-      if (!content || content.trim().length < 10) {
-        Logger.log(`Daily outlook content is too short or empty: "${content}"`);
-        return null;
-      }
-
-      Logger.log(`Generated daily outlook content (${content.length} chars)`);
-      return content;
+      return result.content[0].text;
     }
 
-    Logger.log('Claude returned empty content array for daily outlook');
     return null;
 
   } catch (error) {
@@ -557,35 +531,9 @@ function generateWeeklyOutlookWithClaude(data, startDate) {
     const result = JSON.parse(response.getContentText());
 
     if (result.content && result.content.length > 0) {
-      let content = result.content[0].text;
-
-      if (!content || content.trim().length === 0) {
-        Logger.log('Claude returned empty text content for weekly outlook');
-        return null;
-      }
-
-      // Strip markdown code fences if present
-      content = content.replace(/^```html\s*/i, '').replace(/\s*```$/, '');
-      content = content.replace(/^```\s*/i, '').replace(/\s*```$/, '');
-      content = content.trim();
-
-      // Extract body content from full HTML document if present
-      const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-      if (bodyMatch && bodyMatch[1].trim().length > 0) {
-        content = bodyMatch[1].trim();
-        Logger.log('Extracted body content from full HTML document (weekly outlook)');
-      }
-
-      if (!content || content.trim().length < 10) {
-        Logger.log(`Weekly outlook content is too short or empty: "${content}"`);
-        return null;
-      }
-
-      Logger.log(`Generated weekly outlook content (${content.length} chars)`);
-      return content;
+      return result.content[0].text;
     }
 
-    Logger.log('Claude returned empty content array for weekly outlook');
     return null;
 
   } catch (error) {

@@ -723,8 +723,8 @@ function htmlToPlainText(html) {
   text = text.replace(/&hellip;/gi, '…');
   text = text.replace(/&ldquo;/gi, '"');
   text = text.replace(/&rdquo;/gi, '"');
-  text = text.replace(/&lsquo;/gi, ''');
-  text = text.replace(/&rsquo;/gi, ''');
+  text = text.replace(/&lsquo;/gi, '\u2018');
+  text = text.replace(/&rsquo;/gi, '\u2019');
   text = text.replace(/&euro;/gi, '€');
   text = text.replace(/&pound;/gi, '£');
   text = text.replace(/&yen;/gi, '¥');
