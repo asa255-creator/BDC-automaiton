@@ -142,6 +142,19 @@ function createMeetingSummaryDraft(payload, client) {
   }
   body += `</div>`;
 
+  // Ensure proper UTF-8 encoding by wrapping in HTML structure with charset meta tags
+  const fullHtmlBody = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Meeting Summary</title>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+
   // Get current user's email to exclude from recipients
   const myEmail = (Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || '').toLowerCase();
 
@@ -155,9 +168,9 @@ function createMeetingSummaryDraft(payload, client) {
     ? participantEmails.join(', ')
     : myEmail; // Fallback to own email if no other participants
 
-  // Create draft
+  // Create draft with proper UTF-8 encoding
   const draft = GmailApp.createDraft(toAddress, subject, '', {
-    htmlBody: body
+    htmlBody: fullHtmlBody
   });
 
   Logger.log(`Created draft with ID: ${draft.getId()}`);
@@ -1169,6 +1182,109 @@ function loadLatestFathomMeeting() {
   } catch (error) {
     ui.alert('Error', `Failed to load meeting: ${error.message}`, ui.ButtonSet.OK);
     Logger.log(`loadLatestFathomMeeting error: ${error.message}`);
+  }
+}
+
+/**
+ * Polls Fathom API for new meetings and processes them automatically.
+ * This is a backup mechanism in case webhooks fail.
+ * Should be called periodically (e.g., every 30 minutes).
+ */
+function pollFathomForNewMeetings() {
+  logProcessing('FATHOM_POLL', null, 'Starting Fathom polling check', 'info');
+
+  const apiKey = PropertiesService.getScriptProperties().getProperty('FATHOM_API_KEY');
+
+  if (!apiKey) {
+    logProcessing('FATHOM_POLL', null, 'Fathom API key not configured - skipping poll', 'warning');
+    return;
+  }
+
+  try {
+    // Fetch latest meetings from Fathom
+    const url = 'https://api.fathom.ai/external/v1/meetings?include_transcript=true&include_summary=true&include_action_items=true&limit=10';
+
+    const options = {
+      method: 'GET',
+      headers: {
+        'X-Api-Key': apiKey,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      logProcessing('FATHOM_POLL', null, `API error (${responseCode})`, 'error');
+      return;
+    }
+
+    const data = JSON.parse(response.getContentText());
+    const meetings = data.items || (Array.isArray(data) ? data : []);
+
+    if (meetings.length === 0) {
+      logProcessing('FATHOM_POLL', null, 'No meetings found', 'info');
+      return;
+    }
+
+    logProcessing('FATHOM_POLL', null, `Found ${meetings.length} recent meetings`, 'info');
+
+    // Check each meeting to see if we've already processed it
+    let newMeetingsCount = 0;
+    const cache = CacheService.getScriptCache();
+
+    for (const meeting of meetings) {
+      const meetingId = meeting.id || meeting.meeting_id;
+
+      if (!meetingId) {
+        continue; // Skip meetings without IDs
+      }
+
+      // Check if we've already processed this meeting
+      const cacheKey = `fathom_processed_${meetingId}`;
+      const alreadyProcessed = cache.get(cacheKey);
+
+      if (alreadyProcessed) {
+        continue; // Skip already processed meetings
+      }
+
+      // Check if meeting is recent (within last 24 hours)
+      const meetingDate = new Date(meeting.created_at || meeting.scheduled_start_time);
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      if (meetingDate < twentyFourHoursAgo) {
+        // Mark old meetings as processed to avoid checking them again
+        cache.put(cacheKey, 'true', 604800); // Cache for 7 days
+        continue;
+      }
+
+      // Convert to webhook payload format and process
+      try {
+        const payload = convertFathomMeetingToPayload(meeting);
+        logProcessing('FATHOM_POLL', null, `Processing new meeting: ${payload.meeting_title}`, 'info');
+
+        const result = processFathomWebhook(payload);
+
+        // Mark as processed
+        cache.put(cacheKey, 'true', 604800); // Cache for 7 days
+        newMeetingsCount++;
+
+        logProcessing('FATHOM_POLL', result.client_name, `Successfully processed: ${payload.meeting_title}`, 'success');
+      } catch (error) {
+        logProcessing('FATHOM_POLL', null, `Failed to process meeting ${meetingId}: ${error.message}`, 'error');
+      }
+    }
+
+    if (newMeetingsCount > 0) {
+      logProcessing('FATHOM_POLL', null, `Processed ${newMeetingsCount} new meetings`, 'success');
+    } else {
+      logProcessing('FATHOM_POLL', null, 'No new meetings to process', 'info');
+    }
+
+  } catch (error) {
+    logProcessing('FATHOM_POLL', null, `Polling failed: ${error.message}`, 'error');
   }
 }
 

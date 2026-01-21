@@ -435,21 +435,35 @@ function generateAgendaWithClaude(event, client, context) {
       logProcessing('AGENDA_GEN', client.client_name, 'Successfully generated agenda with Claude', 'success');
       let content = result.content[0].text;
 
+      if (!content || content.trim().length === 0) {
+        logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty text content', 'error');
+        return null;
+      }
+
       // Strip markdown code fences if present (Claude sometimes wraps HTML in ```html ... ```)
       content = content.replace(/^```html\s*/i, '').replace(/\s*```$/, '');
+      content = content.replace(/^```\s*/i, '').replace(/\s*```$/, '');
       content = content.trim();
 
       // Extract body content from full HTML document if present
       // Claude sometimes returns full HTML with <!DOCTYPE>, <head>, <style>, etc.
       const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-      if (bodyMatch) {
+      if (bodyMatch && bodyMatch[1].trim().length > 0) {
         content = bodyMatch[1].trim();
+        logProcessing('AGENDA_GEN', client.client_name, 'Extracted body content from full HTML document', 'info');
       }
 
+      // If content is still empty or too short after extraction, log error
+      if (!content || content.trim().length < 10) {
+        logProcessing('AGENDA_ERROR', client.client_name, `Generated agenda is too short or empty: "${content}"`, 'error');
+        return null;
+      }
+
+      logProcessing('AGENDA_GEN', client.client_name, `Generated agenda content (${content.length} chars)`, 'success');
       return content;
     }
 
-    logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty content', 'error');
+    logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty content array', 'error');
     return null;
 
   } catch (error) {
@@ -560,15 +574,38 @@ function sendAgendaEmail(event, client, agendaContent) {
   // Get email template from sheet
   const template = getPrompt('AGENDA_EMAIL_TEMPLATE');
 
-  const body = applyTemplate(template, {
+  let body = applyTemplate(template, {
     event_title: event.getTitle(),
     client_name: client.client_name,
     date_time: eventDateTime,
     agenda_content: agendaContent
   });
 
+  // Ensure proper UTF-8 encoding by adding meta tag if not present
+  if (!body.match(/<meta[^>]+charset/i)) {
+    // If body doesn't have HTML structure, wrap it
+    if (!body.match(/<html/i)) {
+      body = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+</head>
+<body>
+${body}
+</body>
+</html>`;
+    } else {
+      // Insert meta tag in existing HTML
+      body = body.replace(/<head[^>]*>/i, match => {
+        return match + '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">';
+      });
+    }
+  }
+
   GmailApp.sendEmail(userEmail, subject, '', {
-    htmlBody: body
+    htmlBody: body,
+    charset: 'UTF-8'
   });
 
   Logger.log(`Sent agenda email for: ${event.getTitle()}`);
@@ -643,19 +680,58 @@ function htmlToPlainText(html) {
   text = text.replace(/<\/ol>/gi, '\n');
   text = text.replace(/<ol[^>]*>/gi, '');
 
-  // Strip ALL remaining HTML tags (including any stray style/script that weren't caught)
+  // Strip ALL remaining HTML tags - including partial/malformed tags
+  // First pass: Remove complete tags
   text = text.replace(/<[^>]+>/g, '');
 
-  // Decode common HTML entities
-  text = text.replace(/&nbsp;/g, ' ');
-  text = text.replace(/&amp;/g, '&');
-  text = text.replace(/&lt;/g, '<');
-  text = text.replace(/&gt;/g, '>');
-  text = text.replace(/&quot;/g, '"');
-  text = text.replace(/&#39;/g, "'");
-  text = text.replace(/&mdash;/g, '—');
-  text = text.replace(/&ndash;/g, '–');
-  text = text.replace(/&bull;/g, '•');
+  // Second pass: Remove any remaining partial tags (handles malformed HTML like "</h" or "<div")
+  // This catches incomplete opening tags
+  text = text.replace(/<[^>]*$/gm, '');
+  // This catches incomplete closing tags or any remaining angle brackets with text
+  text = text.replace(/<\/?[a-zA-Z][^>]*/g, '');
+  // Clean up any stray angle brackets
+  text = text.replace(/[<>]/g, '');
+
+  // Decode ALL HTML entities - including numeric ones
+  // First, decode numeric entities (&#123; or &#x1F4; format)
+  text = text.replace(/&#(\d+);/g, (match, dec) => {
+    try {
+      return String.fromCharCode(parseInt(dec, 10));
+    } catch (e) {
+      return match;
+    }
+  });
+  text = text.replace(/&#x([0-9A-Fa-f]+);/g, (match, hex) => {
+    try {
+      return String.fromCharCode(parseInt(hex, 16));
+    } catch (e) {
+      return match;
+    }
+  });
+
+  // Decode common named HTML entities
+  text = text.replace(/&nbsp;/gi, ' ');
+  text = text.replace(/&amp;/gi, '&');
+  text = text.replace(/&lt;/gi, '<');
+  text = text.replace(/&gt;/gi, '>');
+  text = text.replace(/&quot;/gi, '"');
+  text = text.replace(/&#39;/gi, "'");
+  text = text.replace(/&apos;/gi, "'");
+  text = text.replace(/&mdash;/gi, '—');
+  text = text.replace(/&ndash;/gi, '–');
+  text = text.replace(/&bull;/gi, '•');
+  text = text.replace(/&hellip;/gi, '…');
+  text = text.replace(/&ldquo;/gi, '"');
+  text = text.replace(/&rdquo;/gi, '"');
+  text = text.replace(/&lsquo;/gi, ''');
+  text = text.replace(/&rsquo;/gi, ''');
+  text = text.replace(/&euro;/gi, '€');
+  text = text.replace(/&pound;/gi, '£');
+  text = text.replace(/&yen;/gi, '¥');
+  text = text.replace(/&cent;/gi, '¢');
+  text = text.replace(/&copy;/gi, '©');
+  text = text.replace(/&reg;/gi, '®');
+  text = text.replace(/&trade;/gi, '™');
 
   // Clean up excessive whitespace
   text = text.replace(/\n{3,}/g, '\n\n'); // Max 2 consecutive newlines

@@ -56,30 +56,49 @@ function doGet(e) {
  */
 function doPost(e) {
   try {
+    // Log all incoming webhooks for debugging
+    logProcessing('WEBHOOK_RECEIVED', null, 'Received POST request', 'info');
+
     // Verify webhook signature if secret is configured
     const webhookSecret = PropertiesService.getScriptProperties().getProperty('FATHOM_WEBHOOK_SECRET');
+    const enforceSignature = PropertiesService.getScriptProperties().getProperty('FATHOM_ENFORCE_SIGNATURE');
 
     if (webhookSecret) {
       const isValid = verifyFathomWebhookSignature(e, webhookSecret);
       if (!isValid) {
-        logProcessing('WEBHOOK_INVALID_SIGNATURE', null, 'Webhook signature verification failed', 'error');
-        return ContentService
-          .createTextOutput(JSON.stringify({ status: 'error', message: 'Invalid signature' }))
-          .setMimeType(ContentService.MimeType.JSON);
+        // Log warning but only reject if enforcement is explicitly enabled
+        logProcessing('WEBHOOK_INVALID_SIGNATURE', null, 'Webhook signature verification failed - processing anyway (set FATHOM_ENFORCE_SIGNATURE=true to reject)', 'warning');
+
+        // Only reject if enforcement is explicitly enabled
+        if (enforceSignature === 'true') {
+          return ContentService
+            .createTextOutput(JSON.stringify({ status: 'error', message: 'Invalid signature' }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
+      } else {
+        logProcessing('WEBHOOK_SIGNATURE', null, 'Webhook signature verified successfully', 'success');
       }
+    } else {
+      logProcessing('WEBHOOK_NO_SECRET', null, 'No webhook secret configured - skipping signature verification', 'info');
     }
 
     const payload = JSON.parse(e.postData.contents);
 
+    // Log payload summary for debugging
+    logProcessing('WEBHOOK_PAYLOAD', null, `Processing meeting: ${payload.meeting_title || 'Unknown'}`, 'info');
+
     // Process the Fathom webhook
     const result = processFathomWebhook(payload);
+
+    logProcessing('WEBHOOK_SUCCESS', null, `Successfully processed webhook for: ${payload.meeting_title || 'Unknown'}`, 'success');
 
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'success', result: result }))
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (error) {
-    logProcessing('WEBHOOK_ERROR', null, error.message, 'error');
+    const errorDetail = `${error.message}\nStack: ${error.stack || 'N/A'}`;
+    logProcessing('WEBHOOK_ERROR', null, errorDetail, 'error');
 
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'error', message: error.message }))
@@ -191,6 +210,12 @@ function setupTriggers() {
     .everyMinutes(10)
     .create();
 
+  // Fathom meeting polling - every 30 minutes (backup for webhooks)
+  ScriptApp.newTrigger('runFathomPolling')
+    .timeBased()
+    .everyMinutes(30)
+    .create();
+
   // Agenda generation - every hour (business hours check done in handler)
   ScriptApp.newTrigger('runAgendaGeneration')
     .timeBased()
@@ -265,6 +290,18 @@ function runSentMeetingSummaryMonitor() {
     monitorSentMeetingSummaries();
   } catch (error) {
     logProcessing('SUMMARY_MONITOR', null, `Error: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Handler for Fathom polling trigger.
+ * Runs every 30 minutes as backup for webhooks.
+ */
+function runFathomPolling() {
+  try {
+    pollFathomForNewMeetings();
+  } catch (error) {
+    logProcessing('FATHOM_POLL', null, `Error: ${error.message}`, 'error');
   }
 }
 

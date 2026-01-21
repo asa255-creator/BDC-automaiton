@@ -108,9 +108,35 @@ function generateDailyOutlookWithClaude(data, date) {
     const result = JSON.parse(response.getContentText());
 
     if (result.content && result.content.length > 0) {
-      return result.content[0].text;
+      let content = result.content[0].text;
+
+      if (!content || content.trim().length === 0) {
+        Logger.log('Claude returned empty text content for daily outlook');
+        return null;
+      }
+
+      // Strip markdown code fences if present
+      content = content.replace(/^```html\s*/i, '').replace(/\s*```$/, '');
+      content = content.replace(/^```\s*/i, '').replace(/\s*```$/, '');
+      content = content.trim();
+
+      // Extract body content from full HTML document if present
+      const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      if (bodyMatch && bodyMatch[1].trim().length > 0) {
+        content = bodyMatch[1].trim();
+        Logger.log('Extracted body content from full HTML document (daily outlook)');
+      }
+
+      if (!content || content.trim().length < 10) {
+        Logger.log(`Daily outlook content is too short or empty: "${content}"`);
+        return null;
+      }
+
+      Logger.log(`Generated daily outlook content (${content.length} chars)`);
+      return content;
     }
 
+    Logger.log('Claude returned empty content array for daily outlook');
     return null;
 
   } catch (error) {
@@ -531,9 +557,35 @@ function generateWeeklyOutlookWithClaude(data, startDate) {
     const result = JSON.parse(response.getContentText());
 
     if (result.content && result.content.length > 0) {
-      return result.content[0].text;
+      let content = result.content[0].text;
+
+      if (!content || content.trim().length === 0) {
+        Logger.log('Claude returned empty text content for weekly outlook');
+        return null;
+      }
+
+      // Strip markdown code fences if present
+      content = content.replace(/^```html\s*/i, '').replace(/\s*```$/, '');
+      content = content.replace(/^```\s*/i, '').replace(/\s*```$/, '');
+      content = content.trim();
+
+      // Extract body content from full HTML document if present
+      const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      if (bodyMatch && bodyMatch[1].trim().length > 0) {
+        content = bodyMatch[1].trim();
+        Logger.log('Extracted body content from full HTML document (weekly outlook)');
+      }
+
+      if (!content || content.trim().length < 10) {
+        Logger.log(`Weekly outlook content is too short or empty: "${content}"`);
+        return null;
+      }
+
+      Logger.log(`Generated weekly outlook content (${content.length} chars)`);
+      return content;
     }
 
+    Logger.log('Claude returned empty content array for weekly outlook');
     return null;
 
   } catch (error) {
@@ -1067,8 +1119,32 @@ function isTaskOverdue(task, referenceDate) {
 function sendOutlookEmail(subject, htmlBody, labelName) {
   const userEmail = getCurrentUserEmail();
 
+  // Ensure proper UTF-8 encoding by adding meta tag if not present
+  let body = htmlBody;
+  if (!body.match(/<meta[^>]+charset/i)) {
+    // If body doesn't have HTML structure, wrap it
+    if (!body.match(/<html/i)) {
+      body = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+</head>
+<body>
+${body}
+</body>
+</html>`;
+    } else {
+      // Insert meta tag in existing HTML
+      body = body.replace(/<head[^>]*>/i, match => {
+        return match + '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">';
+      });
+    }
+  }
+
   GmailApp.sendEmail(userEmail, subject, '', {
-    htmlBody: htmlBody
+    htmlBody: body,
+    charset: 'UTF-8'
   });
 
   // Apply label to the sent email
