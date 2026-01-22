@@ -211,19 +211,12 @@ function setupTriggers() {
     .everyMinutes(10)
     .create();
 
-  // Fathom meeting polling - every 30 minutes (backup for webhooks)
-  // Only create if explicitly enabled in settings
-  const props = PropertiesService.getScriptProperties();
-  const pollingEnabled = props.getProperty('FATHOM_ENABLE_POLLING') === 'true';
-  if (pollingEnabled) {
-    ScriptApp.newTrigger('runFathomPolling')
-      .timeBased()
-      .everyMinutes(30)
-      .create();
-    Logger.log('Fathom polling trigger created (enabled in settings)');
-  } else {
-    Logger.log('Fathom polling trigger skipped (disabled in settings)');
-  }
+  // Fathom API polling - every 30 minutes (PRIMARY METHOD)
+  // Automatically fetches meetings from Fathom API
+  ScriptApp.newTrigger('runFathomPolling')
+    .timeBased()
+    .everyMinutes(30)
+    .create();
 
   // Agenda generation - every hour (business hours check done in handler)
   ScriptApp.newTrigger('runAgendaGeneration')
@@ -340,20 +333,11 @@ function runSentMeetingSummaryMonitor() {
 }
 
 /**
- * Handler for Fathom polling trigger.
- * Runs every 30 minutes as backup for webhooks (if enabled).
+ * Handler for Fathom API polling trigger.
+ * Runs every 30 minutes - PRIMARY METHOD for fetching meetings.
  */
 function runFathomPolling() {
   try {
-    // Check if polling is enabled
-    const props = PropertiesService.getScriptProperties();
-    const pollingEnabled = props.getProperty('FATHOM_ENABLE_POLLING') === 'true';
-
-    if (!pollingEnabled) {
-      logProcessing('FATHOM_POLL', null, 'Polling is disabled in settings - skipping', 'info');
-      return;
-    }
-
     pollFathomForNewMeetings();
   } catch (error) {
     logProcessing('FATHOM_POLL', null, `Error: ${error.message}`, 'error');

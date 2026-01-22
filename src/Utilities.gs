@@ -1852,7 +1852,6 @@ function getSettingsForEditor() {
   return {
     FATHOM_API_KEY: props.getProperty('FATHOM_API_KEY') || '',
     FATHOM_WEBHOOK_SECRET: props.getProperty('FATHOM_WEBHOOK_SECRET') || '',
-    FATHOM_ENABLE_POLLING: props.getProperty('FATHOM_ENABLE_POLLING') || 'false',
     HUBSPOT_API_KEY: props.getProperty('HUBSPOT_API_KEY') || '',
     TODOIST_API_TOKEN: props.getProperty('TODOIST_API_TOKEN') || '',
     CLAUDE_API_KEY: props.getProperty('CLAUDE_API_KEY') || '',
@@ -1939,27 +1938,6 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.FATHOM_WEBHOOK_SECRET) {
     props.setProperty('FATHOM_WEBHOOK_SECRET', settings.FATHOM_WEBHOOK_SECRET);
-  }
-
-  // Fathom polling setting
-  if (settings.FATHOM_ENABLE_POLLING !== undefined) {
-    const wasEnabled = props.getProperty('FATHOM_ENABLE_POLLING') === 'true';
-    const isEnabled = settings.FATHOM_ENABLE_POLLING === 'true';
-
-    props.setProperty('FATHOM_ENABLE_POLLING', settings.FATHOM_ENABLE_POLLING);
-
-    // If setting changed, update triggers
-    if (wasEnabled !== isEnabled) {
-      if (isEnabled) {
-        // Create the polling trigger
-        createFathomPollingTrigger();
-        logProcessing('SETTINGS', null, 'Fathom polling backup enabled - trigger created', 'info');
-      } else {
-        // Remove the polling trigger
-        removeFathomPollingTrigger();
-        logProcessing('SETTINGS', null, 'Fathom polling backup disabled - trigger removed', 'info');
-      }
-    }
   }
 
   // Track if subject template changed (for filter update)

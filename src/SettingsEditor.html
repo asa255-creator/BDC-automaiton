@@ -310,20 +310,11 @@ Thanks,
 
         <div class="setting-group">
           <div class="setting-label">
-            Webhook Secret
+            Webhook Secret (Optional)
             <span id="fathomWebhookStatus" class="status-badge"></span>
           </div>
-          <div class="setting-description">Get from Fathom when creating a webhook. Used to verify incoming meeting data.</div>
-          <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret">
-        </div>
-
-        <div class="setting-group">
-          <div class="setting-label">Polling Backup</div>
-          <div class="setting-description">Enable automatic polling every 30 minutes to catch meetings that webhooks might miss</div>
-          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
-            <input type="checkbox" id="fathom_enable_polling" style="width: auto;">
-            <span>Enable Fathom polling backup (every 30 minutes)</span>
-          </label>
+          <div class="setting-description">Optional: Add webhook secret if you've configured a Fathom webhook as backup. Get from Fathom Settings > Integrations > Webhooks.</div>
+          <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret (optional)">
         </div>
 
         <div class="section-title">Todoist (Task Management)</div>
@@ -457,7 +448,6 @@ Thanks,
           // Integrations tab
           document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
           document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
-          document.getElementById('fathom_enable_polling').checked = settings.FATHOM_ENABLE_POLLING === 'true';
           document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
@@ -556,7 +546,6 @@ Thanks,
         // Integrations
         FATHOM_API_KEY: document.getElementById('fathom_key').value.trim(),
         FATHOM_WEBHOOK_SECRET: document.getElementById('fathom_webhook_secret').value.trim(),
-        FATHOM_ENABLE_POLLING: document.getElementById('fathom_enable_polling').checked ? 'true' : 'false',
         HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
