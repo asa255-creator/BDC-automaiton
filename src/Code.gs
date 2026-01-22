@@ -16,7 +16,8 @@ const CONFIG = {
     GENERATED_AGENDAS: 'Generated_Agendas',
     PROCESSING_LOG: 'Processing_Log',
     UNMATCHED: 'Unmatched',
-    FOLDERS: 'Folders'
+    FOLDERS: 'Folders',
+    PROCESSED_FATHOM: 'Processed_Fathom_Meetings'
   },
   BUSINESS_HOURS: {
     START: 8,  // 8:00 AM

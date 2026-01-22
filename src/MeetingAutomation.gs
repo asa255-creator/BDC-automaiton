@@ -84,20 +84,31 @@ function createMeetingSummaryDraft(payload, client) {
   const meetingDate = formatDateShort(new Date(payload.meeting_date));
 
   // Build subject and greeting based on whether we have a client
-  const clientName = client ? client.client_name : '[ADD CLIENT NAME]';
+  let subject, body;
 
-  // Get customizable subject template from settings
-  const subjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE')
-    || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
-  const subject = subjectTemplate
-    .replace('{client_name}', clientName)
-    .replace('{meeting_title}', payload.meeting_title)
-    .replace('{date}', meetingDate);
+  if (client) {
+    // CLIENT MEETING: Use client-specific language
+    const clientName = client.client_name;
 
-  // Build email body with greeting that matches subject style
-  let body = `<p>Team ${clientName} -</p>`;
-  body += `<p>Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}.</p>`;
-  body += `<hr/>`;
+    const subjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE')
+      || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+    subject = subjectTemplate
+      .replace('{client_name}', clientName)
+      .replace('{meeting_title}', payload.meeting_title)
+      .replace('{date}', meetingDate);
+
+    body = `<p>Team ${clientName} -</p>`;
+    body += `<p>Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}.</p>`;
+    body += `<hr/>`;
+
+  } else {
+    // NON-CLIENT MEETING: Use generic professional language
+    subject = `Meeting notes: ${payload.meeting_title} (${meetingDate})`;
+
+    body = `<p>Hello -</p>`;
+    body += `<p>Here are the notes from "${payload.meeting_title}" on ${meetingDate}.</p>`;
+    body += `<hr/>`;
+  }
 
   // Add summary - convert markdown to HTML preserving formatting (headings, bold, lists)
   const summaryHtml = markdownToHtml(payload.summary || 'No summary provided.');
@@ -1186,6 +1197,66 @@ function loadLatestFathomMeeting() {
 }
 
 /**
+ * Checks if a Fathom meeting has already been processed.
+ * Uses spreadsheet tracking instead of cache for visibility.
+ *
+ * @param {string} meetingId - The Fathom meeting ID
+ * @returns {boolean} True if already processed
+ */
+function isFathomMeetingProcessed(meetingId) {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(CONFIG.SHEETS.PROCESSED_FATHOM);
+
+  // Create sheet if it doesn't exist
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEETS.PROCESSED_FATHOM);
+    sheet.appendRow(['Meeting ID', 'Meeting Title', 'Meeting Date', 'Processed At', 'Client Name', 'Draft ID']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  }
+
+  const data = sheet.getDataRange().getValues();
+
+  // Check if meeting ID exists in column A (skip header row)
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === meetingId) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Records that a Fathom meeting has been processed.
+ *
+ * @param {string} meetingId - The Fathom meeting ID
+ * @param {string} meetingTitle - The meeting title
+ * @param {string} meetingDate - The meeting date
+ * @param {string|null} clientName - The matched client name (or null)
+ * @param {string} draftId - The created draft ID
+ */
+function recordFathomMeetingProcessed(meetingId, meetingTitle, meetingDate, clientName, draftId) {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(CONFIG.SHEETS.PROCESSED_FATHOM);
+
+  // Create sheet if it doesn't exist
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEETS.PROCESSED_FATHOM);
+    sheet.appendRow(['Meeting ID', 'Meeting Title', 'Meeting Date', 'Processed At', 'Client Name', 'Draft ID']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  }
+
+  sheet.appendRow([
+    meetingId,
+    meetingTitle,
+    meetingDate,
+    new Date().toISOString(),
+    clientName || 'No client match',
+    draftId || 'N/A'
+  ]);
+}
+
+/**
  * Polls Fathom API for new meetings and processes them automatically.
  * This is a backup mechanism in case webhooks fail.
  * Should be called periodically (e.g., every 30 minutes).
@@ -1233,7 +1304,7 @@ function pollFathomForNewMeetings() {
 
     // Check each meeting to see if we've already processed it
     let newMeetingsCount = 0;
-    const cache = CacheService.getScriptCache();
+    let skippedCount = 0;
 
     for (const meeting of meetings) {
       const meetingId = meeting.id || meeting.meeting_id;
@@ -1242,22 +1313,10 @@ function pollFathomForNewMeetings() {
         continue; // Skip meetings without IDs
       }
 
-      // Check if we've already processed this meeting
-      const cacheKey = `fathom_processed_${meetingId}`;
-      const alreadyProcessed = cache.get(cacheKey);
-
-      if (alreadyProcessed) {
+      // Check if we've already processed this meeting (using SPREADSHEET tracking)
+      if (isFathomMeetingProcessed(meetingId)) {
+        skippedCount++;
         continue; // Skip already processed meetings
-      }
-
-      // Check if meeting is recent (within last 24 hours)
-      const meetingDate = new Date(meeting.created_at || meeting.scheduled_start_time);
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-      if (meetingDate < twentyFourHoursAgo) {
-        // Mark old meetings as processed to avoid checking them again
-        cache.put(cacheKey, 'true', 604800); // Cache for 7 days
-        continue;
       }
 
       // Convert to webhook payload format and process
@@ -1267,8 +1326,15 @@ function pollFathomForNewMeetings() {
 
         const result = processFathomWebhook(payload);
 
-        // Mark as processed
-        cache.put(cacheKey, 'true', 604800); // Cache for 7 days
+        // Record as processed in spreadsheet
+        recordFathomMeetingProcessed(
+          meetingId,
+          payload.meeting_title,
+          payload.meeting_date,
+          result.client_name,
+          result.draft_id
+        );
+
         newMeetingsCount++;
 
         logProcessing('FATHOM_POLL', result.client_name, `Successfully processed: ${payload.meeting_title}`, 'success');
@@ -1278,9 +1344,9 @@ function pollFathomForNewMeetings() {
     }
 
     if (newMeetingsCount > 0) {
-      logProcessing('FATHOM_POLL', null, `Processed ${newMeetingsCount} new meetings`, 'success');
+      logProcessing('FATHOM_POLL', null, `Processed ${newMeetingsCount} new meetings (skipped ${skippedCount} already processed)`, 'success');
     } else {
-      logProcessing('FATHOM_POLL', null, 'No new meetings to process', 'info');
+      logProcessing('FATHOM_POLL', null, `No new meetings to process (${skippedCount} already processed)`, 'info');
     }
 
   } catch (error) {
