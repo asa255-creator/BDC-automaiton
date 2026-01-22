@@ -304,8 +304,10 @@ Thanks,
             API Key
             <span id="fathomStatus" class="status-badge"></span>
           </div>
-          <div class="setting-description">Get from Fathom Settings > Integrations > API. Used for "Load Latest Meeting" testing.</div>
+          <div class="setting-description">Get from Fathom Settings > Integrations > API. Polls for new meetings every 30 minutes (PRIMARY METHOD).</div>
           <input type="password" id="fathom_key" placeholder="Enter Fathom API key">
+          <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testFathomConnection()">Test Connection</button>
+          <div id="fathomTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
 
         <div class="setting-group">
@@ -313,7 +315,7 @@ Thanks,
             Webhook Secret (Optional)
             <span id="fathomWebhookStatus" class="status-badge"></span>
           </div>
-          <div class="setting-description">Optional: Add webhook secret if you've configured a Fathom webhook as backup. Get from Fathom Settings > Integrations > Webhooks.</div>
+          <div class="setting-description">Optional: Add webhook secret if you've configured a Fathom webhook as backup. Webhooks push meetings immediately after recording ends.</div>
           <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret (optional)">
         </div>
 
@@ -326,6 +328,8 @@ Thanks,
           </div>
           <div class="setting-description">Get from Todoist Settings > Integrations > Developer</div>
           <input type="password" id="todoist_token" placeholder="Enter Todoist API token">
+          <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testTodoistConnection()">Test Connection</button>
+          <div id="todoistTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
 
         <div class="section-title">Claude AI (Content Generation)</div>
@@ -337,6 +341,8 @@ Thanks,
           </div>
           <div class="setting-description">Get from console.anthropic.com. Used for AI-generated content.</div>
           <input type="password" id="claude_key" placeholder="Enter Claude API key">
+          <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testClaudeConnection()">Test Connection</button>
+          <div id="claudeTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
 
         <div class="section-title">HubSpot (CRM - Future)</div>
@@ -348,6 +354,8 @@ Thanks,
           </div>
           <div class="setting-description">Get from HubSpot Settings > Integrations > Private Apps. For future CRM integration.</div>
           <input type="password" id="hubspot_key" placeholder="Enter HubSpot API key">
+          <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testHubSpotConnection()">Test Connection</button>
+          <div id="hubspotTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
       </div>
     </div>
@@ -611,6 +619,106 @@ Thanks,
           statusEl.style.color = '#ea4335';
         })
         .updateFiltersFromEditor();
+    }
+
+    function testFathomConnection() {
+      const statusEl = document.getElementById('fathomTestStatus');
+      const apiKey = document.getElementById('fathom_key').value.trim();
+
+      if (!apiKey) {
+        statusEl.textContent = 'Please enter an API key first';
+        statusEl.style.color = '#ea4335';
+        return;
+      }
+
+      statusEl.textContent = 'Testing connection...';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .testFathomAPI(apiKey);
+    }
+
+    function testTodoistConnection() {
+      const statusEl = document.getElementById('todoistTestStatus');
+      const apiToken = document.getElementById('todoist_token').value.trim();
+
+      if (!apiToken) {
+        statusEl.textContent = 'Please enter an API token first';
+        statusEl.style.color = '#ea4335';
+        return;
+      }
+
+      statusEl.textContent = 'Testing connection...';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .testTodoistAPI(apiToken);
+    }
+
+    function testClaudeConnection() {
+      const statusEl = document.getElementById('claudeTestStatus');
+      const apiKey = document.getElementById('claude_key').value.trim();
+
+      if (!apiKey) {
+        statusEl.textContent = 'Please enter an API key first';
+        statusEl.style.color = '#ea4335';
+        return;
+      }
+
+      statusEl.textContent = 'Testing connection...';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .testClaudeAPI(apiKey);
+    }
+
+    function testHubSpotConnection() {
+      const statusEl = document.getElementById('hubspotTestStatus');
+      const apiKey = document.getElementById('hubspot_key').value.trim();
+
+      if (!apiKey) {
+        statusEl.textContent = 'Please enter an API key first';
+        statusEl.style.color = '#ea4335';
+        return;
+      }
+
+      statusEl.textContent = 'Testing connection...';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .testHubSpotAPI(apiKey);
     }
   </script>
 </body>

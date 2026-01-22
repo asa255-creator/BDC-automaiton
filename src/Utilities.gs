@@ -2034,6 +2034,196 @@ function updateFiltersFromEditor() {
 }
 
 // ============================================================================
+// API CONNECTION TESTS
+// ============================================================================
+
+/**
+ * Tests Fathom API connection.
+ * @param {string} apiKey - The Fathom API key to test
+ * @returns {Object} Result with success status and message
+ */
+function testFathomAPI(apiKey) {
+  try {
+    const url = 'https://api.fathom.ai/external/v1/meetings?limit=1';
+    const options = {
+      method: 'GET',
+      headers: {
+        'X-Api-Key': apiKey,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode === 200) {
+      return {
+        success: true,
+        message: '✓ Connected successfully! API key is valid.'
+      };
+    } else if (responseCode === 401) {
+      return {
+        success: false,
+        message: '✗ Authentication failed. Invalid API key.'
+      };
+    } else {
+      return {
+        success: false,
+        message: `✗ Connection failed (HTTP ${responseCode})`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: `✗ Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Tests Todoist API connection.
+ * @param {string} apiToken - The Todoist API token to test
+ * @returns {Object} Result with success status and message
+ */
+function testTodoistAPI(apiToken) {
+  try {
+    const url = 'https://api.todoist.com/rest/v2/projects';
+    const options = {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode === 200) {
+      const projects = JSON.parse(response.getContentText());
+      return {
+        success: true,
+        message: `✓ Connected successfully! Found ${projects.length} projects.`
+      };
+    } else if (responseCode === 401 || responseCode === 403) {
+      return {
+        success: false,
+        message: '✗ Authentication failed. Invalid API token.'
+      };
+    } else {
+      return {
+        success: false,
+        message: `✗ Connection failed (HTTP ${responseCode})`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: `✗ Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Tests Claude API connection.
+ * @param {string} apiKey - The Claude API key to test
+ * @returns {Object} Result with success status and message
+ */
+function testClaudeAPI(apiKey) {
+  try {
+    const url = 'https://api.anthropic.com/v1/messages';
+    const options = {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 10,
+        messages: [{
+          role: 'user',
+          content: 'Hi'
+        }]
+      }),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode === 200) {
+      return {
+        success: true,
+        message: '✓ Connected successfully! API key is valid.'
+      };
+    } else if (responseCode === 401) {
+      return {
+        success: false,
+        message: '✗ Authentication failed. Invalid API key.'
+      };
+    } else {
+      return {
+        success: false,
+        message: `✗ Connection failed (HTTP ${responseCode})`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: `✗ Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Tests HubSpot API connection.
+ * @param {string} apiKey - The HubSpot API key to test
+ * @returns {Object} Result with success status and message
+ */
+function testHubSpotAPI(apiKey) {
+  try {
+    const url = 'https://api.hubapi.com/contacts/v1/lists/all/contacts/all?count=1';
+    const options = {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode === 200) {
+      return {
+        success: true,
+        message: '✓ Connected successfully! API key is valid.'
+      };
+    } else if (responseCode === 401 || responseCode === 403) {
+      return {
+        success: false,
+        message: '✗ Authentication failed. Invalid API key.'
+      };
+    } else {
+      return {
+        success: false,
+        message: `✗ Connection failed (HTTP ${responseCode})`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: `✗ Error: ${error.message}`
+    };
+  }
+}
+
+// ============================================================================
 // MIGRATION WIZARD
 // ============================================================================
 

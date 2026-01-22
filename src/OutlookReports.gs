@@ -105,10 +105,17 @@ function generateDailyOutlookWithClaude(data, date) {
       return null;
     }
 
-    const result = JSON.parse(response.getContentText());
+    // Parse response with explicit UTF-8 handling
+    const responseText = response.getContentText('UTF-8');
+    const result = JSON.parse(responseText);
 
     if (result.content && result.content.length > 0) {
-      return result.content[0].text;
+      let content = result.content[0].text;
+
+      // Ensure content is treated as UTF-8
+      // If Claude returns full HTML with charset, preserve it
+      // If not, we'll add it in sendOutlookEmail
+      return content;
     }
 
     return null;
@@ -528,10 +535,15 @@ function generateWeeklyOutlookWithClaude(data, startDate) {
       return null;
     }
 
-    const result = JSON.parse(response.getContentText());
+    // Parse response with explicit UTF-8 handling
+    const responseText = response.getContentText('UTF-8');
+    const result = JSON.parse(responseText);
 
     if (result.content && result.content.length > 0) {
-      return result.content[0].text;
+      let content = result.content[0].text;
+
+      // Ensure content is treated as UTF-8
+      return content;
     }
 
     return null;
@@ -1071,28 +1083,30 @@ function sendOutlookEmail(subject, htmlBody, labelName) {
   let body = htmlBody;
   if (!body.match(/<meta[^>]+charset/i)) {
     // If body doesn't have HTML structure, wrap it
+    // Use string concatenation instead of template literals to preserve UTF-8
     if (!body.match(/<html/i)) {
-      body = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-</head>
-<body>
-${body}
-</body>
-</html>`;
+      body = '<!DOCTYPE html>\n' +
+             '<html>\n' +
+             '<head>\n' +
+             '<meta charset="UTF-8">\n' +
+             '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n' +
+             '</head>\n' +
+             '<body>\n' +
+             body +
+             '\n</body>\n' +
+             '</html>';
     } else {
       // Insert meta tag in existing HTML
-      body = body.replace(/<head[^>]*>/i, match => {
+      body = body.replace(/<head[^>]*>/i, function(match) {
         return match + '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">';
       });
     }
   }
 
-  GmailApp.sendEmail(userEmail, subject, '', {
+  // Send email with explicit UTF-8 encoding and plain text fallback
+  GmailApp.sendEmail(userEmail, subject, 'This email requires HTML support.', {
     htmlBody: body,
-    charset: 'UTF-8'
+    charset: 'utf-8'
   });
 
   // Apply label to the sent email
