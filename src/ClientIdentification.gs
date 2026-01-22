@@ -32,6 +32,20 @@ function identifyClient(emails) {
   // Normalize emails to lowercase
   const normalizedEmails = emails.map(email => email.toLowerCase().trim());
 
+  // ALWAYS exclude the owner's email from matching
+  // The owner/script runner is in all their own meetings, so including their email
+  // would cause incorrect matches (especially for Internal client)
+  const ownerEmail = getCurrentUserEmail().toLowerCase();
+  const emailsWithoutOwner = normalizedEmails.filter(email => email !== ownerEmail);
+
+  // If no emails remain after filtering out owner, no match possible
+  if (emailsWithoutOwner.length === 0) {
+    Logger.log('No emails to match after filtering out owner email');
+    return null;
+  }
+
+  Logger.log(`Matching against ${emailsWithoutOwner.length} emails (owner excluded): ${emailsWithoutOwner.join(', ')}`);
+
   // Get all clients from registry
   const clients = getClientRegistry();
 
@@ -42,7 +56,7 @@ function identifyClient(emails) {
 
     // Check if any meeting email matches this client
     let hasMatch = false;
-    for (const email of normalizedEmails) {
+    for (const email of emailsWithoutOwner) {
       if (contactEmails.includes(email)) {
         hasMatch = true;
         break;
@@ -56,7 +70,7 @@ function identifyClient(emails) {
     // Special handling for "Internal" clients
     if (isInternalClient) {
       // For Internal clients, ONLY match if ALL meeting participants are internal
-      const allEmailsAreInternal = normalizedEmails.every(email => contactEmails.includes(email));
+      const allEmailsAreInternal = emailsWithoutOwner.every(email => contactEmails.includes(email));
 
       if (!allEmailsAreInternal) {
         // Some participants are not internal, skip this client and check others
@@ -71,7 +85,7 @@ function identifyClient(emails) {
   }
 
   // No match found
-  Logger.log(`No client match found for emails: ${normalizedEmails.join(', ')}`);
+  Logger.log(`No client match found for emails (owner excluded): ${emailsWithoutOwner.join(', ')}`);
   return null;
 }
 
