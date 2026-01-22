@@ -95,6 +95,40 @@ function processFathomWebhook(payload) {
 }
 
 /**
+ * Strips calendar response prefixes from meeting titles.
+ * Google Calendar adds prefixes like "Confirmed:", "Accepted:", "Tentative:", etc.
+ *
+ * @param {string} title - The meeting title
+ * @returns {string} The cleaned title
+ */
+function cleanMeetingTitle(title) {
+  if (!title) return title;
+
+  // Strip common calendar response prefixes
+  const prefixes = [
+    'Confirmed:',
+    'Accepted:',
+    'Tentative:',
+    'Declined:',
+    'Not Responded:',
+    'Maybe:',
+    'Yes:',
+    'No:'
+  ];
+
+  let cleanedTitle = title.trim();
+
+  for (const prefix of prefixes) {
+    if (cleanedTitle.startsWith(prefix)) {
+      cleanedTitle = cleanedTitle.substring(prefix.length).trim();
+      break;
+    }
+  }
+
+  return cleanedTitle;
+}
+
+/**
  * Creates a Gmail draft with the meeting summary.
  * Works with or without a matched client.
  *
@@ -105,6 +139,9 @@ function processFathomWebhook(payload) {
 function createMeetingSummaryDraft(payload, client) {
   const props = PropertiesService.getScriptProperties();
   const meetingDate = formatDateShort(new Date(payload.meeting_date));
+
+  // Clean meeting title to remove calendar prefixes like "Confirmed:", "Accepted:", etc.
+  const cleanedTitle = cleanMeetingTitle(payload.meeting_title);
 
   // Build subject and greeting based on whether we have a client
   let subject, body;
@@ -117,19 +154,19 @@ function createMeetingSummaryDraft(payload, client) {
       || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
     subject = subjectTemplate
       .replace('{client_name}', clientName)
-      .replace('{meeting_title}', payload.meeting_title)
+      .replace('{meeting_title}', cleanedTitle)
       .replace('{date}', meetingDate);
 
     body = `<p>Team ${clientName} -</p>`;
-    body += `<p>Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}.</p>`;
+    body += `<p>Here are the notes from the meeting "${cleanedTitle}" ${meetingDate}.</p>`;
     body += `<hr/>`;
 
   } else {
     // NON-CLIENT MEETING: Use generic professional language
-    subject = `Meeting notes: ${payload.meeting_title} (${meetingDate})`;
+    subject = `Meeting notes: ${cleanedTitle} (${meetingDate})`;
 
     body = `<p>Hello -</p>`;
-    body += `<p>Here are the notes from "${payload.meeting_title}" on ${meetingDate}.</p>`;
+    body += `<p>Here are the notes from "${cleanedTitle}" on ${meetingDate}.</p>`;
     body += `<hr/>`;
   }
 
