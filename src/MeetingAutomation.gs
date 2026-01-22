@@ -37,6 +37,20 @@ function processFathomWebhook(payload) {
     throw new Error('Invalid webhook payload: missing meeting_title');
   }
 
+  // Extract meeting ID for tracking (use fathom_url or generate from title+date if not available)
+  const meetingId = payload.meeting_id || payload.id || payload.fathom_url || `${payload.meeting_title}_${payload.meeting_date}`;
+
+  // Check if already processed (polling may have caught it first)
+  if (isFathomMeetingProcessed(meetingId)) {
+    Logger.log(`Meeting already processed: ${payload.meeting_title}`);
+    return {
+      status: 'already_processed',
+      client_name: null,
+      draft_id: null,
+      participants: 0
+    };
+  }
+
   // Extract participant emails for logging
   const participantEmails = (payload.participants || [])
     .map(p => p.email)
@@ -53,6 +67,15 @@ function processFathomWebhook(payload) {
 
   // ALWAYS create draft email (user will add recipient if needed)
   const draftId = createMeetingSummaryDraft(payload, client);
+
+  // Record meeting as processed in spreadsheet
+  recordFathomMeetingProcessed(
+    meetingId,
+    payload.meeting_title,
+    payload.meeting_date,
+    client ? client.client_name : null,
+    draftId
+  );
 
   // Log processing result
   const clientName = client ? client.client_name : null;
