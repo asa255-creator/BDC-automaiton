@@ -26,44 +26,58 @@
  */
 function identifyClient(emails) {
   if (!emails || emails.length === 0) {
+    Logger.log('[MATCH DEBUG] No emails provided for matching');
     return null;
   }
 
   // Normalize emails to lowercase
   const normalizedEmails = emails.map(email => email.toLowerCase().trim());
+  Logger.log(`[MATCH DEBUG] Original emails: ${normalizedEmails.join(', ')}`);
 
   // ALWAYS exclude the owner's email from matching
   // The owner/script runner is in all their own meetings, so including their email
   // would cause incorrect matches (especially for Internal client)
   const ownerEmail = getCurrentUserEmail().toLowerCase();
+  Logger.log(`[MATCH DEBUG] Owner email (to be excluded): ${ownerEmail}`);
+
   const emailsWithoutOwner = normalizedEmails.filter(email => email !== ownerEmail);
 
   // If no emails remain after filtering out owner, no match possible
   if (emailsWithoutOwner.length === 0) {
-    Logger.log('No emails to match after filtering out owner email');
+    Logger.log('[MATCH DEBUG] No emails to match after filtering out owner email');
+    logProcessing('CLIENT_MATCH', null, 'No emails to match after filtering out owner', 'warning');
     return null;
   }
 
-  Logger.log(`Matching against ${emailsWithoutOwner.length} emails (owner excluded): ${emailsWithoutOwner.join(', ')}`);
+  Logger.log(`[MATCH DEBUG] Emails after owner filter: ${emailsWithoutOwner.join(', ')}`);
+  logProcessing('CLIENT_MATCH', null, `Matching against: ${emailsWithoutOwner.join(', ')}`, 'info');
 
   // Get all clients from registry
   const clients = getClientRegistry();
+  Logger.log(`[MATCH DEBUG] Found ${clients.length} clients in registry`);
 
   // Check for exact contact email match
   for (const client of clients) {
     const contactEmails = parseCommaSeparatedList(client.contact_emails);
     const isInternalClient = client.client_name.toLowerCase().includes('internal');
 
+    Logger.log(`[MATCH DEBUG] Checking client "${client.client_name}"`);
+    Logger.log(`[MATCH DEBUG]   - Raw contact_emails field: "${client.contact_emails}"`);
+    Logger.log(`[MATCH DEBUG]   - Parsed contact emails: [${contactEmails.join(', ')}]`);
+    Logger.log(`[MATCH DEBUG]   - Is internal client: ${isInternalClient}`);
+
     // Check if any meeting email matches this client
     let hasMatch = false;
     for (const email of emailsWithoutOwner) {
       if (contactEmails.includes(email)) {
+        Logger.log(`[MATCH DEBUG]   - MATCH FOUND: ${email} matches this client`);
         hasMatch = true;
         break;
       }
     }
 
     if (!hasMatch) {
+      Logger.log(`[MATCH DEBUG]   - No match, skipping client`);
       continue; // No match for this client, try next one
     }
 
@@ -72,20 +86,25 @@ function identifyClient(emails) {
       // For Internal clients, ONLY match if ALL meeting participants are internal
       const allEmailsAreInternal = emailsWithoutOwner.every(email => contactEmails.includes(email));
 
+      Logger.log(`[MATCH DEBUG]   - Internal client check: all emails internal = ${allEmailsAreInternal}`);
+
       if (!allEmailsAreInternal) {
         // Some participants are not internal, skip this client and check others
-        Logger.log(`Skipping Internal client - not all participants are internal`);
+        Logger.log(`[MATCH DEBUG]   - Skipping Internal client - not all participants are internal`);
+        logProcessing('CLIENT_MATCH', client.client_name, 'Skipping Internal client - not all participants are internal', 'info');
         continue;
       }
     }
 
     // We have a match (and passed Internal client check if applicable)
-    Logger.log(`Client identified by contact email: ${client.client_name}`);
+    Logger.log(`[MATCH DEBUG] ✓ CLIENT IDENTIFIED: ${client.client_name}`);
+    logProcessing('CLIENT_MATCH', client.client_name, 'Client identified successfully', 'success');
     return client;
   }
 
   // No match found
-  Logger.log(`No client match found for emails (owner excluded): ${emailsWithoutOwner.join(', ')}`);
+  Logger.log(`[MATCH DEBUG] ✗ NO CLIENT MATCH found for emails: ${emailsWithoutOwner.join(', ')}`);
+  logProcessing('CLIENT_MATCH', null, `No client match found for: ${emailsWithoutOwner.join(', ')}`, 'warning');
   return null;
 }
 
