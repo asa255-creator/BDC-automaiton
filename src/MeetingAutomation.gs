@@ -1174,14 +1174,23 @@ function convertFathomMeetingToPayload(fathomMeeting) {
   }
 
   // Extract summary - Fathom uses default_summary.markdown_formatted
-  // Strip markdown links and formatting for cleaner email
+  // Check setting to determine if we should keep or strip video timestamp hyperlinks
+  const props = PropertiesService.getScriptProperties();
+  const keepLinks = props.getProperty('FATHOM_KEEP_LINKS') === 'true';
+
   let summaryText = '';
   if (fathomMeeting.default_summary && fathomMeeting.default_summary.markdown_formatted) {
-    summaryText = stripMarkdownLinks(fathomMeeting.default_summary.markdown_formatted);
+    summaryText = keepLinks
+      ? fathomMeeting.default_summary.markdown_formatted
+      : stripMarkdownLinks(fathomMeeting.default_summary.markdown_formatted);
   } else if (typeof fathomMeeting.summary === 'string') {
-    summaryText = stripMarkdownLinks(fathomMeeting.summary);
+    summaryText = keepLinks
+      ? fathomMeeting.summary
+      : stripMarkdownLinks(fathomMeeting.summary);
   } else if (fathomMeeting.summary && fathomMeeting.summary.markdown_formatted) {
-    summaryText = stripMarkdownLinks(fathomMeeting.summary.markdown_formatted);
+    summaryText = keepLinks
+      ? fathomMeeting.summary.markdown_formatted
+      : stripMarkdownLinks(fathomMeeting.summary.markdown_formatted);
   }
 
   // Fathom uses calendar_invitees for participants

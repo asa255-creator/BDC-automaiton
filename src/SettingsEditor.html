@@ -319,6 +319,15 @@ Thanks,
           <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret (optional)">
         </div>
 
+        <div class="setting-group">
+          <div class="setting-label">Keep Video Timestamp Links</div>
+          <div class="setting-description">When enabled, hyperlinks to specific video timestamps in Fathom summaries will be preserved in meeting emails</div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <input type="checkbox" id="fathom_keep_links" style="width: auto;">
+            <span>Keep hyperlinks to video timestamps</span>
+          </label>
+        </div>
+
         <div class="section-title">Todoist (Task Management)</div>
 
         <div class="setting-group">
@@ -456,6 +465,7 @@ Thanks,
           // Integrations tab
           document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
           document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
+          document.getElementById('fathom_keep_links').checked = settings.FATHOM_KEEP_LINKS === 'true';
           document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
@@ -554,6 +564,7 @@ Thanks,
         // Integrations
         FATHOM_API_KEY: document.getElementById('fathom_key').value.trim(),
         FATHOM_WEBHOOK_SECRET: document.getElementById('fathom_webhook_secret').value.trim(),
+        FATHOM_KEEP_LINKS: document.getElementById('fathom_keep_links').checked ? 'true' : 'false',
         HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
