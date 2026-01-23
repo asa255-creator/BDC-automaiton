@@ -83,10 +83,14 @@ function doPost(e) {
       logProcessing('WEBHOOK_NO_SECRET', null, 'No webhook secret configured - skipping signature verification', 'info');
     }
 
-    const payload = JSON.parse(e.postData.contents);
+    let payload = JSON.parse(e.postData.contents);
 
     // Log payload summary for debugging
-    logProcessing('WEBHOOK_PAYLOAD', null, `Processing meeting: ${payload.meeting_title || 'Unknown'}`, 'info');
+    logProcessing('WEBHOOK_PAYLOAD', null, `Processing meeting: ${payload.meeting_title || payload.title || 'Unknown'}`, 'info');
+
+    // Normalize webhook payload to ensure consistent format
+    // Fathom webhooks might have different field names than API responses
+    payload = normalizeFathomPayload(payload);
 
     // Process the Fathom webhook
     const result = processFathomWebhook(payload);

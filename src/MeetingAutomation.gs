@@ -1150,6 +1150,35 @@ function markdownToHtml(markdown) {
 }
 
 /**
+ * Normalizes Fathom payload from any source (webhook or API) to a consistent format.
+ * Handles both webhook payloads and API responses.
+ *
+ * @param {Object} payload - The raw payload from Fathom (webhook or API)
+ * @returns {Object} Normalized payload with consistent field names
+ */
+function normalizeFathomPayload(payload) {
+  if (!payload) return null;
+
+  // If this looks like an API response (has fields like 'default_summary', 'calendar_invitees'),
+  // convert it using the full conversion function
+  if (payload.default_summary || payload.calendar_invitees || payload.recorded_by) {
+    return convertFathomMeetingToPayload(payload);
+  }
+
+  // Otherwise, assume it's a webhook payload and normalize field names
+  return {
+    meeting_title: payload.meeting_title || payload.title || 'Untitled Meeting',
+    meeting_date: payload.meeting_date || payload.start_time || payload.created_at || new Date().toISOString(),
+    transcript: payload.transcript || '',
+    summary: payload.summary || payload.notes || '',
+    action_items: payload.action_items || [],
+    participants: payload.participants || payload.attendees || [],
+    fathom_url: payload.fathom_url || payload.url || payload.share_url || null,
+    meeting_id: payload.meeting_id || payload.id || null
+  };
+}
+
+/**
  * Converts Fathom API meeting data to webhook payload format.
  * This normalizes the API response to match the expected webhook structure.
  *

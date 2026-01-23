@@ -49,7 +49,7 @@ function formatDateLong(date) {
  * @returns {string} Formatted date string
  */
 function formatDateShort(date) {
-  if (!date || !(date instanceof Date)) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
     return '';
   }
 

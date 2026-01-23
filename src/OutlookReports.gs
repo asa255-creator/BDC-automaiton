@@ -106,7 +106,9 @@ function generateDailyOutlookWithClaude(data, date) {
     }
 
     // Parse response with explicit UTF-8 handling
-    const responseText = response.getContentText('UTF-8');
+    // Get raw bytes and convert to string properly to preserve emoji
+    const responseBytes = response.getContent();
+    const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
     const result = JSON.parse(responseText);
 
     if (result.content && result.content.length > 0) {
@@ -536,7 +538,9 @@ function generateWeeklyOutlookWithClaude(data, startDate) {
     }
 
     // Parse response with explicit UTF-8 handling
-    const responseText = response.getContentText('UTF-8');
+    // Get raw bytes and convert to string properly to preserve emoji
+    const responseBytes = response.getContent();
+    const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
     const result = JSON.parse(responseText);
 
     if (result.content && result.content.length > 0) {
