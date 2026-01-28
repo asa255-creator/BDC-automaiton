@@ -1685,11 +1685,6 @@ function onOpen() {
       .addItem('Update Settings...', 'showSettingsEditor')
       .addItem('Adjust Prompts...', 'showPromptsEditor')
       .addSeparator()
-      .addSubMenu(ui.createMenu('Diagnostic Mode')
-        .addItem('Toggle Diagnostic Mode', 'toggleDiagnosticModeUI')
-        .addItem('View Diagnostic Sheets', 'showDiagnosticSheetsUI')
-        .addItem('Clear Diagnostic Data', 'clearDiagnosticSheetsUI')
-        .addItem('Initialize Diagnostic Sheets', 'initializeDiagnosticSheetsUI'))
       .addItem('View Processing Log', 'showProcessingLog')
       .addSeparator()
       .addItem('Disable Automation...', 'disableAutomationWithConfirmation')
@@ -1870,7 +1865,8 @@ function getSettingsForEditor() {
     INCLUDE_UNREAD_EMAILS: props.getProperty('INCLUDE_UNREAD_EMAILS') || 'false',
     AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0',
     DAILY_BRIEFING_LABEL: props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily',
-    WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly'
+    WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly',
+    DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false'
   };
 }
 
@@ -1984,6 +1980,11 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.WEEKLY_BRIEFING_LABEL) {
     props.setProperty('WEEKLY_BRIEFING_LABEL', settings.WEEKLY_BRIEFING_LABEL);
+  }
+
+  // Diagnostic mode setting (allow true/false)
+  if (settings.DIAGNOSTIC_MODE !== undefined) {
+    props.setProperty('DIAGNOSTIC_MODE', settings.DIAGNOSTIC_MODE);
   }
 
   logProcessing('SETTINGS', null, 'Settings updated via editor', 'info');

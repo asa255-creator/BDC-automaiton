@@ -232,6 +232,20 @@
           <div class="placeholder-hint">Placeholders: {client_name}</div>
         </div>
 
+        <div class="section-title">Diagnostic Mode</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Enable Diagnostic Mode</div>
+          <div class="setting-description">When enabled, detailed logging captures API requests/responses, data collection, and execution traces to help diagnose issues with agenda generation and notes appending</div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <input type="checkbox" id="diagnostic_mode" style="width: auto;">
+            <span>Enable diagnostic logging</span>
+          </label>
+          <div class="placeholder-hint" style="margin-top: 8px;">
+            ⚠️ Diagnostic sheets will be created automatically when this is enabled. View them via Client Automation > Diagnostic Mode menu. Disable when not actively debugging to reduce overhead.
+          </div>
+        </div>
+
         <div class="section-title">Email Inbox Management</div>
 
         <div class="setting-group">
@@ -454,6 +468,7 @@ Thanks,
           // General tab
           document.getElementById('user_name').value = settings.USER_NAME || '';
           document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
+          document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
           document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
           document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
 
@@ -555,6 +570,7 @@ Thanks,
         // General
         USER_NAME: document.getElementById('user_name').value.trim(),
         DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
+        DIAGNOSTIC_MODE: document.getElementById('diagnostic_mode').checked ? 'true' : 'false',
         INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
         AUTO_MARK_READ_AFTER_DAYS: document.getElementById('auto_mark_read_days').value.trim() || '0',
         // Email Templates
