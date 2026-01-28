@@ -154,7 +154,8 @@ function gatherAgendaContext(event, client, traceId) {
     todoistTasks: [],
     recentEmails: [],
     previousMeetingNotes: null,
-    unmatchedActionItems: []
+    unmatchedActionItems: [],
+    calendarAttachments: []
   };
 
   // Fetch Todoist tasks due today or overdue
@@ -232,52 +233,191 @@ function gatherAgendaContext(event, client, traceId) {
     if (traceId) logAgendaStep(traceId, event, client, 3.3, 'FETCH_DOC_NOTES', 'skipped', 'No Google Doc URL configured');
   }
 
+  // Fetch calendar event attachments (excluding running meeting notes)
+  if (traceId) logAgendaStep(traceId, event, client, 3.4, 'FETCH_ATTACHMENTS', 'started', 'Fetching calendar event attachments');
+
+  context.calendarAttachments = fetchCalendarAttachments(event, client);
+  Logger.log(`Found ${context.calendarAttachments.length} calendar attachments`);
+
+  // DIAGNOSTIC: Log calendar attachments
+  logDataCollection(
+    client.client_name,
+    event.getId(),
+    'Calendar Attachments',
+    `event_id: ${event.getId()}`,
+    context.calendarAttachments,
+    context.calendarAttachments.slice(0, 3).map(a => ({ title: a.title, url: a.url })),
+    null
+  );
+
+  if (traceId) logAgendaStep(traceId, event, client, 3.4, 'FETCH_ATTACHMENTS', 'success', `Found ${context.calendarAttachments.length} attachments`);
+
   return context;
 }
 
 /**
- * Fetches recent emails from/to the client.
+ * Fetches recent emails from/to the client, including from their Gmail labels.
+ * Pulls full email bodies for agenda context.
  *
  * @param {Object} client - The client object
- * @returns {Object[]} Array of email summary objects
+ * @returns {Object[]} Array of email objects with full bodies
  */
 function fetchRecentClientEmails(client) {
-  const contacts = parseCommaSeparatedList(client.contact_emails);
-
-  if (contacts.length === 0) {
-    return [];
-  }
-
-  // Build search query using contact emails
-  const fromParts = [];
-  const toParts = [];
-
-  for (const contact of contacts) {
-    fromParts.push(`from:${contact}`);
-    toParts.push(`to:${contact}`);
-  }
-
-  const query = `(${fromParts.join(' OR ')} OR ${toParts.join(' OR ')}) newer_than:7d`;
+  const emails = [];
+  const seenMessageIds = new Set(); // Avoid duplicates
 
   try {
-    const threads = GmailApp.search(query, 0, 20);
-    const emails = [];
+    // 1. Get emails from contact addresses (last 7 days)
+    const contacts = parseCommaSeparatedList(client.contact_emails);
 
-    for (const thread of threads) {
-      const messages = thread.getMessages();
-      const lastMessage = messages[messages.length - 1];
+    if (contacts.length > 0) {
+      const fromParts = [];
+      const toParts = [];
 
-      emails.push({
-        subject: thread.getFirstMessageSubject(),
-        sender: lastMessage.getFrom(),
-        date: lastMessage.getDate(),
-        snippet: lastMessage.getPlainBody().substring(0, 500)
-      });
+      for (const contact of contacts) {
+        fromParts.push(`from:${contact}`);
+        toParts.push(`to:${contact}`);
+      }
+
+      const contactQuery = `(${fromParts.join(' OR ')} OR ${toParts.join(' OR ')}) newer_than:7d`;
+      const contactThreads = GmailApp.search(contactQuery, 0, 20);
+
+      for (const thread of contactThreads) {
+        const messages = thread.getMessages();
+        const lastMessage = messages[messages.length - 1];
+        const messageId = lastMessage.getId();
+
+        if (!seenMessageIds.has(messageId)) {
+          seenMessageIds.add(messageId);
+          emails.push({
+            subject: thread.getFirstMessageSubject(),
+            from: lastMessage.getFrom(),
+            date: lastMessage.getDate(),
+            body: lastMessage.getPlainBody() // Full body, no truncation
+          });
+        }
+      }
     }
+
+    // 2. Get emails from meeting summaries label
+    if (client.meeting_summaries_label) {
+      try {
+        const summariesLabel = GmailApp.getUserLabelByName(client.meeting_summaries_label);
+        if (summariesLabel) {
+          const summaryThreads = summariesLabel.getThreads(0, 20);
+
+          for (const thread of summaryThreads) {
+            const messages = thread.getMessages();
+            const lastMessage = messages[messages.length - 1];
+            const messageId = lastMessage.getId();
+
+            if (!seenMessageIds.has(messageId)) {
+              seenMessageIds.add(messageId);
+              emails.push({
+                subject: thread.getFirstMessageSubject(),
+                from: lastMessage.getFrom(),
+                date: lastMessage.getDate(),
+                body: lastMessage.getPlainBody() // Full body
+              });
+            }
+          }
+        }
+      } catch (e) {
+        Logger.log(`Could not fetch from label ${client.meeting_summaries_label}: ${e.message}`);
+      }
+    }
+
+    // 3. Get emails from meeting agendas label
+    if (client.meeting_agendas_label) {
+      try {
+        const agendasLabel = GmailApp.getUserLabelByName(client.meeting_agendas_label);
+        if (agendasLabel) {
+          const agendaThreads = agendasLabel.getThreads(0, 20);
+
+          for (const thread of agendaThreads) {
+            const messages = thread.getMessages();
+            const lastMessage = messages[messages.length - 1];
+            const messageId = lastMessage.getId();
+
+            if (!seenMessageIds.has(messageId)) {
+              seenMessageIds.add(messageId);
+              emails.push({
+                subject: thread.getFirstMessageSubject(),
+                from: lastMessage.getFrom(),
+                date: lastMessage.getDate(),
+                body: lastMessage.getPlainBody() // Full body
+              });
+            }
+          }
+        }
+      } catch (e) {
+        Logger.log(`Could not fetch from label ${client.meeting_agendas_label}: ${e.message}`);
+      }
+    }
+
+    // Sort by date, most recent first
+    emails.sort((a, b) => b.date.getTime() - a.date.getTime());
 
     return emails;
   } catch (error) {
     Logger.log(`Failed to fetch client emails: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Fetches attachments from a calendar event, excluding the running meeting notes doc.
+ * Uses Advanced Calendar Service if available to access attachments.
+ *
+ * @param {CalendarEvent} event - The calendar event
+ * @param {Object} client - The client object
+ * @returns {Object[]} Array of attachment objects with title and url
+ */
+function fetchCalendarAttachments(event, client) {
+  try {
+    // Get the running meeting notes doc ID to exclude it
+    let runningNotesDocId = null;
+    if (client.google_doc_url) {
+      try {
+        runningNotesDocId = extractDocIdFromUrl(client.google_doc_url);
+      } catch (e) {
+        Logger.log(`Could not extract doc ID from ${client.google_doc_url}: ${e.message}`);
+      }
+    }
+
+    // Try to use Advanced Calendar Service for attachments
+    try {
+      const calendarId = event.getOriginalCalendarId() || 'primary';
+      const eventId = event.getId().split('@')[0]; // Remove calendar ID suffix
+
+      const advancedEvent = Calendar.Events.get(calendarId, eventId);
+
+      if (advancedEvent.attachments && advancedEvent.attachments.length > 0) {
+        const attachments = [];
+
+        for (const attachment of advancedEvent.attachments) {
+          // Check if this is the running meeting notes doc
+          const isRunningNotes = runningNotesDocId && attachment.fileUrl && attachment.fileUrl.includes(runningNotesDocId);
+
+          if (!isRunningNotes) {
+            attachments.push({
+              title: attachment.title || 'Untitled Attachment',
+              url: attachment.fileUrl || null,
+              mimeType: attachment.mimeType || null
+            });
+          }
+        }
+
+        return attachments;
+      }
+    } catch (e) {
+      // Advanced Calendar Service not available or error accessing it
+      Logger.log(`Could not fetch attachments via Advanced Calendar Service: ${e.message}`);
+    }
+
+    return [];
+  } catch (error) {
+    Logger.log(`Failed to fetch calendar attachments: ${error.message}`);
     return [];
   }
 }
@@ -640,15 +780,20 @@ function buildAgendaPrompt(event, client, context) {
 
   let emailsSection = '';
   if (context.recentEmails.length > 0) {
-    emailsSection = `Recent Email Activity (Last 7 Days):\n`;
-    for (const email of context.recentEmails.slice(0, 5)) {
-      emailsSection += `- ${email.subject} (${formatDate(email.date)})\n`;
+    emailsSection = `Recent Email Activity:\n\n`;
+    for (const email of context.recentEmails.slice(0, 10)) {
+      emailsSection += `Subject: ${email.subject}\n`;
+      emailsSection += `From: ${email.from}\n`;
+      emailsSection += `Date: ${formatDate(email.date)}\n`;
+      emailsSection += `Body:\n${email.body}\n`;
+      emailsSection += `---\n\n`;
     }
   }
 
   let notesSection = '';
   if (context.previousMeetingNotes) {
-    notesSection = `Previous Meeting Notes Summary:\n${context.previousMeetingNotes.substring(0, 500)}`;
+    // Send FULL meeting notes, no truncation
+    notesSection = `Previous Meeting Notes:\n${context.previousMeetingNotes}`;
   }
 
   let actionItemsSection = '';
@@ -656,6 +801,18 @@ function buildAgendaPrompt(event, client, context) {
     actionItemsSection = `Action Items from Last Meeting Not Yet in Task List:\n`;
     for (const item of context.unmatchedActionItems) {
       actionItemsSection += `- ${item}\n`;
+    }
+  }
+
+  let attachmentsSection = '';
+  if (context.calendarAttachments && context.calendarAttachments.length > 0) {
+    attachmentsSection = `Calendar Event Attachments:\n`;
+    for (const attachment of context.calendarAttachments) {
+      attachmentsSection += `- ${attachment.title}`;
+      if (attachment.url) {
+        attachmentsSection += ` (${attachment.url})`;
+      }
+      attachmentsSection += `\n`;
     }
   }
 
@@ -671,7 +828,8 @@ function buildAgendaPrompt(event, client, context) {
     todoist_section: todoistSection,
     emails_section: emailsSection,
     notes_section: notesSection,
-    action_items_section: actionItemsSection
+    action_items_section: actionItemsSection,
+    attachments_section: attachmentsSection
   });
 }
 
