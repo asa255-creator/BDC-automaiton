@@ -1685,6 +1685,7 @@ function onOpen() {
       .addItem('Update Settings...', 'showSettingsEditor')
       .addItem('Adjust Prompts...', 'showPromptsEditor')
       .addSeparator()
+      .addItem('Initialize Diagnostic Sheets', 'initializeDiagnosticSheetsUI')
       .addItem('View Processing Log', 'showProcessingLog')
       .addSeparator()
       .addItem('Disable Automation...', 'disableAutomationWithConfirmation')
