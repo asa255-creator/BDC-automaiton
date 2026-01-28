@@ -239,8 +239,29 @@ function hideDiagnosticSheets() {
 // ============================================================================
 
 /**
+ * Ensures a diagnostic sheet exists, creates it if it doesn't.
+ * @param {Spreadsheet} ss - Spreadsheet object
+ * @param {string} sheetName - Name of the sheet
+ * @param {Array<string>} headers - Column headers
+ * @returns {Sheet} The sheet object
+ */
+function ensureDiagnosticSheet(ss, sheetName, headers) {
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    sheet.hideSheet();
+    Logger.log(`Auto-created diagnostic sheet: ${sheetName}`);
+  }
+  return sheet;
+}
+
+/**
  * Logs an API request with full details.
  * Only logs if diagnostic mode is enabled.
+ * Auto-creates sheet if it doesn't exist.
  *
  * @param {string} apiName - Name of the API (e.g., "Claude API", "Todoist API")
  * @param {string} endpoint - Full URL endpoint
@@ -256,12 +277,12 @@ function logAPIRequest(apiName, endpoint, method, headers, payload, context) {
   try {
     const requestId = Utilities.getUuid();
     const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(CONFIG.SHEETS.API_REQUEST_LOG);
-
-    if (!sheet) {
-      Logger.log('API_Request_Log sheet not found. Run initializeDiagnosticSheets() first.');
-      return null;
-    }
+    const sheet = ensureDiagnosticSheet(
+      ss,
+      CONFIG.SHEETS.API_REQUEST_LOG,
+      ['Timestamp', 'Request_ID', 'API_Name', 'Endpoint', 'Method',
+       'Headers', 'Payload', 'Client_ID', 'Event_ID', 'Context']
+    );
 
     // Sanitize headers to remove sensitive data for logging
     const sanitizedHeaders = sanitizeHeaders(headers);
@@ -289,6 +310,7 @@ function logAPIRequest(apiName, endpoint, method, headers, payload, context) {
 /**
  * Logs an API response with full details.
  * Only logs if diagnostic mode is enabled.
+ * Auto-creates sheet if it doesn't exist.
  *
  * @param {string} requestId - Request ID from logAPIRequest
  * @param {string} apiName - Name of the API
@@ -305,12 +327,12 @@ function logAPIResponse(requestId, apiName, statusCode, headers, responseBody, p
 
   try {
     const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(CONFIG.SHEETS.API_RESPONSE_LOG);
-
-    if (!sheet) {
-      Logger.log('API_Response_Log sheet not found. Run initializeDiagnosticSheets() first.');
-      return;
-    }
+    const sheet = ensureDiagnosticSheet(
+      ss,
+      CONFIG.SHEETS.API_RESPONSE_LOG,
+      ['Timestamp', 'Request_ID', 'API_Name', 'Status_Code', 'Response_Headers',
+       'Response_Body', 'Parse_Success', 'Extracted_Data', 'Error_Message', 'Duration_MS']
+    );
 
     sheet.appendRow([
       new Date().toISOString(),
@@ -336,6 +358,7 @@ function logAPIResponse(requestId, apiName, statusCode, headers, responseBody, p
 /**
  * Logs data collection from any source (Todoist, Gmail, Calendar, Google Docs).
  * Only logs if diagnostic mode is enabled.
+ * Auto-creates sheet if it doesn't exist.
  *
  * @param {string} clientId - Client identifier
  * @param {string} eventId - Event identifier
@@ -350,12 +373,12 @@ function logDataCollection(clientId, eventId, source, queryDetails, items, sampl
 
   try {
     const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(CONFIG.SHEETS.DATA_COLLECTION_LOG);
-
-    if (!sheet) {
-      Logger.log('Data_Collection_Log sheet not found. Run initializeDiagnosticSheets() first.');
-      return;
-    }
+    const sheet = ensureDiagnosticSheet(
+      ss,
+      CONFIG.SHEETS.DATA_COLLECTION_LOG,
+      ['Timestamp', 'Client_ID', 'Event_ID', 'Source', 'Query_Details',
+       'Items_Found', 'Sample_Data', 'Is_Empty', 'Error']
+    );
 
     const itemCount = items ? items.length : 0;
     const isEmpty = !items || items.length === 0;
@@ -399,6 +422,7 @@ function startAgendaTrace(event, client) {
 /**
  * Logs a step in the agenda generation process.
  * Only logs if diagnostic mode is enabled.
+ * Auto-creates sheet if it doesn't exist.
  *
  * @param {string} traceId - Trace ID from startAgendaTrace
  * @param {CalendarEvent} event - Calendar event object
@@ -415,12 +439,12 @@ function logAgendaStep(traceId, event, client, stepNumber, stepName, status, det
 
   try {
     const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(CONFIG.SHEETS.AGENDA_GENERATION_TRACE);
-
-    if (!sheet) {
-      Logger.log('Agenda_Generation_Trace sheet not found. Run initializeDiagnosticSheets() first.');
-      return;
-    }
+    const sheet = ensureDiagnosticSheet(
+      ss,
+      CONFIG.SHEETS.AGENDA_GENERATION_TRACE,
+      ['Trace_ID', 'Timestamp', 'Event_ID', 'Event_Title', 'Client_ID',
+       'Step_Number', 'Step_Name', 'Step_Status', 'Step_Details', 'Data_Summary', 'Duration_MS']
+    );
 
     sheet.appendRow([
       traceId,
@@ -480,12 +504,12 @@ function logNotesAppendStep(traceId, client, messageId, docId, stepNumber, stepN
 
   try {
     const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(CONFIG.SHEETS.NOTES_APPEND_TRACE);
-
-    if (!sheet) {
-      Logger.log('Notes_Append_Trace sheet not found. Run initializeDiagnosticSheets() first.');
-      return;
-    }
+    const sheet = ensureDiagnosticSheet(
+      ss,
+      CONFIG.SHEETS.NOTES_APPEND_TRACE,
+      ['Trace_ID', 'Timestamp', 'Client_ID', 'Message_ID', 'Doc_ID',
+       'Step_Number', 'Step_Name', 'Step_Status', 'Step_Details', 'Content_Length', 'Duration_MS']
+    );
 
     sheet.appendRow([
       traceId,
@@ -512,6 +536,7 @@ function logNotesAppendStep(traceId, client, messageId, docId, stepNumber, stepN
 /**
  * Logs a document append operation with full details.
  * Only logs if diagnostic mode is enabled.
+ * Auto-creates sheet if it doesn't exist.
  *
  * @param {Object} client - Client object
  * @param {string} docId - Google Doc ID
@@ -529,12 +554,13 @@ function logDocAppend(client, docId, docUrl, contentType, content, success, erro
 
   try {
     const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(CONFIG.SHEETS.DOC_APPEND_LOG);
-
-    if (!sheet) {
-      Logger.log('Doc_Append_Log sheet not found. Run initializeDiagnosticSheets() first.');
-      return;
-    }
+    const sheet = ensureDiagnosticSheet(
+      ss,
+      CONFIG.SHEETS.DOC_APPEND_LOG,
+      ['Timestamp', 'Client_ID', 'Doc_ID', 'Doc_URL', 'Content_Type',
+       'Content_Preview', 'Content_Full_Length', 'Append_Success',
+       'Error_Details', 'Before_Doc_Length', 'After_Doc_Length', 'Verification_Status']
+    );
 
     const contentPreview = content ? content.substring(0, 200) : '';
     const contentLength = content ? content.length : 0;
