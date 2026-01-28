@@ -146,9 +146,10 @@ function generateAgendaForEvent(event, client) {
  *
  * @param {CalendarEvent} event - The calendar event
  * @param {Object} client - The client object
+ * @param {string} traceId - Optional trace ID for diagnostic logging
  * @returns {Object} Context object with tasks, emails, and meeting history
  */
-function gatherAgendaContext(event, client) {
+function gatherAgendaContext(event, client, traceId) {
   const context = {
     todoistTasks: [],
     recentEmails: [],
@@ -158,16 +159,50 @@ function gatherAgendaContext(event, client) {
 
   // Fetch Todoist tasks due today or overdue
   if (client.todoist_project_id) {
+    if (traceId) logAgendaStep(traceId, event, client, 3.1, 'FETCH_TODOIST', 'started', `Fetching Todoist tasks for project: ${client.todoist_project_id}`);
+
     context.todoistTasks = fetchTodoistTasksDueToday(client.todoist_project_id);
     Logger.log(`Found ${context.todoistTasks.length} Todoist tasks`);
+
+    // DIAGNOSTIC: Log Todoist data collection
+    logDataCollection(
+      client.client_name,
+      event.getId(),
+      'Todoist',
+      `project_id=${client.todoist_project_id}, due<=today`,
+      context.todoistTasks,
+      context.todoistTasks.slice(0, 3).map(t => ({ content: t.content, due: t.due ? t.due.date : 'no date' })),
+      null
+    );
+
+    if (traceId) logAgendaStep(traceId, event, client, 3.1, 'FETCH_TODOIST', 'success', `Found ${context.todoistTasks.length} tasks`);
+  } else {
+    if (traceId) logAgendaStep(traceId, event, client, 3.1, 'FETCH_TODOIST', 'skipped', 'No Todoist project ID configured');
   }
 
   // Fetch recent emails
+  if (traceId) logAgendaStep(traceId, event, client, 3.2, 'FETCH_EMAILS', 'started', 'Fetching recent emails from Gmail');
+
   context.recentEmails = fetchRecentClientEmails(client);
   Logger.log(`Found ${context.recentEmails.length} recent emails`);
 
+  // DIAGNOSTIC: Log Gmail data collection
+  logDataCollection(
+    client.client_name,
+    event.getId(),
+    'Gmail',
+    `from/to: ${client.contact_emails}, newer_than:7d`,
+    context.recentEmails,
+    context.recentEmails.slice(0, 3).map(e => ({ subject: e.subject, from: e.from, date: e.date })),
+    null
+  );
+
+  if (traceId) logAgendaStep(traceId, event, client, 3.2, 'FETCH_EMAILS', 'success', `Found ${context.recentEmails.length} emails`);
+
   // Fetch previous meeting notes and identify unmatched action items
   if (client.google_doc_url) {
+    if (traceId) logAgendaStep(traceId, event, client, 3.3, 'FETCH_DOC_NOTES', 'started', 'Fetching previous meeting notes from Google Doc');
+
     const meetingHistory = fetchPreviousMeetingNotes(client);
     context.previousMeetingNotes = meetingHistory.notes;
     context.unmatchedActionItems = findUnmatchedActionItems(
@@ -175,6 +210,26 @@ function gatherAgendaContext(event, client) {
       context.todoistTasks
     );
     Logger.log(`Found ${context.unmatchedActionItems.length} unmatched action items`);
+
+    // DIAGNOSTIC: Log Google Doc data collection
+    logDataCollection(
+      client.client_name,
+      event.getId(),
+      'Google Doc',
+      `doc_url: ${client.google_doc_url}`,
+      meetingHistory.notes ? [meetingHistory.notes] : [],
+      meetingHistory.notes ? [{
+        notes_preview: meetingHistory.notes.substring(0, 200),
+        notes_length: meetingHistory.notes.length,
+        action_items_count: meetingHistory.actionItems.length,
+        action_items: meetingHistory.actionItems.slice(0, 3)
+      }] : [],
+      null
+    );
+
+    if (traceId) logAgendaStep(traceId, event, client, 3.3, 'FETCH_DOC_NOTES', 'success', `Found notes with ${context.unmatchedActionItems.length} unmatched action items`);
+  } else {
+    if (traceId) logAgendaStep(traceId, event, client, 3.3, 'FETCH_DOC_NOTES', 'skipped', 'No Google Doc URL configured');
   }
 
   return context;
