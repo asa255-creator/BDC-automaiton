@@ -17,7 +17,14 @@ const CONFIG = {
     PROCESSING_LOG: 'Processing_Log',
     UNMATCHED: 'Unmatched',
     FOLDERS: 'Folders',
-    PROCESSED_FATHOM: 'Processed_Fathom_Meetings'
+    PROCESSED_FATHOM: 'Processed_Fathom_Meetings',
+    // Diagnostic sheets (hidden by default, only used when DIAGNOSTIC_MODE enabled)
+    API_REQUEST_LOG: 'API_Request_Log',
+    API_RESPONSE_LOG: 'API_Response_Log',
+    DATA_COLLECTION_LOG: 'Data_Collection_Log',
+    AGENDA_GENERATION_TRACE: 'Agenda_Generation_Trace',
+    NOTES_APPEND_TRACE: 'Notes_Append_Trace',
+    DOC_APPEND_LOG: 'Doc_Append_Log'
   },
   BUSINESS_HOURS: {
     START: 8,  // 8:00 AM

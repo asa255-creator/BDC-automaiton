@@ -97,25 +97,37 @@ function processEventForAgenda(event) {
 function generateAgendaForEvent(event, client) {
   Logger.log(`Generating agenda for: ${event.getTitle()} (${client.client_name})`);
 
+  // DIAGNOSTIC: Start trace
+  const traceId = startAgendaTrace(event, client);
+
   // Gather context
-  const context = gatherAgendaContext(event, client);
+  if (traceId) logAgendaStep(traceId, event, client, 4, 'GATHER_CONTEXT_START', 'started', 'Starting context gathering');
+  const context = gatherAgendaContext(event, client, traceId);
+  if (traceId) logAgendaStep(traceId, event, client, 4, 'GATHER_CONTEXT_START', 'success', 'Context gathering complete');
 
   // Generate agenda with Claude
-  const agendaContent = generateAgendaWithClaude(event, client, context);
+  const agendaContent = generateAgendaWithClaude(event, client, context, traceId);
 
   if (!agendaContent) {
     Logger.log('Failed to generate agenda content from Claude');
+    if (traceId) logAgendaStep(traceId, event, client, 8, 'AGENDA_FAILED', 'failed', 'Failed to generate agenda content');
     return;
   }
 
   // Send agenda email (will apply label from Client Registry)
-  sendAgendaEmail(event, client, agendaContent);
+  if (traceId) logAgendaStep(traceId, event, client, 9, 'SEND_EMAIL', 'started', 'Sending agenda email');
+  sendAgendaEmail(event, client, agendaContent, traceId);
+  if (traceId) logAgendaStep(traceId, event, client, 9, 'SEND_EMAIL', 'success', 'Email sent successfully');
 
   // Append to client's Google Doc
-  appendAgendaToDoc(event, client, agendaContent);
+  if (traceId) logAgendaStep(traceId, event, client, 10, 'APPEND_TO_DOC', 'started', 'Appending agenda to Google Doc');
+  appendAgendaToDoc(event, client, agendaContent, traceId);
+  if (traceId) logAgendaStep(traceId, event, client, 10, 'APPEND_TO_DOC', 'success', 'Appended to doc successfully');
 
   // Record the generation
   recordGeneratedAgenda(event, client);
+
+  if (traceId) logAgendaStep(traceId, event, client, 11, 'COMPLETE', 'success', 'Agenda generation completed successfully');
 
   logProcessing(
     'AGENDA_GENERATED',
@@ -379,17 +391,30 @@ function similarityScore(str1, str2) {
  * @param {CalendarEvent} event - The calendar event
  * @param {Object} client - The client object
  * @param {Object} context - The gathered context
+ * @param {string} traceId - Optional trace ID for diagnostic logging
  * @returns {string|null} The generated agenda content or null
  */
-function generateAgendaWithClaude(event, client, context) {
+function generateAgendaWithClaude(event, client, context, traceId) {
+  const startTime = new Date().getTime();
+
+  // DIAGNOSTIC: Log step - Check API key
+  if (traceId) logAgendaStep(traceId, event, client, 5, 'CHECK_API_KEY', 'started', 'Verifying Claude API key');
   const apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
 
   if (!apiKey) {
+    if (traceId) logAgendaStep(traceId, event, client, 5, 'CHECK_API_KEY', 'failed', 'Claude API key not configured');
     logProcessing('AGENDA_ERROR', client.client_name, 'Claude API key not configured - cannot generate agenda', 'error');
     return null;
   }
 
+  if (traceId) logAgendaStep(traceId, event, client, 5, 'CHECK_API_KEY', 'success', 'API key found');
+
+  // DIAGNOSTIC: Log step - Build prompt
+  if (traceId) logAgendaStep(traceId, event, client, 6, 'BUILD_PROMPT', 'started', 'Building Claude prompt with context');
+
   const prompt = buildAgendaPrompt(event, client, context);
+
+  if (traceId) logAgendaStep(traceId, event, client, 6, 'BUILD_PROMPT', 'success', `Prompt built (${prompt.length} chars)`);
 
   try {
     const url = 'https://api.anthropic.com/v1/messages';
@@ -409,29 +434,90 @@ function generateAgendaWithClaude(event, client, context) {
       ]
     };
 
+    const headers = {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json'
+    };
+
     const options = {
       method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json'
-      },
+      headers: headers,
       payload: JSON.stringify(payload),
       muteHttpExceptions: true
     };
 
+    // DIAGNOSTIC: Log API request
+    const requestId = logAPIRequest(
+      'Claude API',
+      url,
+      'POST',
+      headers,
+      payload,
+      {
+        clientId: client.client_name,
+        eventId: event.getId(),
+        flow: 'Agenda Generation'
+      }
+    );
+
+    if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'started', `Calling Claude API (request ID: ${requestId || 'N/A'})`);
+
+    // Make API call and measure duration
+    const apiStartTime = new Date().getTime();
     const response = UrlFetchApp.fetch(url, options);
+    const apiDuration = new Date().getTime() - apiStartTime;
+
     const responseCode = response.getResponseCode();
+    const responseText = response.getContentText();
+
+    // DIAGNOSTIC: Log API response
+    let parseSuccess = false;
+    let result = null;
+    let extractedData = null;
+    let apiError = null;
+
+    try {
+      if (responseCode === 200) {
+        result = JSON.parse(responseText);
+        parseSuccess = true;
+        extractedData = {
+          model: result.model || model,
+          stop_reason: result.stop_reason,
+          content_length: result.content && result.content[0] ? result.content[0].text.length : 0
+        };
+      } else {
+        apiError = `HTTP ${responseCode}`;
+      }
+    } catch (e) {
+      apiError = `Parse error: ${e.message}`;
+    }
+
+    logAPIResponse(
+      requestId,
+      'Claude API',
+      responseCode,
+      { 'content-type': response.getHeaders()['Content-Type'] || '' },
+      responseText,
+      parseSuccess,
+      extractedData,
+      apiError,
+      apiDuration
+    );
 
     if (responseCode !== 200) {
-      const errorDetail = `Claude API returned ${responseCode}: ${response.getContentText()}`;
+      const errorDetail = `Claude API returned ${responseCode}: ${responseText}`;
+      if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'failed', `API error: ${responseCode}`, null, apiDuration);
       logProcessing('AGENDA_ERROR', client.client_name, errorDetail, 'error');
       return null;
     }
 
-    const result = JSON.parse(response.getContentText());
+    if (!result) {
+      result = JSON.parse(responseText);
+    }
 
     if (result.content && result.content.length > 0) {
+      if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'success', `API call successful (${apiDuration}ms)`, `Response: ${extractedData ? extractedData.content_length : 0} chars`, apiDuration);
       logProcessing('AGENDA_GEN', client.client_name, 'Successfully generated agenda with Claude', 'success');
       let content = result.content[0].text;
 
@@ -750,7 +836,7 @@ function htmlToPlainText(html) {
  * @param {Object} client - The client object
  * @param {string} agendaContent - The generated agenda (HTML format)
  */
-function appendAgendaToDoc(event, client, agendaContent) {
+function appendAgendaToDoc(event, client, agendaContent, traceId) {
   if (!client.google_doc_url) {
     logProcessing('AGENDA_DOC', client.client_name, 'No Google Doc URL configured', 'warning');
     return;
@@ -758,6 +844,16 @@ function appendAgendaToDoc(event, client, agendaContent) {
 
   try {
     const docId = extractDocIdFromUrl(client.google_doc_url);
+
+    // DIAGNOSTIC: Get doc length before
+    let beforeLength = 0;
+    try {
+      const doc = DocumentApp.openById(docId);
+      beforeLength = doc.getBody().getText().length;
+    } catch (e) {
+      // If we can't get before length, just continue
+    }
+
     const doc = DocumentApp.openById(docId);
     const body = doc.getBody();
 
@@ -792,8 +888,47 @@ function appendAgendaToDoc(event, client, agendaContent) {
 
     doc.saveAndClose();
 
+    // DIAGNOSTIC: Get doc length after and verify
+    let afterLength = 0;
+    let verificationStatus = 'skipped';
+    try {
+      const verifyDoc = DocumentApp.openById(docId);
+      afterLength = verifyDoc.getBody().getText().length;
+      verificationStatus = afterLength > beforeLength ? 'verified' : 'failed';
+    } catch (e) {
+      verificationStatus = 'failed';
+    }
+
+    // DIAGNOSTIC: Log doc append
+    logDocAppend(
+      client,
+      docId,
+      client.google_doc_url,
+      'Agenda',
+      plainTextContent,
+      true,
+      null,
+      beforeLength,
+      afterLength,
+      verificationStatus
+    );
+
     logProcessing('AGENDA_DOC', client.client_name, `Appended agenda for: ${event.getTitle()}`, 'success');
   } catch (error) {
+    // DIAGNOSTIC: Log failed append
+    logDocAppend(
+      client,
+      extractDocIdFromUrl(client.google_doc_url || ''),
+      client.google_doc_url || '',
+      'Agenda',
+      agendaContent,
+      false,
+      error.message,
+      0,
+      0,
+      'failed'
+    );
+
     logProcessing('AGENDA_DOC', client.client_name, `Failed to append agenda: ${error.message}`, 'error');
   }
 }

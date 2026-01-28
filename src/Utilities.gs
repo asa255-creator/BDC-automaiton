@@ -1685,6 +1685,11 @@ function onOpen() {
       .addItem('Update Settings...', 'showSettingsEditor')
       .addItem('Adjust Prompts...', 'showPromptsEditor')
       .addSeparator()
+      .addSubMenu(ui.createMenu('Diagnostic Mode')
+        .addItem('Toggle Diagnostic Mode', 'toggleDiagnosticModeUI')
+        .addItem('View Diagnostic Sheets', 'showDiagnosticSheetsUI')
+        .addItem('Clear Diagnostic Data', 'clearDiagnosticSheetsUI')
+        .addItem('Initialize Diagnostic Sheets', 'initializeDiagnosticSheetsUI'))
       .addItem('View Processing Log', 'showProcessingLog')
       .addSeparator()
       .addItem('Disable Automation...', 'disableAutomationWithConfirmation')
@@ -3054,4 +3059,177 @@ function importClientsFromWizard(importData) {
   logProcessing('MIGRATION_WIZARD', null, summary, 'success');
 
   return { imported: imported };
+}
+
+// ============================================================================
+// DIAGNOSTIC MODE UI FUNCTIONS
+// ============================================================================
+
+/**
+ * Toggles diagnostic mode on/off with user feedback.
+ */
+function toggleDiagnosticModeUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    const currentState = isDiagnosticModeEnabled();
+    const newState = toggleDiagnosticMode();
+
+    const statusText = newState ? 'ENABLED' : 'DISABLED';
+    const icon = newState ? '✅' : '❌';
+
+    ui.alert(
+      `Diagnostic Mode ${statusText}`,
+      `${icon} Diagnostic mode is now ${statusText}.\n\n` +
+      (newState ?
+        'Detailed logging will now be captured for:\n' +
+        '• API requests and responses (Claude, Todoist)\n' +
+        '• Data collection from all sources\n' +
+        '• Step-by-step agenda generation traces\n' +
+        '• Notes appending operations\n' +
+        '• Document append operations\n\n' +
+        'View diagnostic data via:\n' +
+        'Client Automation > Diagnostic Mode > View Diagnostic Sheets'
+        :
+        'Detailed logging has been disabled.\n' +
+        'Diagnostic sheets remain hidden but data is preserved.\n' +
+        'Re-enable diagnostic mode to resume logging.'
+      ),
+      ui.ButtonSet.OK
+    );
+
+    logProcessing('DIAGNOSTIC_MODE', null, `Diagnostic mode ${statusText}`, 'info');
+
+  } catch (error) {
+    ui.alert('Error', `Failed to toggle diagnostic mode: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`toggleDiagnosticModeUI error: ${error.message}`);
+  }
+}
+
+/**
+ * Shows all diagnostic sheets (unhides them).
+ */
+function showDiagnosticSheetsUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    const shown = showDiagnosticSheets();
+
+    if (shown === 0) {
+      ui.alert(
+        'Diagnostic Sheets',
+        'Diagnostic sheets are already visible.\n\n' +
+        'Available sheets:\n' +
+        '• API_Request_Log\n' +
+        '• API_Response_Log\n' +
+        '• Data_Collection_Log\n' +
+        '• Agenda_Generation_Trace\n' +
+        '• Notes_Append_Trace\n' +
+        '• Doc_Append_Log',
+        ui.ButtonSet.OK
+      );
+    } else {
+      ui.alert(
+        'Diagnostic Sheets Visible',
+        `✅ ${shown} diagnostic sheet(s) are now visible.\n\n` +
+        'You can browse them to diagnose issues.\n\n' +
+        'To hide them again:\n' +
+        '1. Right-click on any diagnostic sheet tab\n' +
+        '2. Select "Hide sheet"',
+        ui.ButtonSet.OK
+      );
+    }
+
+  } catch (error) {
+    ui.alert('Error', `Failed to show diagnostic sheets: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`showDiagnosticSheetsUI error: ${error.message}`);
+  }
+}
+
+/**
+ * Clears all diagnostic data with user confirmation.
+ */
+function clearDiagnosticSheetsUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    const response = ui.alert(
+      'Clear Diagnostic Data?',
+      'This will delete all diagnostic data from:\n' +
+      '• API_Request_Log\n' +
+      '• API_Response_Log\n' +
+      '• Data_Collection_Log\n' +
+      '• Agenda_Generation_Trace\n' +
+      '• Notes_Append_Trace\n' +
+      '• Doc_Append_Log\n\n' +
+      'Headers will be preserved.\n\n' +
+      'Are you sure?',
+      ui.ButtonSet.YES_NO
+    );
+
+    if (response !== ui.Button.YES) {
+      ui.alert('Cancelled', 'Diagnostic data was not cleared.', ui.ButtonSet.OK);
+      return;
+    }
+
+    const cleared = clearDiagnosticSheets();
+
+    ui.alert(
+      'Diagnostic Data Cleared',
+      `✅ Cleared ${cleared} diagnostic sheet(s).\n\n` +
+      'All diagnostic data has been removed.\n' +
+      'New data will be logged when diagnostic mode is enabled.',
+      ui.ButtonSet.OK
+    );
+
+    logProcessing('DIAGNOSTIC_CLEAR', null, `Cleared ${cleared} diagnostic sheets`, 'info');
+
+  } catch (error) {
+    ui.alert('Error', `Failed to clear diagnostic data: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`clearDiagnosticSheetsUI error: ${error.message}`);
+  }
+}
+
+/**
+ * Initializes all diagnostic sheets.
+ */
+function initializeDiagnosticSheetsUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    ui.alert(
+      'Initialize Diagnostic Sheets',
+      'Creating diagnostic sheets with headers...\n' +
+      'This may take a moment.',
+      ui.ButtonSet.OK
+    );
+
+    const created = initializeDiagnosticSheets();
+
+    if (created === 0) {
+      ui.alert(
+        'Already Initialized',
+        'All diagnostic sheets already exist.\n\n' +
+        'No new sheets were created.',
+        ui.ButtonSet.OK
+      );
+    } else {
+      ui.alert(
+        'Diagnostic Sheets Created',
+        `✅ Created ${created} diagnostic sheet(s).\n\n` +
+        'Sheets are hidden by default.\n\n' +
+        'To use diagnostic mode:\n' +
+        '1. Client Automation > Diagnostic Mode > Toggle Diagnostic Mode\n' +
+        '2. Perform actions you want to diagnose\n' +
+        '3. Client Automation > Diagnostic Mode > View Diagnostic Sheets',
+        ui.ButtonSet.OK
+      );
+
+      logProcessing('DIAGNOSTIC_INIT', null, `Created ${created} diagnostic sheets`, 'success');
+    }
+
+  } catch (error) {
+    ui.alert('Error', `Failed to initialize diagnostic sheets: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`initializeDiagnosticSheetsUI error: ${error.message}`);
+  }
 }
