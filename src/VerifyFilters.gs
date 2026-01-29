@@ -236,8 +236,11 @@ function testFilterCriteria(clientName) {
 }
 
 /**
- * Identifies and optionally removes broken filters (filters with no actions).
- * These are filters that have criteria but no "Do this" actions.
+ * Identifies and optionally removes broken system-created filters.
+ * SAFETY: Only touches filters that were created by this system (apply Client:* or Brief:* labels).
+ *
+ * @param {boolean} autoFix - If true, deletes broken system filters
+ * @returns {Object} Summary of broken filters found and fixed
  */
 function findAndFixBrokenFilters(autoFix = false) {
   Logger.log('=== CHECKING FOR BROKEN FILTERS ===\n');
@@ -245,12 +248,13 @@ function findAndFixBrokenFilters(autoFix = false) {
   try {
     if (typeof Gmail === 'undefined' || !Gmail.Users) {
       Logger.log('❌ Gmail Advanced Service not enabled');
-      return { broken: [], fixed: 0 };
+      return { broken: [], fixed: 0, skipped: 0 };
     }
 
     const response = Gmail.Users.Settings.Filters.list('me');
     const allFilters = response.filter || [];
-    const brokenFilters = [];
+    const brokenSystemFilters = [];
+    const brokenUserFilters = [];
 
     allFilters.forEach((filter, index) => {
       // Check if filter has no actions
@@ -264,27 +268,42 @@ function findAndFixBrokenFilters(autoFix = false) {
 
       if (!hasAction || (filter.action.addLabelIds && filter.action.addLabelIds.length === 0)) {
         const criteria = filter.criteria ? filter.criteria.query : 'N/A';
-        brokenFilters.push({
+        const filterInfo = {
           id: filter.id,
-          criteria: criteria
-        });
-        Logger.log(`BROKEN FILTER #${brokenFilters.length}:`);
-        Logger.log(`  Criteria: ${criteria}`);
-        Logger.log(`  ID: ${filter.id}`);
-        Logger.log('  Problem: No actions defined (empty "Do this" section)');
-        Logger.log('');
+          criteria: criteria,
+          filter: filter
+        };
+
+        // SAFETY CHECK: Only mark system-created filters for potential deletion
+        if (isSystemCreatedFilter(filter)) {
+          brokenSystemFilters.push(filterInfo);
+          Logger.log(`BROKEN SYSTEM FILTER #${brokenSystemFilters.length}:`);
+          Logger.log(`  Criteria: ${criteria}`);
+          Logger.log(`  ID: ${filter.id}`);
+          Logger.log('  Problem: No actions defined (empty "Do this" section)');
+          Logger.log('  ✓ Safe to delete (system-created)');
+          Logger.log('');
+        } else {
+          brokenUserFilters.push(filterInfo);
+          Logger.log(`BROKEN USER FILTER (SKIPPED):`);
+          Logger.log(`  Criteria: ${criteria}`);
+          Logger.log(`  ID: ${filter.id}`);
+          Logger.log('  ⚠️  Not system-created - will not be deleted');
+          Logger.log('');
+        }
       }
     });
 
     Logger.log(`\n=== SUMMARY ===`);
     Logger.log(`Total filters: ${allFilters.length}`);
-    Logger.log(`Broken filters: ${brokenFilters.length}`);
+    Logger.log(`Broken system filters: ${brokenSystemFilters.length}`);
+    Logger.log(`Broken user filters (skipped): ${brokenUserFilters.length}`);
 
-    if (brokenFilters.length > 0 && autoFix) {
-      Logger.log('\nDELETING BROKEN FILTERS...');
+    if (brokenSystemFilters.length > 0 && autoFix) {
+      Logger.log('\nDELETING BROKEN SYSTEM FILTERS...');
       let deletedCount = 0;
 
-      for (const broken of brokenFilters) {
+      for (const broken of brokenSystemFilters) {
         try {
           Gmail.Users.Settings.Filters.remove('me', broken.id);
           Logger.log(`✅ Deleted: ${broken.criteria}`);
@@ -294,20 +313,24 @@ function findAndFixBrokenFilters(autoFix = false) {
         }
       }
 
-      Logger.log(`\nDeleted ${deletedCount} broken filters`);
-      return { broken: brokenFilters, fixed: deletedCount };
+      Logger.log(`\nDeleted ${deletedCount} broken system filters`);
+      Logger.log(`Skipped ${brokenUserFilters.length} user-created filters`);
+      return {
+        broken: brokenSystemFilters.length,
+        fixed: deletedCount,
+        skipped: brokenUserFilters.length
+      };
     }
 
-    if (brokenFilters.length > 0) {
-      Logger.log('\nTo delete these broken filters, run:');
-      Logger.log('  findAndFixBrokenFilters(true)');
-    }
-
-    return { broken: brokenFilters, fixed: 0 };
+    return {
+      broken: brokenSystemFilters.length,
+      fixed: 0,
+      skipped: brokenUserFilters.length
+    };
 
   } catch (e) {
     Logger.log('❌ Error checking filters: ' + e.message);
-    return { broken: [], fixed: 0 };
+    return { broken: 0, fixed: 0, skipped: 0 };
   }
 }
 

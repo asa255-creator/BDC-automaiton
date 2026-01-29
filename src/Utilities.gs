@@ -1859,6 +1859,7 @@ function showProcessingLog() {
 
 /**
  * Runs filter and label verification and shows results to user.
+ * Includes broken filter detection and optional cleanup.
  */
 function showFilterVerification() {
   const ui = SpreadsheetApp.getUi();
@@ -1903,6 +1904,34 @@ function showFilterVerification() {
     message += '\n\nCheck the Apps Script logs for detailed output.';
 
     ui.alert('Verification Complete', message, ui.ButtonSet.OK);
+
+    // Check for broken filters
+    if (results.gmailApiEnabled) {
+      const brokenResults = findAndFixBrokenFilters(false);
+
+      if (brokenResults.broken > 0) {
+        const cleanupResponse = ui.alert(
+          'Broken Filters Found',
+          `Found ${brokenResults.broken} broken system filter(s) with no actions.\n` +
+          (brokenResults.skipped > 0 ? `(${brokenResults.skipped} user filter(s) skipped for safety)\n\n` : '\n') +
+          'These filters have search criteria but no "Do this" actions.\n\n' +
+          'Would you like to delete the broken system filters?\n' +
+          '(Your personal filters will NOT be touched)',
+          ui.ButtonSet.YES_NO
+        );
+
+        if (cleanupResponse === ui.Button.YES) {
+          const fixResults = findAndFixBrokenFilters(true);
+          ui.alert(
+            'Cleanup Complete',
+            `Deleted ${fixResults.fixed} broken system filter(s).\n` +
+            `Skipped ${fixResults.skipped} user filter(s) for safety.\n\n` +
+            'Check Gmail Settings > Filters to verify.',
+            ui.ButtonSet.OK
+          );
+        }
+      }
+    }
 
   } catch (error) {
     ui.alert(
