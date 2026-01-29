@@ -20,6 +20,9 @@
 function syncLabelsAndFilters() {
   Logger.log('Starting label and filter synchronization...');
 
+  // Ensure filter ID columns exist in Client_Registry
+  ensureFilterIdColumnsExist();
+
   // Get all clients
   const allClients = getClientRegistry();
 
@@ -83,32 +86,51 @@ function syncClientLabels(client) {
 
   // Create filters (requires Gmail API Advanced Service)
   const contacts = parseCommaSeparatedList(client.contact_emails);
+  const filterIds = {};
 
   if (contacts.length > 0) {
     // Filter for incoming emails from client contacts
     const fromCriteria = buildFromCriteria(contacts);
     if (fromCriteria) {
-      createGmailApiFilter(fromCriteria, baseLabelName);
+      const fromFilter = createGmailApiFilter(fromCriteria, baseLabelName);
+      if (fromFilter && fromFilter.id) {
+        filterIds.from_filter_id = fromFilter.id;
+      }
     }
 
     // Filter for outgoing emails to client contacts
     const toCriteria = buildToCriteria(contacts);
     if (toCriteria) {
-      createGmailApiFilter(toCriteria, baseLabelName);
+      const toFilter = createGmailApiFilter(toCriteria, baseLabelName);
+      if (toFilter && toFilter.id) {
+        filterIds.to_filter_id = toFilter.id;
+      }
     }
 
     // Filter for sent meeting summaries to client (uses client name in subject)
     if (toCriteria) {
       const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
       const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
-      createGmailApiFilter(summaryCriteria, summaryLabelName);
+      const summaryFilter = createGmailApiFilter(summaryCriteria, summaryLabelName);
+      if (summaryFilter && summaryFilter.id) {
+        filterIds.summary_filter_id = summaryFilter.id;
+      }
     }
   }
 
   // Filter for self-sent agendas (uses client name in subject)
   const agendaPattern = getAgendaFilterPatternForClient(client.client_name);
   const agendaCriteria = `from:me to:me subject:"${agendaPattern}"`;
-  createGmailApiFilter(agendaCriteria, agendaLabelName);
+  const agendaFilter = createGmailApiFilter(agendaCriteria, agendaLabelName);
+  if (agendaFilter && agendaFilter.id) {
+    filterIds.agenda_filter_id = agendaFilter.id;
+  }
+
+  // Store filter IDs in Client_Registry
+  if (Object.keys(filterIds).length > 0) {
+    storeFilterIds(client.client_name, filterIds);
+    Logger.log(`Stored ${Object.keys(filterIds).length} filter IDs for ${client.client_name}`);
+  }
 
   Logger.log(`Synced filters for client: ${client.client_name}`);
 }
