@@ -1883,9 +1883,13 @@ function showFilterVerification() {
     } else {
       message += '❌ Gmail API: NOT enabled\n\n';
       message += 'TO FIX:\n';
-      message += '1. In Apps Script editor, click + next to Services\n';
-      message += '2. Find "Gmail API" and click Add\n';
-      message += '3. Re-run "Update Folders" from menu\n\n';
+      message += '1. Go to menu: Client Automation > Sync Gmail Labels & Filters\n';
+      message += '2. This will set up labels and filters for your clients\n\n';
+      message += 'Note: If Gmail API service is not enabled in Apps Script, you may need to:\n';
+      message += '- Open Extensions > Apps Script\n';
+      message += '- Click "Services" (+) in left sidebar\n';
+      message += '- Add "Gmail API"\n';
+      message += '- Then run "Sync Gmail Labels & Filters" again\n\n';
     }
 
     message += `\nLabels: ${results.labelsCreated.length} created\n`;
@@ -2203,7 +2207,7 @@ function updateFiltersFromEditor() {
   try {
     // Check if Gmail Advanced Service is available
     if (typeof Gmail === 'undefined' || !Gmail.Users) {
-      const msg = 'Gmail Advanced Service not enabled. Enable it in Apps Script Editor > Services > Gmail API.';
+      const msg = 'Gmail Advanced Service not enabled. Run "Sync Gmail Labels & Filters" from the menu instead, or enable Gmail API in Apps Script Services.';
       logProcessing('FILTER_UPDATE', null, msg, 'error');
       return {
         success: false,

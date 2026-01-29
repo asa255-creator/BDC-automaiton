@@ -25,12 +25,14 @@ function verifyFiltersAndLabels() {
     if (typeof Gmail === 'undefined' || !Gmail.Users) {
       Logger.log('❌ Gmail Advanced Service is NOT enabled');
       results.gmailApiEnabled = false;
-      results.issues.push('Gmail Advanced Service not enabled - filters cannot be created programmatically');
+      results.issues.push('Gmail Advanced Service not enabled - run "Sync Gmail Labels & Filters" from menu');
       Logger.log('\nTO FIX:');
-      Logger.log('  1. In Apps Script editor, click on + next to Services');
-      Logger.log('  2. Find "Gmail API" and select it');
-      Logger.log('  3. Click "Add"');
-      Logger.log('  4. Re-run syncLabelsAndFilters()');
+      Logger.log('  1. Go to menu: Client Automation > Sync Gmail Labels & Filters');
+      Logger.log('  2. If that fails, you may need to enable Gmail API service:');
+      Logger.log('     a. Open Extensions > Apps Script');
+      Logger.log('     b. Click "Services" (+) in left sidebar');
+      Logger.log('     c. Add "Gmail API"');
+      Logger.log('     d. Run "Sync Gmail Labels & Filters" again');
     } else {
       Logger.log('✅ Gmail Advanced Service is enabled');
       results.gmailApiEnabled = true;
