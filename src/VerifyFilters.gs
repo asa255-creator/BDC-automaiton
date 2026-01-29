@@ -236,6 +236,82 @@ function testFilterCriteria(clientName) {
 }
 
 /**
+ * Identifies and optionally removes broken filters (filters with no actions).
+ * These are filters that have criteria but no "Do this" actions.
+ */
+function findAndFixBrokenFilters(autoFix = false) {
+  Logger.log('=== CHECKING FOR BROKEN FILTERS ===\n');
+
+  try {
+    if (typeof Gmail === 'undefined' || !Gmail.Users) {
+      Logger.log('❌ Gmail Advanced Service not enabled');
+      return { broken: [], fixed: 0 };
+    }
+
+    const response = Gmail.Users.Settings.Filters.list('me');
+    const allFilters = response.filter || [];
+    const brokenFilters = [];
+
+    allFilters.forEach((filter, index) => {
+      // Check if filter has no actions
+      const hasAction = filter.action && (
+        filter.action.addLabelIds ||
+        filter.action.removeLabelIds ||
+        filter.action.forward ||
+        filter.action.addLabelIds?.length > 0 ||
+        filter.action.removeLabelIds?.length > 0
+      );
+
+      if (!hasAction || (filter.action.addLabelIds && filter.action.addLabelIds.length === 0)) {
+        const criteria = filter.criteria ? filter.criteria.query : 'N/A';
+        brokenFilters.push({
+          id: filter.id,
+          criteria: criteria
+        });
+        Logger.log(`BROKEN FILTER #${brokenFilters.length}:`);
+        Logger.log(`  Criteria: ${criteria}`);
+        Logger.log(`  ID: ${filter.id}`);
+        Logger.log('  Problem: No actions defined (empty "Do this" section)');
+        Logger.log('');
+      }
+    });
+
+    Logger.log(`\n=== SUMMARY ===`);
+    Logger.log(`Total filters: ${allFilters.length}`);
+    Logger.log(`Broken filters: ${brokenFilters.length}`);
+
+    if (brokenFilters.length > 0 && autoFix) {
+      Logger.log('\nDELETING BROKEN FILTERS...');
+      let deletedCount = 0;
+
+      for (const broken of brokenFilters) {
+        try {
+          Gmail.Users.Settings.Filters.remove('me', broken.id);
+          Logger.log(`✅ Deleted: ${broken.criteria}`);
+          deletedCount++;
+        } catch (e) {
+          Logger.log(`❌ Failed to delete ${broken.id}: ${e.message}`);
+        }
+      }
+
+      Logger.log(`\nDeleted ${deletedCount} broken filters`);
+      return { broken: brokenFilters, fixed: deletedCount };
+    }
+
+    if (brokenFilters.length > 0) {
+      Logger.log('\nTo delete these broken filters, run:');
+      Logger.log('  findAndFixBrokenFilters(true)');
+    }
+
+    return { broken: brokenFilters, fixed: 0 };
+
+  } catch (e) {
+    Logger.log('❌ Error checking filters: ' + e.message);
+    return { broken: [], fixed: 0 };
+  }
+}
+
+/**
  * Shows all Gmail filters in your account (both user-created and system-created).
  */
 function showAllGmailFilters() {

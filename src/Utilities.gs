@@ -1740,6 +1740,7 @@ function onOpen() {
       .addSeparator()
       .addItem('Check for New Clients', 'checkForNewClients')
       .addItem('Update Folders', 'manualUpdateFolders')
+      .addItem('Sync Gmail Labels & Filters', 'manualSyncLabelsAndFiltersUI')
       .addItem('Load Latest Meeting', 'loadLatestFathomMeeting')
       .addSeparator()
       .addItem('Update Settings...', 'showSettingsEditor')
@@ -1772,6 +1773,41 @@ function manualUpdateFolders() {
   } catch (e) {
     ui.alert('Error', `Failed to update folders: ${e.message}`, ui.ButtonSet.OK);
     Logger.log(`manualUpdateFolders error: ${e.message}`);
+  }
+}
+
+/**
+ * Manually syncs Gmail labels and filters for all clients with setup_complete=true.
+ */
+function manualSyncLabelsAndFiltersUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  // Get count of clients to process
+  const allClients = getClientRegistry();
+  const setupCompleteClients = allClients.filter(c => c.setup_complete === true);
+
+  const response = ui.alert(
+    'Sync Gmail Labels & Filters',
+    `This will create Gmail labels and filters for ${setupCompleteClients.length} client(s) with setup_complete=true.\n\n` +
+    'This may take a minute. Continue?',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (response !== ui.Button.YES) {
+    return;
+  }
+
+  try {
+    syncLabelsAndFilters();
+    ui.alert(
+      'Complete',
+      `Labels and filters have been created for ${setupCompleteClients.length} client(s).\n\n` +
+      'Check Gmail Settings > Filters to verify.',
+      ui.ButtonSet.OK
+    );
+  } catch (e) {
+    ui.alert('Error', `Failed to sync labels and filters: ${e.message}`, ui.ButtonSet.OK);
+    Logger.log(`manualSyncLabelsAndFiltersUI error: ${e.message}`);
   }
 }
 
