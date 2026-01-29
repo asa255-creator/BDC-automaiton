@@ -1901,13 +1901,11 @@ function showFilterVerification() {
       results.issues.forEach(issue => {
         message += `  - ${issue}\n`;
       });
-    } else {
-      message += '\n✅ No issues found!';
     }
 
-    message += '\n\nCheck the Apps Script logs for detailed output.';
+    message += '\n\nChecking filter health...';
 
-    ui.alert('Verification Complete', message, ui.ButtonSet.OK);
+    ui.alert('Verification Results', message, ui.ButtonSet.OK);
 
     // If filters are missing entirely, offer to create them
     if (results.gmailApiEnabled && results.filtersCreated.length === 0 && results.clients.length > 0) {
@@ -1977,6 +1975,16 @@ function showFilterVerification() {
             ui.ButtonSet.OK
           );
         }
+      } else {
+        // No broken filters found - all good!
+        ui.alert(
+          'Verification Complete',
+          '✅ All filters are working correctly!\n\n' +
+          `Labels: ${results.labelsCreated.length}\n` +
+          `Filters: ${results.filtersCreated.length}\n` +
+          `Clients: ${results.clients.length}`,
+          ui.ButtonSet.OK
+        );
       }
     }
 
