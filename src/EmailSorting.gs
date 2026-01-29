@@ -354,6 +354,48 @@ function logFilterSpec(filterType, clientName, spec) {
 // ============================================================================
 
 /**
+ * Checks if a label is system-managed (safe to create filters for).
+ * System-managed labels are:
+ * - Any label in Client_Registry (gmail_label, meeting_summaries_label, meeting_agendas_label)
+ * - Brief: Daily and Brief: Weekly
+ *
+ * @param {string} labelName - Label name to check
+ * @returns {boolean} True if system-managed
+ */
+function isSystemManagedLabel(labelName) {
+  // Allow briefing labels
+  const props = PropertiesService.getScriptProperties();
+  const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
+  const weeklyLabel = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
+
+  if (labelName === dailyLabel || labelName === weeklyLabel ||
+      labelName === 'Brief: Daily' || labelName === 'Brief: Weekly') {
+    return true;
+  }
+
+  // Get all client labels from Client_Registry
+  try {
+    const clients = getClientRegistry();
+
+    for (const client of clients) {
+      const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;
+      const summaryLabelName = client.meeting_summaries_label || `${baseLabelName}/Meeting Summaries`;
+      const agendaLabelName = client.meeting_agendas_label || `${baseLabelName}/Meeting Agendas`;
+
+      if (labelName === baseLabelName ||
+          labelName === summaryLabelName ||
+          labelName === agendaLabelName) {
+        return true;
+      }
+    }
+  } catch (e) {
+    Logger.log(`Error checking system labels: ${e.message}`);
+  }
+
+  return false;
+}
+
+/**
  * Creates a Gmail filter using the Gmail API.
  * Requires the Gmail Advanced Service to be enabled.
  * ONLY creates filters for system-managed labels.
@@ -371,17 +413,7 @@ function createGmailApiFilter(criteria, labelName) {
     }
 
     // Safety check: Only create filters for system-managed labels
-    const props = PropertiesService.getScriptProperties();
-    const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
-    const weeklyLabel = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
-
-    const isSystemLabel = labelName.startsWith('Client: ') ||
-                         labelName === dailyLabel ||
-                         labelName === weeklyLabel ||
-                         labelName === 'Brief: Daily' ||
-                         labelName === 'Brief: Weekly';
-
-    if (!isSystemLabel) {
+    if (!isSystemManagedLabel(labelName)) {
       Logger.log(`SAFETY: Refusing to create filter for non-system label: ${labelName}`);
       return null;
     }
