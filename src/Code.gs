@@ -181,17 +181,26 @@ function verifyFathomWebhookSignature(e, secret) {
  * Should be run once during initial setup.
  *
  * Triggers created:
+ * - Daily log cleanup: daily at 3:00 AM (removes Processing_Log entries older than 3 days)
  * - Google Drive folder sync: daily at 5:30 AM
  * - Label and filter creation: daily at 6:00 AM
  * - Client onboarding check: daily at 6:30 AM
  * - Daily outlook: daily at 7:00 AM
  * - Weekly outlook: weekly on Monday at 7:00 AM
  * - Sent meeting summary monitor: every 10 minutes
+ * - Fathom API polling: every 30 minutes
  * - Agenda generation: every 1 hour (limited to business hours in handler)
  */
 function setupTriggers() {
   // First, remove any existing triggers to avoid duplicates
   removeAllTriggers();
+
+  // Daily log cleanup - daily at 3:00 AM (removes entries older than 3 days)
+  ScriptApp.newTrigger('dailyLogCleanup')
+    .timeBased()
+    .atHour(3)
+    .everyDays(1)
+    .create();
 
   // Google Drive folder sync - daily at 5:30 AM
   ScriptApp.newTrigger('runFolderSync')

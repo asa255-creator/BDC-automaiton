@@ -183,6 +183,30 @@ function getEndOfWeek() {
 // ============================================================================
 
 /**
+ * Returns a human-readable EST timestamp.
+ * Format: "Jan 20, 2026 4:29 PM EST"
+ *
+ * @returns {string} Formatted timestamp in EST
+ */
+function getHumanReadableTimestamp() {
+  const date = new Date();
+
+  // Format options for EST
+  const options = {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short'
+  };
+
+  return date.toLocaleString('en-US', options);
+}
+
+/**
  * Logs a processing action to the Processing_Log sheet.
  *
  * @param {string} actionType - Type of action (e.g., 'WEBHOOK_PROCESS', 'AGENDA_GEN')
@@ -201,7 +225,7 @@ function logProcessing(actionType, clientId, details, status) {
     }
 
     sheet.appendRow([
-      new Date().toISOString(),
+      getHumanReadableTimestamp(),
       actionType,
       clientId || '',
       details,
@@ -250,36 +274,72 @@ function getRecentLogs(limit = 50, actionType = null) {
 
 /**
  * Clears old processing logs (older than specified days).
+ * Handles both ISO format (2026-01-20T21:29:45.003Z) and human-readable format (Jan 20, 2026 4:29 PM EST).
  *
  * @param {number} daysToKeep - Number of days of logs to retain
+ * @returns {number} Number of rows deleted
  */
 function clearOldLogs(daysToKeep = 30) {
-  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(CONFIG.SHEETS.PROCESSING_LOG);
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.PROCESSING_LOG);
 
-  if (!sheet) {
-    return;
-  }
-
-  const data = sheet.getDataRange().getValues();
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-  const rowsToDelete = [];
-
-  for (let i = 1; i < data.length; i++) {
-    const timestamp = new Date(data[i][0]);
-    if (timestamp < cutoffDate) {
-      rowsToDelete.push(i + 1); // 1-based row index
+    if (!sheet) {
+      Logger.log('Processing_Log sheet not found');
+      return 0;
     }
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      // Only header row or empty
+      return 0;
+    }
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+
+    const rowsToDelete = [];
+
+    for (let i = 1; i < data.length; i++) {
+      try {
+        // Parse timestamp - works with both ISO and human-readable formats
+        const timestamp = new Date(data[i][0]);
+
+        // Check if valid date and older than cutoff
+        if (!isNaN(timestamp.getTime()) && timestamp < cutoffDate) {
+          rowsToDelete.push(i + 1); // 1-based row index
+        }
+      } catch (e) {
+        Logger.log(`Could not parse timestamp: ${data[i][0]}`);
+      }
+    }
+
+    // Delete rows from bottom to top to preserve indices
+    rowsToDelete.reverse().forEach(rowIndex => {
+      sheet.deleteRow(rowIndex);
+    });
+
+    if (rowsToDelete.length > 0) {
+      logProcessing('LOG_CLEANUP', null, `Deleted ${rowsToDelete.length} log entries older than ${daysToKeep} days`, 'info');
+    }
+
+    Logger.log(`Cleared ${rowsToDelete.length} old log entries`);
+    return rowsToDelete.length;
+
+  } catch (error) {
+    Logger.log(`Error clearing old logs: ${error.message}`);
+    return 0;
   }
+}
 
-  // Delete rows from bottom to top to preserve indices
-  rowsToDelete.reverse().forEach(rowIndex => {
-    sheet.deleteRow(rowIndex);
-  });
-
-  Logger.log(`Cleared ${rowsToDelete.length} old log entries`);
+/**
+ * Daily cleanup job - deletes Processing_Log entries older than 3 days.
+ * Called by daily trigger.
+ */
+function dailyLogCleanup() {
+  Logger.log('Running daily log cleanup...');
+  const deleted = clearOldLogs(3);
+  Logger.log(`Daily cleanup complete: ${deleted} entries removed`);
 }
 
 // ============================================================================
