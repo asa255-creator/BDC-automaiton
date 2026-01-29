@@ -1747,6 +1747,7 @@ function onOpen() {
       .addSeparator()
       .addItem('Initialize Diagnostic Sheets', 'initializeDiagnosticSheetsUI')
       .addItem('View Processing Log', 'showProcessingLog')
+      .addItem('Verify Filters & Labels', 'showFilterVerification')
       .addSeparator()
       .addItem('Disable Automation...', 'disableAutomationWithConfirmation')
       .addToUi();
@@ -1817,6 +1818,63 @@ function showProcessingLog() {
     ui.alert('Processing Log', 'Showing the Processing_Log sheet with recent activity.', ui.ButtonSet.OK);
   } else {
     ui.alert('Not Found', 'Processing_Log sheet not found. Run setup first.', ui.ButtonSet.OK);
+  }
+}
+
+/**
+ * Runs filter and label verification and shows results to user.
+ */
+function showFilterVerification() {
+  const ui = SpreadsheetApp.getUi();
+
+  ui.alert(
+    'Filter Verification',
+    'Running verification... Check the Apps Script logs for detailed results.\n\n' +
+    'To view logs:\n' +
+    '1. Open Extensions > Apps Script\n' +
+    '2. Click "Execution log" at the bottom',
+    ui.ButtonSet.OK
+  );
+
+  try {
+    const results = verifyFiltersAndLabels();
+
+    let message = '=== VERIFICATION RESULTS ===\n\n';
+
+    if (results.gmailApiEnabled) {
+      message += '✅ Gmail API: Enabled\n';
+    } else {
+      message += '❌ Gmail API: NOT enabled\n\n';
+      message += 'TO FIX:\n';
+      message += '1. In Apps Script editor, click + next to Services\n';
+      message += '2. Find "Gmail API" and click Add\n';
+      message += '3. Re-run "Update Folders" from menu\n\n';
+    }
+
+    message += `\nLabels: ${results.labelsCreated.length} created\n`;
+    message += `Filters: ${results.filtersCreated.length} created\n`;
+    message += `Clients: ${results.clients.length} with setup_complete\n`;
+
+    if (results.issues.length > 0) {
+      message += '\n⚠️ ISSUES:\n';
+      results.issues.forEach(issue => {
+        message += `  - ${issue}\n`;
+      });
+    } else {
+      message += '\n✅ No issues found!';
+    }
+
+    message += '\n\nCheck the Apps Script logs for detailed output.';
+
+    ui.alert('Verification Complete', message, ui.ButtonSet.OK);
+
+  } catch (error) {
+    ui.alert(
+      'Verification Error',
+      'Error running verification: ' + error.message + '\n\nCheck Apps Script logs for details.',
+      ui.ButtonSet.OK
+    );
+    Logger.log('Verification error: ' + error.message);
   }
 }
 
