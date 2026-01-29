@@ -1909,6 +1909,29 @@ function showFilterVerification() {
 
     ui.alert('Verification Complete', message, ui.ButtonSet.OK);
 
+    // If filters are missing entirely, offer to create them
+    if (results.gmailApiEnabled && results.filtersCreated.length === 0 && results.clients.length > 0) {
+      const createResponse = ui.alert(
+        'No Filters Found',
+        `You have ${results.clients.length} client(s) but no Gmail filters.\n\n` +
+        'Would you like to create filters now?\n' +
+        'This will create filters for all clients with setup_complete=true.',
+        ui.ButtonSet.YES_NO
+      );
+
+      if (createResponse === ui.Button.YES) {
+        ui.alert('Creating Filters', 'Creating Gmail filters and updating Client_Registry...', ui.ButtonSet.OK);
+        syncLabelsAndFilters();
+        ui.alert(
+          'Filters Created',
+          'Successfully created filters for all clients!\n\n' +
+          'Check Gmail Settings > Filters to verify.',
+          ui.ButtonSet.OK
+        );
+        return; // Don't check for broken filters if we just created them
+      }
+    }
+
     // Check for broken filters using comprehensive method
     if (results.gmailApiEnabled) {
       const brokenResults = findAndFixBrokenFiltersComprehensive(false);
@@ -1922,18 +1945,34 @@ function showFilterVerification() {
           '  • Stored filter IDs (most reliable)\n' +
           '  • Criteria pattern matching (fallback)\n\n' +
           'These filters have search criteria but no "Do this" actions.\n\n' +
-          'Check the Apps Script logs to see which filters will be deleted.\n\n' +
-          'Would you like to delete the broken system filters?\n' +
+          'Check the Apps Script logs to see which filters will be fixed.\n\n' +
+          'Would you like to FIX the broken system filters?\n' +
+          'This will: 1) Delete broken filters, 2) Recreate them, 3) Update Client_Registry IDs\n' +
           '(Your personal filters will NOT be touched)',
           ui.ButtonSet.YES_NO
         );
 
         if (cleanupResponse === ui.Button.YES) {
+          // Step 1: Delete broken filters
           const fixResults = findAndFixBrokenFiltersComprehensive(true);
+
+          // Step 2: Recreate filters and update Client_Registry
           ui.alert(
-            'Cleanup Complete',
-            `Deleted ${fixResults.fixed} broken system filter(s).\n` +
-            `Skipped ${fixResults.skipped} user filter(s) for safety.\n\n` +
+            'Recreating Filters',
+            `Deleted ${fixResults.fixed} broken filter(s).\n\n` +
+            'Now recreating filters from Client_Registry...',
+            ui.ButtonSet.OK
+          );
+
+          syncLabelsAndFilters();
+
+          // Step 3: Confirm completion
+          ui.alert(
+            'Fix Complete',
+            `Successfully fixed ${fixResults.fixed} filter(s):\n\n` +
+            '✅ Deleted broken filters\n' +
+            '✅ Recreated working filters\n' +
+            '✅ Updated Client_Registry with new IDs\n\n' +
             'Check Gmail Settings > Filters to verify.',
             ui.ButtonSet.OK
           );
