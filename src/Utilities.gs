@@ -1748,7 +1748,6 @@ function onOpen() {
       .addSeparator()
       .addItem('Initialize Diagnostic Sheets', 'initializeDiagnosticSheetsUI')
       .addItem('View Processing Log', 'showProcessingLog')
-      .addItem('Verify Filters & Labels', 'showFilterVerification')
       .addSeparator()
       .addItem('Disable Automation...', 'disableAutomationWithConfirmation')
       .addToUi();
@@ -1782,14 +1781,43 @@ function manualUpdateFolders() {
 function manualSyncLabelsAndFiltersUI() {
   const ui = SpreadsheetApp.getUi();
 
+  // Check Gmail API first
+  if (typeof Gmail === 'undefined' || !Gmail.Users) {
+    ui.alert(
+      '❌ Gmail API Not Enabled',
+      'Gmail API is required for filter management.\n\n' +
+      'TO ENABLE:\n' +
+      '1. Open Extensions > Apps Script\n' +
+      '2. Click "Services" (+) in left sidebar\n' +
+      '3. Add "Gmail API"\n' +
+      '4. Run this sync again',
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
   // Get count of clients to process
   const allClients = getClientRegistry();
   const setupCompleteClients = allClients.filter(c => c.setup_complete === true);
 
+  if (setupCompleteClients.length === 0) {
+    ui.alert(
+      'No Clients Found',
+      'No clients with setup_complete=true found in Client_Registry.',
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
   const response = ui.alert(
     'Sync Gmail Labels & Filters',
-    `This will create Gmail labels and filters for ${setupCompleteClients.length} client(s) with setup_complete=true.\n\n` +
-    'This may take a minute. Continue?',
+    `This will sync Gmail labels and filters for ${setupCompleteClients.length} client(s).\n\n` +
+    'This will:\n' +
+    '• Create any missing labels\n' +
+    '• Link existing filters to Client_Registry\n' +
+    '• Create any missing filters\n' +
+    '• Update Client_Registry with filter IDs\n\n' +
+    'Continue?',
     ui.ButtonSet.YES_NO
   );
 
@@ -1798,16 +1826,77 @@ function manualSyncLabelsAndFiltersUI() {
   }
 
   try {
-    syncLabelsAndFilters();
-    ui.alert(
-      'Complete',
-      `Labels and filters have been created for ${setupCompleteClients.length} client(s).\n\n` +
-      'Check Gmail Settings > Filters to verify.',
-      ui.ButtonSet.OK
-    );
+    // Step 1: Create labels
+    ui.alert('Syncing', 'Creating labels...', ui.ButtonSet.OK);
+
+    for (const client of setupCompleteClients) {
+      syncClientLabels(client);
+    }
+    createBriefingLabels();
+
+    // Step 2: Run reconciliation
+    ui.alert('Syncing', 'Checking filter IDs and reconciling with Gmail...', ui.ButtonSet.OK);
+    const reconciliation = reconcileClientFilters();
+
+    // Step 3: Link and create filters
+    let linkedCount = 0;
+    let createdCount = 0;
+    let alreadyTrackedCount = 0;
+
+    for (const clientResult of reconciliation.clients) {
+      if (clientResult.missing.length === 0) {
+        // All filters already tracked
+        alreadyTrackedCount += 4; // Assuming 4 filter types per client
+        continue;
+      }
+
+      Logger.log(`\n=== SYNCING: ${clientResult.clientName} ===`);
+
+      for (const missing of clientResult.missing) {
+        if (missing.matches.length > 0) {
+          // Link the first match
+          const match = missing.matches[0];
+          linkFilterToClient(clientResult.clientName, missing.type, match.id);
+          Logger.log(`✅ LINKED ${missing.name}: ${match.id}`);
+          linkedCount++;
+        } else {
+          // Create new filter
+          const created = createGmailApiFilter(missing.expectedCriteria, missing.expectedLabel);
+          if (created && created.id) {
+            const filterIds = {};
+            filterIds[missing.type] = created.id;
+            storeFilterIds(clientResult.clientName, filterIds);
+            Logger.log(`✅ CREATED ${missing.name}: ${created.id}`);
+            createdCount++;
+          } else {
+            Logger.log(`❌ FAILED to create ${missing.name}`);
+          }
+        }
+      }
+    }
+
+    // Step 4: Show results
+    let message = `Sync complete for ${setupCompleteClients.length} client(s):\n\n`;
+
+    if (linkedCount > 0) {
+      message += `✅ Linked ${linkedCount} existing filter(s)\n`;
+    }
+    if (createdCount > 0) {
+      message += `✅ Created ${createdCount} new filter(s)\n`;
+    }
+    if (alreadyTrackedCount > 0) {
+      message += `✅ ${alreadyTrackedCount} filter(s) already tracked\n`;
+    }
+
+    message += '\nClient_Registry updated with all filter IDs.\n';
+    message += 'Check Gmail Settings > Filters to verify.';
+
+    ui.alert('Sync Complete', message, ui.ButtonSet.OK);
+
   } catch (e) {
-    ui.alert('Error', `Failed to sync labels and filters: ${e.message}`, ui.ButtonSet.OK);
+    ui.alert('Error', `Failed to sync: ${e.message}\n\nCheck Apps Script logs for details.`, ui.ButtonSet.OK);
     Logger.log(`manualSyncLabelsAndFiltersUI error: ${e.message}`);
+    Logger.log(e.stack);
   }
 }
 
@@ -1861,134 +1950,6 @@ function showProcessingLog() {
  * Runs filter and label verification and shows results to user.
  * Includes broken filter detection and optional cleanup.
  */
-function showFilterVerification() {
-  const ui = SpreadsheetApp.getUi();
-
-  ui.alert(
-    'Filter Verification',
-    'Running verification...\n\nCheck the Apps Script logs for detailed results:\n' +
-    'Extensions > Apps Script > Execution log',
-    ui.ButtonSet.OK
-  );
-
-  try {
-    // Step 1: Basic verification
-    const results = verifyFiltersAndLabels();
-
-    if (!results.gmailApiEnabled) {
-      ui.alert(
-        '❌ Gmail API Not Enabled',
-        'Gmail API is required for filter management.\n\n' +
-        'TO FIX:\n' +
-        '1. Open Extensions > Apps Script\n' +
-        '2. Click "Services" (+) in left sidebar\n' +
-        '3. Add "Gmail API"\n' +
-        '4. Run this verification again',
-        ui.ButtonSet.OK
-      );
-      return;
-    }
-
-    // Step 2: Run reconciliation (checks Client_Registry vs Gmail)
-    ui.alert('Reconciliation', 'Checking Client_Registry filter IDs vs Gmail filters...', ui.ButtonSet.OK);
-    const reconciliation = reconcileClientFilters();
-
-    // Step 3: Show results
-    if (reconciliation.totalMissing === 0) {
-      ui.alert(
-        '✅ Verification Complete',
-        `All filter IDs are tracked in Client_Registry!\n\n` +
-        `Labels: ${results.labelsCreated.length}\n` +
-        `Filters: ${results.filtersCreated.length}\n` +
-        `Clients: ${results.clients.length}`,
-        ui.ButtonSet.OK
-      );
-      return;
-    }
-
-    // Step 4: Handle missing filter IDs
-    ui.alert(
-      '⚠️ Missing Filter IDs',
-      `Found ${reconciliation.totalMissing} filter ID(s) missing from Client_Registry.\n\n` +
-      `• ${reconciliation.totalMatched} have matching filters in Gmail (can link)\n` +
-      `• ${reconciliation.totalUnmatched} need to be created\n\n` +
-      'Check Apps Script logs for complete details.',
-      ui.ButtonSet.OK
-    );
-
-    // Step 5: Offer to fix
-    const fixResponse = ui.alert(
-      'Fix Missing Filters',
-      'Would you like to FIX the missing filter IDs?\n\n' +
-      'This will:\n' +
-      '• Link existing Gmail filters to Client_Registry\n' +
-      '• Create any missing filters\n' +
-      '• Update Client_Registry with all filter IDs\n\n' +
-      'See Apps Script logs for what will be linked/created.',
-      ui.ButtonSet.YES_NO
-    );
-
-    if (fixResponse !== ui.Button.YES) {
-      ui.alert('Verification Cancelled', 'No changes made.', ui.ButtonSet.OK);
-      return;
-    }
-
-    // Step 6: Execute fixes
-    ui.alert('Fixing Filters', 'Linking and creating filters...', ui.ButtonSet.OK);
-
-    let linkedCount = 0;
-    let createdCount = 0;
-
-    for (const clientResult of reconciliation.clients) {
-      if (clientResult.missing.length === 0) continue;
-
-      Logger.log(`\n=== FIXING: ${clientResult.clientName} ===`);
-
-      for (const missing of clientResult.missing) {
-        if (missing.matches.length > 0) {
-          // Link the first match
-          const match = missing.matches[0];
-          linkFilterToClient(clientResult.clientName, missing.type, match.id);
-          Logger.log(`✅ LINKED ${missing.name}: ${match.id}`);
-          linkedCount++;
-        } else {
-          // Create new filter
-          const created = createGmailApiFilter(missing.expectedCriteria, missing.expectedLabel);
-          if (created && created.id) {
-            const filterIds = {};
-            filterIds[missing.type] = created.id;
-            storeFilterIds(clientResult.clientName, filterIds);
-            Logger.log(`✅ CREATED ${missing.name}: ${created.id}`);
-            createdCount++;
-          } else {
-            Logger.log(`❌ FAILED to create ${missing.name}`);
-          }
-        }
-      }
-    }
-
-    // Step 7: Show completion
-    ui.alert(
-      '✅ Fix Complete',
-      `Successfully fixed filter IDs:\n\n` +
-      `• Linked ${linkedCount} existing filter(s)\n` +
-      `• Created ${createdCount} new filter(s)\n` +
-      `• Updated Client_Registry\n\n` +
-      'Check Gmail Settings > Filters and Client_Registry sheet to verify.',
-      ui.ButtonSet.OK
-    );
-
-  } catch (error) {
-    ui.alert(
-      'Verification Error',
-      'Error: ' + error.message + '\n\nCheck Apps Script logs for details.',
-      ui.ButtonSet.OK
-    );
-    Logger.log('Verification error: ' + error.message);
-    Logger.log(error.stack);
-  }
-}
-
 // ============================================================================
 // DISABLE AUTOMATION
 // ============================================================================
