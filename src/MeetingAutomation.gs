@@ -531,9 +531,12 @@ If no action items found, return: {"tasks": []}`;
     const sonnet = models.find(m => m.id.includes('sonnet'));
     const model = sonnet ? sonnet.id : models[0]?.id || FALLBACK_MODELS[0].id;
 
+    // Get max_tokens from settings (default 2000)
+    const maxTokens = parseInt(PropertiesService.getScriptProperties().getProperty('CLAUDE_SUMMARY_MAX_TOKENS') || '2000');
+
     const payload = {
       model: model,
-      max_tokens: 2000,
+      max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }]
     };
 

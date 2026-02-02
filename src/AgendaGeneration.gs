@@ -106,9 +106,9 @@ function generateAgendaForEvent(event, client) {
   if (traceId) logAgendaStep(traceId, event, client, 4, 'GATHER_CONTEXT_START', 'success', 'Context gathering complete');
 
   // Generate agenda with Claude
-  const agendaContent = generateAgendaWithClaude(event, client, context, traceId);
+  const agendaResult = generateAgendaWithClaude(event, client, context, traceId);
 
-  if (!agendaContent) {
+  if (!agendaResult) {
     Logger.log('Failed to generate agenda content from Claude');
     if (traceId) logAgendaStep(traceId, event, client, 8, 'AGENDA_FAILED', 'failed', 'Failed to generate agenda content');
     return;
@@ -116,12 +116,12 @@ function generateAgendaForEvent(event, client) {
 
   // Send agenda email (will apply label from Client Registry)
   if (traceId) logAgendaStep(traceId, event, client, 9, 'SEND_EMAIL', 'started', 'Sending agenda email');
-  sendAgendaEmail(event, client, agendaContent, traceId);
+  sendAgendaEmail(event, client, agendaResult.content, traceId, agendaResult.isTruncated);
   if (traceId) logAgendaStep(traceId, event, client, 9, 'SEND_EMAIL', 'success', 'Email sent successfully');
 
   // Append to client's Google Doc
   if (traceId) logAgendaStep(traceId, event, client, 10, 'APPEND_TO_DOC', 'started', 'Appending agenda to Google Doc');
-  appendAgendaToDoc(event, client, agendaContent, traceId);
+  appendAgendaToDoc(event, client, agendaResult.content, traceId);
   if (traceId) logAgendaStep(traceId, event, client, 10, 'APPEND_TO_DOC', 'success', 'Appended to doc successfully');
 
   // Record the generation
@@ -587,7 +587,7 @@ function similarityScore(str1, str2) {
  * @param {Object} client - The client object
  * @param {Object} context - The gathered context
  * @param {string} traceId - Optional trace ID for diagnostic logging
- * @returns {string|null} The generated agenda content or null
+ * @returns {Object|null} Object with {content: string, isTruncated: boolean} or null
  */
 function generateAgendaWithClaude(event, client, context, traceId) {
   const startTime = new Date().getTime();
@@ -618,9 +618,12 @@ function generateAgendaWithClaude(event, client, context, traceId) {
     const model = getModelForPrompt('AGENDA_CLAUDE_PROMPT');
     logProcessing('AGENDA_GEN', client.client_name, `Using Claude model: ${model}`, 'info');
 
+    // Get max_tokens from settings (default 4000)
+    const maxTokens = parseInt(PropertiesService.getScriptProperties().getProperty('CLAUDE_AGENDA_MAX_TOKENS') || '4000');
+
     const payload = {
       model: model,
-      max_tokens: 4000,  // Increased for complete HTML agendas with inline CSS
+      max_tokens: maxTokens,
       messages: [
         {
           role: 'user',
@@ -713,7 +716,8 @@ function generateAgendaWithClaude(event, client, context, traceId) {
 
     if (result.content && result.content.length > 0) {
       // Check if response was truncated
-      if (result.stop_reason === 'max_tokens') {
+      const isTruncated = result.stop_reason === 'max_tokens';
+      if (isTruncated) {
         logProcessing('AGENDA_ERROR', client.client_name, 'Claude response was truncated due to max_tokens limit - agenda may be incomplete', 'warning');
         if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'warning', `Response truncated (max_tokens reached)`, `Partial response: ${result.content[0].text.length} chars`, apiDuration);
       } else {
@@ -748,7 +752,7 @@ function generateAgendaWithClaude(event, client, context, traceId) {
       }
 
       logProcessing('AGENDA_GEN', client.client_name, `Generated agenda content (${content.length} chars)`, 'success');
-      return content;
+      return {content: content, isTruncated: isTruncated};
     }
 
     logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty content array', 'error');
@@ -863,7 +867,7 @@ function getEventDurationMinutes(event) {
  * @param {Object} client - The client object
  * @param {string} agendaContent - The generated agenda
  */
-function sendAgendaEmail(event, client, agendaContent) {
+function sendAgendaEmail(event, client, agendaContent, traceId, isTruncated) {
   const userEmail = getCurrentUserEmail();
   const eventDateTime = formatDateTime(event.getStartTime());
   const eventDate = formatDateShort(event.getStartTime());
@@ -877,6 +881,16 @@ function sendAgendaEmail(event, client, agendaContent) {
     .replace('{meeting_title}', event.getTitle())
     .replace('{date}', eventDate);
 
+  // Add truncation warning if needed
+  let warningBanner = '';
+  if (isTruncated) {
+    warningBanner = `
+<div style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 12px; margin-bottom: 16px;">
+  <strong>⚠️ Warning:</strong> This agenda was truncated due to response length limits.
+  The content may be incomplete. Consider increasing the max_tokens setting or shortening the input context.
+</div>`;
+  }
+
   // Get email template from sheet
   const template = getPrompt('AGENDA_EMAIL_TEMPLATE');
 
@@ -884,7 +898,7 @@ function sendAgendaEmail(event, client, agendaContent) {
     event_title: event.getTitle(),
     client_name: client.client_name,
     date_time: eventDateTime,
-    agenda_content: agendaContent
+    agenda_content: warningBanner + agendaContent
   });
 
   // Ensure proper UTF-8 encoding by adding meta tag if not present

@@ -75,9 +75,12 @@ function generateDailyOutlookWithClaude(data, date) {
     const url = 'https://api.anthropic.com/v1/messages';
     const model = getModelForPrompt('DAILY_BRIEFING_CLAUDE_PROMPT');
 
+    // Get max_tokens from settings (default 4000)
+    const maxTokens = parseInt(PropertiesService.getScriptProperties().getProperty('CLAUDE_DAILY_BRIEF_MAX_TOKENS') || '4000');
+
     const payload = {
       model: model,
-      max_tokens: 4000,
+      max_tokens: maxTokens,
       messages: [
         {
           role: 'user',
@@ -507,9 +510,12 @@ function generateWeeklyOutlookWithClaude(data, startDate) {
     const url = 'https://api.anthropic.com/v1/messages';
     const model = getModelForPrompt('WEEKLY_BRIEFING_CLAUDE_PROMPT');
 
+    // Get max_tokens from settings (default 8000)
+    const maxTokens = parseInt(PropertiesService.getScriptProperties().getProperty('CLAUDE_WEEKLY_BRIEF_MAX_TOKENS') || '8000');
+
     const payload = {
       model: model,
-      max_tokens: 8000,
+      max_tokens: maxTokens,
       messages: [
         {
           role: 'user',

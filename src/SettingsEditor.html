@@ -368,6 +368,35 @@ Thanks,
           <div id="claudeTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
 
+        <div class="setting-group">
+          <div class="setting-label">Max Tokens (Response Length Limits)</div>
+          <div class="setting-description">Controls maximum response length for different Claude API calls. Higher = longer responses but more expensive. Responses will be truncated if limit is reached.</div>
+
+          <div style="margin-top: 12px;">
+            <div class="setting-label" style="font-size: 13px;">Meeting Agendas</div>
+            <input type="number" id="claude_agenda_max_tokens" min="1000" max="20000" placeholder="4000" style="margin-bottom: 8px;">
+            <div class="placeholder-hint">Default: 4000 tokens (~3000 words). Used for pre-meeting agenda generation.</div>
+          </div>
+
+          <div style="margin-top: 12px;">
+            <div class="setting-label" style="font-size: 13px;">Daily Briefings</div>
+            <input type="number" id="claude_daily_brief_max_tokens" min="1000" max="20000" placeholder="4000" style="margin-bottom: 8px;">
+            <div class="placeholder-hint">Default: 4000 tokens. Used for daily outlook emails.</div>
+          </div>
+
+          <div style="margin-top: 12px;">
+            <div class="setting-label" style="font-size: 13px;">Weekly Briefings</div>
+            <input type="number" id="claude_weekly_brief_max_tokens" min="1000" max="20000" placeholder="8000" style="margin-bottom: 8px;">
+            <div class="placeholder-hint">Default: 8000 tokens. Used for weekly outlook emails.</div>
+          </div>
+
+          <div style="margin-top: 12px;">
+            <div class="setting-label" style="font-size: 13px;">Meeting Summaries</div>
+            <input type="number" id="claude_summary_max_tokens" min="1000" max="20000" placeholder="2000" style="margin-bottom: 8px;">
+            <div class="placeholder-hint">Default: 2000 tokens. Used for meeting summary generation.</div>
+          </div>
+        </div>
+
         <div class="section-title">HubSpot (CRM - Future)</div>
 
         <div class="setting-group">
@@ -484,6 +513,10 @@ Thanks,
           document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
+          document.getElementById('claude_agenda_max_tokens').value = settings.CLAUDE_AGENDA_MAX_TOKENS || '4000';
+          document.getElementById('claude_daily_brief_max_tokens').value = settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS || '4000';
+          document.getElementById('claude_weekly_brief_max_tokens').value = settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS || '8000';
+          document.getElementById('claude_summary_max_tokens').value = settings.CLAUDE_SUMMARY_MAX_TOKENS || '2000';
 
           // Schedule tab
           document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
@@ -584,6 +617,10 @@ Thanks,
         HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
+        CLAUDE_AGENDA_MAX_TOKENS: document.getElementById('claude_agenda_max_tokens').value.trim() || '4000',
+        CLAUDE_DAILY_BRIEF_MAX_TOKENS: document.getElementById('claude_daily_brief_max_tokens').value.trim() || '4000',
+        CLAUDE_WEEKLY_BRIEF_MAX_TOKENS: document.getElementById('claude_weekly_brief_max_tokens').value.trim() || '8000',
+        CLAUDE_SUMMARY_MAX_TOKENS: document.getElementById('claude_summary_max_tokens').value.trim() || '2000',
         // Schedule
         BUSINESS_HOURS_START: document.getElementById('hours_start').value.trim(),
         BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
