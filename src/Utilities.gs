@@ -2044,9 +2044,14 @@ function getSettingsForEditor() {
   return {
     FATHOM_API_KEY: props.getProperty('FATHOM_API_KEY') || '',
     FATHOM_WEBHOOK_SECRET: props.getProperty('FATHOM_WEBHOOK_SECRET') || '',
+    FATHOM_KEEP_LINKS: props.getProperty('FATHOM_KEEP_LINKS') || 'false',
     HUBSPOT_API_KEY: props.getProperty('HUBSPOT_API_KEY') || '',
     TODOIST_API_TOKEN: props.getProperty('TODOIST_API_TOKEN') || '',
     CLAUDE_API_KEY: props.getProperty('CLAUDE_API_KEY') || '',
+    CLAUDE_AGENDA_MAX_TOKENS: props.getProperty('CLAUDE_AGENDA_MAX_TOKENS') || '4000',
+    CLAUDE_DAILY_BRIEF_MAX_TOKENS: props.getProperty('CLAUDE_DAILY_BRIEF_MAX_TOKENS') || '4000',
+    CLAUDE_WEEKLY_BRIEF_MAX_TOKENS: props.getProperty('CLAUDE_WEEKLY_BRIEF_MAX_TOKENS') || '8000',
+    CLAUDE_SUMMARY_MAX_TOKENS: props.getProperty('CLAUDE_SUMMARY_MAX_TOKENS') || '2000',
     USER_NAME: props.getProperty('USER_NAME') || '',
     MEETING_SUBJECT_TEMPLATE: props.getProperty('MEETING_SUBJECT_TEMPLATE') || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}',
     MEETING_SIGNATURE: props.getProperty('MEETING_SIGNATURE') || 'Did I miss anything?\n\nThanks,\n{user_name}',
@@ -2111,6 +2116,28 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.CLAUDE_API_KEY) {
     props.setProperty('CLAUDE_API_KEY', settings.CLAUDE_API_KEY);
+  }
+
+  // Claude max_tokens settings
+  if (settings.CLAUDE_AGENDA_MAX_TOKENS) {
+    props.setProperty('CLAUDE_AGENDA_MAX_TOKENS', settings.CLAUDE_AGENDA_MAX_TOKENS);
+  }
+
+  if (settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS) {
+    props.setProperty('CLAUDE_DAILY_BRIEF_MAX_TOKENS', settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS);
+  }
+
+  if (settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS) {
+    props.setProperty('CLAUDE_WEEKLY_BRIEF_MAX_TOKENS', settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS);
+  }
+
+  if (settings.CLAUDE_SUMMARY_MAX_TOKENS) {
+    props.setProperty('CLAUDE_SUMMARY_MAX_TOKENS', settings.CLAUDE_SUMMARY_MAX_TOKENS);
+  }
+
+  // Fathom settings
+  if (settings.FATHOM_KEEP_LINKS !== undefined) {
+    props.setProperty('FATHOM_KEEP_LINKS', settings.FATHOM_KEEP_LINKS);
   }
 
   if (settings.USER_NAME) {
