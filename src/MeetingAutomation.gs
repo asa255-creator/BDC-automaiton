@@ -559,7 +559,10 @@ If no action items found, return: {"tasks": []}`;
       return extractActionItemsManually(emailBody);
     }
 
-    const result = JSON.parse(response.getContentText());
+    // Parse response with explicit UTF-8 handling to preserve emojis
+    const responseBytes = response.getContent();
+    const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
+    const result = JSON.parse(responseText);
 
     if (result.content && result.content.length > 0) {
       const aiResponse = result.content[0].text;

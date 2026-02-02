@@ -667,7 +667,11 @@ function generateAgendaWithClaude(event, client, context, traceId) {
     const apiDuration = new Date().getTime() - apiStartTime;
 
     const responseCode = response.getResponseCode();
-    const responseText = response.getContentText();
+
+    // Parse response with explicit UTF-8 handling to preserve emojis
+    // Get raw bytes and convert to string properly
+    const responseBytes = response.getContent();
+    const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
 
     // DIAGNOSTIC: Log API response
     let parseSuccess = false;
