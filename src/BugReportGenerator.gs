@@ -7,7 +7,7 @@
  * User can select by client, time range, or specific log entry.
  */
 function showBugReportGenerator() {
-  const html = HtmlService.createHtmlOutputFromFile('BugReportGenerator')
+  const html = HtmlService.createHtmlOutputFromFile('BugReportGeneratorUI')
     .setWidth(600)
     .setHeight(500)
     .setTitle('Generate Bug Report');
