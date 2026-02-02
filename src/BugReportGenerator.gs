@@ -74,6 +74,62 @@ function generateBugReport(criteria) {
   report.push('---');
   report.push('');
 
+  // Section 0: Issues Summary (scan all logs first)
+  const issuesSummary = [];
+
+  // Check for truncated API responses
+  if (isDiagnosticModeEnabled()) {
+    const apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, criteria.clientName);
+    apiResponses.forEach(log => {
+      try {
+        const response = typeof log.response_body === 'string' ? JSON.parse(log.response_body) : log.response_body;
+        if (response && response.stop_reason === 'max_tokens') {
+          issuesSummary.push(`⚠️ Truncated API response: ${log.api_name} at ${log.timestamp} (max_tokens limit reached)`);
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+
+      if (log.status_code && log.status_code >= 400) {
+        issuesSummary.push(`❌ API Error: ${log.api_name} returned ${log.status_code} at ${log.timestamp}`);
+      }
+    });
+  }
+
+  // Check processing log for errors
+  const processingLogs = getProcessingLogEntries(startTime, endTime, criteria.clientName);
+  const errorLogs = processingLogs.filter(log => log.status === 'error');
+  if (errorLogs.length > 0) {
+    issuesSummary.push(`❌ ${errorLogs.length} error(s) in Processing Log`);
+  }
+
+  // Check for missing filter IDs
+  if (criteria.clientName) {
+    const client = getClientByName(criteria.clientName);
+    if (client && client.setup_complete) {
+      const missingFilters = [];
+      if (!client.from_filter_id) missingFilters.push('from_filter_id');
+      if (!client.to_filter_id) missingFilters.push('to_filter_id');
+      if (!client.summary_filter_id) missingFilters.push('summary_filter_id');
+      if (!client.agenda_filter_id) missingFilters.push('agenda_filter_id');
+
+      if (missingFilters.length > 0) {
+        issuesSummary.push(`⚠️ Missing filter IDs: ${missingFilters.join(', ')}`);
+      }
+    }
+  }
+
+  if (issuesSummary.length > 0) {
+    report.push('## ⚠️ ISSUES DETECTED');
+    report.push('');
+    issuesSummary.forEach(issue => {
+      report.push(`- ${issue}`);
+    });
+    report.push('');
+    report.push('---');
+    report.push('');
+  }
+
   // Section 1: Client Details
   if (criteria.clientName) {
     report.push('## 1. CLIENT DETAILS');
@@ -146,13 +202,84 @@ function generateBugReport(criteria) {
       report.push('### API Responses');
       report.push('');
       apiResponses.forEach(log => {
-        report.push(`**${log.timestamp}** - ${log.api_name} [${log.status_code}]`);
-        report.push('```json');
+        // Parse response body if it's JSON
+        let parsedResponse = null;
+        let isTruncated = false;
+        let stopReason = null;
+
+        try {
+          if (log.response_body && typeof log.response_body === 'string') {
+            parsedResponse = JSON.parse(log.response_body);
+            stopReason = parsedResponse.stop_reason;
+            isTruncated = stopReason === 'max_tokens';
+          }
+        } catch (e) {
+          // Not JSON or parse failed
+        }
+
+        // Build status line with warning if truncated
+        let statusLine = `**${log.timestamp}** - ${log.api_name} [${log.status_code}]`;
+        if (isTruncated) {
+          statusLine += ' ⚠️ **TRUNCATED**';
+        }
+        report.push(statusLine);
+
+        report.push('```');
         report.push(`Request ID: ${log.request_id}`);
         report.push(`Duration: ${log.duration_ms}ms`);
-        report.push(`Success: ${log.success}`);
-        report.push(`Error: ${log.error_message || 'N/A'}`);
-        report.push(`Response: ${truncateForReport(log.response_body, 500)}`);
+        report.push(`Parse Success: ${log.parse_success || 'N/A'}`);
+
+        if (log.error_message) {
+          report.push(`❌ Error: ${log.error_message}`);
+        }
+
+        // Show parsed response details if available
+        if (parsedResponse) {
+          report.push('');
+          report.push('Response Details:');
+          if (parsedResponse.model) report.push(`  Model: ${parsedResponse.model}`);
+          if (parsedResponse.stop_reason) {
+            report.push(`  Stop Reason: ${parsedResponse.stop_reason}${parsedResponse.stop_reason === 'max_tokens' ? ' ⚠️ INCOMPLETE RESPONSE' : ''}`);
+          }
+          if (parsedResponse.usage) {
+            report.push(`  Tokens: ${parsedResponse.usage.input_tokens} in, ${parsedResponse.usage.output_tokens} out`);
+          }
+          if (parsedResponse.content && parsedResponse.content[0]) {
+            const contentLength = parsedResponse.content[0].text ? parsedResponse.content[0].text.length : 0;
+            report.push(`  Content Length: ${contentLength} chars`);
+
+            // Show content preview (truncated)
+            if (contentLength > 0) {
+              report.push('');
+              report.push('Content Preview:');
+              report.push(truncateForReport(parsedResponse.content[0].text, 300));
+            }
+          }
+
+          // Show error if present in response
+          if (parsedResponse.error) {
+            report.push('');
+            report.push(`❌ API Error: ${JSON.stringify(parsedResponse.error, null, 2)}`);
+          }
+        } else {
+          // Show raw response if not JSON
+          report.push('');
+          report.push('Response Body:');
+          report.push(truncateForReport(log.response_body, 500));
+        }
+
+        // Show extracted data if available
+        if (log.extracted_data) {
+          try {
+            const extracted = typeof log.extracted_data === 'string' ? JSON.parse(log.extracted_data) : log.extracted_data;
+            report.push('');
+            report.push('Extracted Data:');
+            report.push(JSON.stringify(extracted, null, 2));
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+
         report.push('```');
         report.push('');
       });
