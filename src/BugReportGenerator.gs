@@ -54,7 +54,7 @@ function getClientsForBugReport() {
 /**
  * Generates a comprehensive bug report based on search criteria.
  * @param {Object} criteria - Search criteria
- * @returns {string} Formatted bug report
+ * @returns {Object} Object with 'report' and 'issuesSummary' strings
  */
 function generateBugReport(criteria) {
   Logger.log('Generating bug report with criteria: ' + JSON.stringify(criteria));
@@ -303,7 +303,173 @@ function generateBugReport(criteria) {
   report.push('');
   report.push('**END OF BUG REPORT**');
 
-  return report.join('\n');
+  // Generate issues summary separately
+  const issuesSummary = generateIssuesSummary(startTime, endTime, criteria.clientName);
+
+  return {
+    report: report.join('\n'),
+    issuesSummary: issuesSummary
+  };
+}
+
+/**
+ * Generates an issues summary by scanning logs for common problems.
+ * @param {Date} startTime - Start time
+ * @param {Date} endTime - End time
+ * @param {string} clientName - Optional client filter
+ * @returns {string} Formatted issues summary
+ */
+function generateIssuesSummary(startTime, endTime, clientName) {
+  const summary = [];
+  const issues = [];
+
+  summary.push('# ISSUES SUMMARY');
+  summary.push('');
+  summary.push(`**Scanned:** ${new Date().toISOString()}`);
+  summary.push(`**Time Range:** ${startTime.toISOString()} to ${endTime.toISOString()}`);
+  if (clientName) {
+    summary.push(`**Client:** ${clientName}`);
+  }
+  summary.push('');
+  summary.push('---');
+  summary.push('');
+
+  // Check for truncated API responses
+  if (isDiagnosticModeEnabled()) {
+    const apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, clientName);
+    const truncatedResponses = [];
+    const errorResponses = [];
+
+    apiResponses.forEach(log => {
+      // Check for truncation
+      try {
+        const response = typeof log.response_body === 'string' ? JSON.parse(log.response_body) : log.response_body;
+        if (response && response.stop_reason === 'max_tokens') {
+          truncatedResponses.push({
+            api: log.api_name,
+            time: log.timestamp,
+            tokens: response.usage ? response.usage.output_tokens : 'unknown'
+          });
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+
+      // Check for API errors
+      if (log.status_code && log.status_code >= 400) {
+        errorResponses.push({
+          api: log.api_name,
+          status: log.status_code,
+          time: log.timestamp,
+          error: log.error_message || 'No error message'
+        });
+      }
+    });
+
+    if (truncatedResponses.length > 0) {
+      issues.push({
+        type: '⚠️ TRUNCATED API RESPONSES',
+        count: truncatedResponses.length,
+        details: truncatedResponses
+      });
+    }
+
+    if (errorResponses.length > 0) {
+      issues.push({
+        type: '❌ API ERRORS',
+        count: errorResponses.length,
+        details: errorResponses
+      });
+    }
+  }
+
+  // Check processing log for errors
+  const processingLogs = getProcessingLogEntries(startTime, endTime, clientName);
+  const errorLogs = processingLogs.filter(log => log.status === 'error');
+  if (errorLogs.length > 0) {
+    issues.push({
+      type: '❌ PROCESSING ERRORS',
+      count: errorLogs.length,
+      details: errorLogs.map(log => ({
+        action: log.action_type,
+        time: log.timestamp,
+        client: log.client_id,
+        details: log.details
+      }))
+    });
+  }
+
+  // Check for missing filter IDs
+  if (clientName) {
+    const client = getClientByName(clientName);
+    if (client && client.setup_complete) {
+      const missingFilters = [];
+      if (!client.from_filter_id) missingFilters.push('from_filter_id');
+      if (!client.to_filter_id) missingFilters.push('to_filter_id');
+      if (!client.summary_filter_id) missingFilters.push('summary_filter_id');
+      if (!client.agenda_filter_id) missingFilters.push('agenda_filter_id');
+
+      if (missingFilters.length > 0) {
+        issues.push({
+          type: '⚠️ MISSING FILTER IDs',
+          count: missingFilters.length,
+          details: missingFilters.map(f => ({ filter: f }))
+        });
+      }
+    }
+  }
+
+  // Format issues
+  if (issues.length === 0) {
+    summary.push('✅ **NO ISSUES DETECTED**');
+    summary.push('');
+    summary.push('All checks passed. No common problems found in logs.');
+  } else {
+    summary.push(`**${issues.length} ISSUE TYPE(S) DETECTED**`);
+    summary.push('');
+
+    issues.forEach(issue => {
+      summary.push(`## ${issue.type}`);
+      summary.push('');
+      summary.push(`**Count:** ${issue.count}`);
+      summary.push('');
+
+      // Show details
+      if (issue.type === '⚠️ TRUNCATED API RESPONSES') {
+        issue.details.forEach(detail => {
+          summary.push(`- **${detail.api}** at ${detail.time}`);
+          summary.push(`  - Output tokens: ${detail.tokens}`);
+          summary.push(`  - Issue: Response was cut off due to max_tokens limit`);
+        });
+      } else if (issue.type === '❌ API ERRORS') {
+        issue.details.forEach(detail => {
+          summary.push(`- **${detail.api}** at ${detail.time}`);
+          summary.push(`  - Status: ${detail.status}`);
+          summary.push(`  - Error: ${detail.error}`);
+        });
+      } else if (issue.type === '❌ PROCESSING ERRORS') {
+        issue.details.forEach(detail => {
+          summary.push(`- **${detail.action}** at ${detail.time}`);
+          summary.push(`  - Client: ${detail.client || 'N/A'}`);
+          summary.push(`  - Details: ${detail.details || 'No details'}`);
+        });
+      } else if (issue.type === '⚠️ MISSING FILTER IDs') {
+        issue.details.forEach(detail => {
+          summary.push(`- ${detail.filter}`);
+        });
+        summary.push('');
+        summary.push('**Action Required:** Run "Sync Gmail Labels & Filters" from menu');
+      }
+
+      summary.push('');
+    });
+  }
+
+  summary.push('---');
+  summary.push('');
+  summary.push('**Note:** This summary scans for common issues. Check the full bug report for complete details.');
+
+  return summary.join('\n');
 }
 
 /**

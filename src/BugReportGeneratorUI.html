@@ -169,12 +169,22 @@
 
   <div id="reportOutput">
     <div class="section">
-      <label>Bug Report (copy and paste this)</label>
+      <label>Issues Summary (common problems detected)</label>
+      <textarea id="issuesText" readonly style="height: 150px;"></textarea>
+    </div>
+
+    <div class="section">
+      <button onclick="copyIssues()">Copy Issues</button>
+    </div>
+
+    <div class="section">
+      <label>Bug Report (full diagnostic data)</label>
       <textarea id="reportText" readonly></textarea>
     </div>
 
     <div class="section">
-      <button onclick="copyReport()">Copy to Clipboard</button>
+      <button onclick="copyReport()">Copy Bug Report</button>
+      <button class="button-secondary" onclick="copyBoth()">Copy Both</button>
       <button class="button-secondary" onclick="downloadReport()">Download as .txt</button>
       <button class="button-secondary" onclick="resetForm()">Generate Another</button>
     </div>
@@ -253,10 +263,11 @@
         .generateBugReport(criteria);
     }
 
-    function displayReport(report) {
+    function displayReport(result) {
       document.getElementById('loading').style.display = 'none';
       document.getElementById('reportOutput').style.display = 'block';
-      document.getElementById('reportText').value = report;
+      document.getElementById('issuesText').value = result.issuesSummary;
+      document.getElementById('reportText').value = result.report;
     }
 
     function handleError(error) {
@@ -265,16 +276,40 @@
       alert('Error generating report: ' + error.message);
     }
 
+    function copyIssues() {
+      const textarea = document.getElementById('issuesText');
+      textarea.select();
+      document.execCommand('copy');
+      alert('Issues summary copied to clipboard!');
+    }
+
     function copyReport() {
       const textarea = document.getElementById('reportText');
       textarea.select();
       document.execCommand('copy');
-      alert('Report copied to clipboard!');
+      alert('Bug report copied to clipboard!');
+    }
+
+    function copyBoth() {
+      const issues = document.getElementById('issuesText').value;
+      const report = document.getElementById('reportText').value;
+      const combined = issues + '\n\n' + '='.repeat(80) + '\n\n' + report;
+
+      const tempTextarea = document.createElement('textarea');
+      tempTextarea.value = combined;
+      document.body.appendChild(tempTextarea);
+      tempTextarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempTextarea);
+      alert('Both issues summary and bug report copied to clipboard!');
     }
 
     function downloadReport() {
+      const issues = document.getElementById('issuesText').value;
       const report = document.getElementById('reportText').value;
-      const blob = new Blob([report], { type: 'text/plain' });
+      const combined = issues + '\n\n' + '='.repeat(80) + '\n\n' + report;
+
+      const blob = new Blob([combined], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -288,6 +323,7 @@
     function resetForm() {
       document.getElementById('reportOutput').style.display = 'none';
       document.getElementById('formSection').style.display = 'block';
+      document.getElementById('issuesText').value = '';
       document.getElementById('reportText').value = '';
     }
 
