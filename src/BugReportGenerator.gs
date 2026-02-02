@@ -164,11 +164,14 @@ function generateBugReport(criteria) {
       report.push('### Agenda Generation Trace');
       report.push('');
       agendaTraces.forEach(log => {
-        report.push(`**${log.timestamp}** - ${log.step} [${log.status}]`);
+        report.push(`**${log.timestamp}** - Step ${log.step_number}: ${log.step_name} [${log.step_status}]`);
         report.push('```');
+        report.push(`Event ID: ${log.event_id || 'N/A'}`);
+        report.push(`Event Title: ${log.event_title || 'N/A'}`);
         report.push(`Client ID: ${log.client_id || 'N/A'}`);
-        report.push(`Details: ${truncateForReport(log.details, 300)}`);
-        report.push(`Data: ${truncateForReport(log.data_snapshot, 300)}`);
+        report.push(`Details: ${truncateForReport(log.step_details, 300)}`);
+        report.push(`Data: ${truncateForReport(log.data_summary, 300)}`);
+        report.push(`Duration: ${log.duration_ms || 0}ms`);
         report.push('```');
         report.push('');
       });
