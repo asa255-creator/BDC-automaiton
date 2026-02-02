@@ -1748,6 +1748,7 @@ function onOpen() {
       .addSeparator()
       .addItem('Initialize Diagnostic Sheets', 'initializeDiagnosticSheetsUI')
       .addItem('View Processing Log', 'showProcessingLog')
+      .addItem('Generate Bug Report...', 'showBugReportGenerator')
       .addSeparator()
       .addItem('Disable Automation...', 'disableAutomationWithConfirmation')
       .addToUi();
