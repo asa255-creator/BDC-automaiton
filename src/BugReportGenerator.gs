@@ -74,62 +74,6 @@ function generateBugReport(criteria) {
   report.push('---');
   report.push('');
 
-  // Section 0: Issues Summary (scan all logs first)
-  const issuesSummary = [];
-
-  // Check for truncated API responses
-  if (isDiagnosticModeEnabled()) {
-    const apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, criteria.clientName);
-    apiResponses.forEach(log => {
-      try {
-        const response = typeof log.response_body === 'string' ? JSON.parse(log.response_body) : log.response_body;
-        if (response && response.stop_reason === 'max_tokens') {
-          issuesSummary.push(`⚠️ Truncated API response: ${log.api_name} at ${log.timestamp} (max_tokens limit reached)`);
-        }
-      } catch (e) {
-        // Ignore parse errors
-      }
-
-      if (log.status_code && log.status_code >= 400) {
-        issuesSummary.push(`❌ API Error: ${log.api_name} returned ${log.status_code} at ${log.timestamp}`);
-      }
-    });
-  }
-
-  // Check processing log for errors
-  const processingLogs = getProcessingLogEntries(startTime, endTime, criteria.clientName);
-  const errorLogs = processingLogs.filter(log => log.status === 'error');
-  if (errorLogs.length > 0) {
-    issuesSummary.push(`❌ ${errorLogs.length} error(s) in Processing Log`);
-  }
-
-  // Check for missing filter IDs
-  if (criteria.clientName) {
-    const client = getClientByName(criteria.clientName);
-    if (client && client.setup_complete) {
-      const missingFilters = [];
-      if (!client.from_filter_id) missingFilters.push('from_filter_id');
-      if (!client.to_filter_id) missingFilters.push('to_filter_id');
-      if (!client.summary_filter_id) missingFilters.push('summary_filter_id');
-      if (!client.agenda_filter_id) missingFilters.push('agenda_filter_id');
-
-      if (missingFilters.length > 0) {
-        issuesSummary.push(`⚠️ Missing filter IDs: ${missingFilters.join(', ')}`);
-      }
-    }
-  }
-
-  if (issuesSummary.length > 0) {
-    report.push('## ⚠️ ISSUES DETECTED');
-    report.push('');
-    issuesSummary.forEach(issue => {
-      report.push(`- ${issue}`);
-    });
-    report.push('');
-    report.push('---');
-    report.push('');
-  }
-
   // Section 1: Client Details
   if (criteria.clientName) {
     report.push('## 1. CLIENT DETAILS');
