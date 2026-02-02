@@ -620,7 +620,7 @@ function generateAgendaWithClaude(event, client, context, traceId) {
 
     const payload = {
       model: model,
-      max_tokens: 1000,
+      max_tokens: 4000,  // Increased for complete HTML agendas with inline CSS
       messages: [
         {
           role: 'user',
@@ -712,7 +712,14 @@ function generateAgendaWithClaude(event, client, context, traceId) {
     }
 
     if (result.content && result.content.length > 0) {
-      if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'success', `API call successful (${apiDuration}ms)`, `Response: ${extractedData ? extractedData.content_length : 0} chars`, apiDuration);
+      // Check if response was truncated
+      if (result.stop_reason === 'max_tokens') {
+        logProcessing('AGENDA_ERROR', client.client_name, 'Claude response was truncated due to max_tokens limit - agenda may be incomplete', 'warning');
+        if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'warning', `Response truncated (max_tokens reached)`, `Partial response: ${result.content[0].text.length} chars`, apiDuration);
+      } else {
+        if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'success', `API call successful (${apiDuration}ms)`, `Response: ${extractedData ? extractedData.content_length : 0} chars`, apiDuration);
+      }
+
       logProcessing('AGENDA_GEN', client.client_name, 'Successfully generated agenda with Claude', 'success');
       let content = result.content[0].text;
 
