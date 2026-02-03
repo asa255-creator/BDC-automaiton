@@ -387,7 +387,18 @@ function generateBugReport(criteria) {
         report.push('');
       }
     } else {
-      report.push('No relevant email label to check for this report type.');
+      // No label to check - provide helpful message based on report type
+      if (reportType === 'fathom_drafts' || reportType === 'meeting_notes') {
+        report.push('**Note:** No client specified. To check sent meeting summaries, select a specific client.');
+        report.push('The automation creates drafts in Gmail and sends them with the client\'s Meeting Summaries label.');
+        report.push('');
+        report.push('Check Section 3 (Fathom Drafts Status) above for draft creation diagnostics.');
+      } else if (reportType === 'pre_meeting_agenda') {
+        report.push('**Note:** No client specified. To check sent agendas, select a specific client.');
+        report.push('The automation sends agendas with the client\'s Meeting Agendas label.');
+      } else {
+        report.push('No relevant email label to check for this report type.');
+      }
       report.push('');
     }
   }
