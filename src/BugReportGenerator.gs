@@ -119,9 +119,16 @@ function generateBugReport(criteria) {
     report.push('');
   }
 
-  // Section 3: Diagnostic Logs (if available)
+  // Section 3: Fathom Drafts Status
+  report.push('## 3. FATHOM DRAFTS STATUS');
+  report.push('');
+  const fathomDiagnostics = diagnoseFathomDrafts(startTime, endTime);
+  report.push(fathomDiagnostics);
+  report.push('');
+
+  // Section 4: Diagnostic Logs (if available)
   if (isDiagnosticModeEnabled()) {
-    report.push('## 3. DIAGNOSTIC LOGS');
+    report.push('## 4. DIAGNOSTIC LOGS');
     report.push('');
 
     // API Request Log
@@ -248,15 +255,15 @@ function generateBugReport(criteria) {
       });
     }
   } else {
-    report.push('## 3. DIAGNOSTIC LOGS');
+    report.push('## 4. DIAGNOSTIC LOGS');
     report.push('');
     report.push('*Diagnostic mode is not enabled. Enable it to capture detailed traces.*');
     report.push('');
   }
 
-  // Section 4: Recent Emails (if Gmail API available)
+  // Section 5: Recent Emails (if Gmail API available)
   if (typeof Gmail !== 'undefined' && criteria.clientName) {
-    report.push('## 4. RECENT EMAILS');
+    report.push('## 5. RECENT EMAILS');
     report.push('');
     const client = getClientByName(criteria.clientName);
     if (client && client.meeting_agendas_label) {
@@ -285,8 +292,8 @@ function generateBugReport(criteria) {
     }
   }
 
-  // Section 5: System Configuration
-  report.push('## 5. SYSTEM CONFIGURATION');
+  // Section 6: System Configuration
+  report.push('## 6. SYSTEM CONFIGURATION');
   report.push('');
   report.push('```');
   const props = PropertiesService.getScriptProperties().getProperties();
@@ -470,6 +477,160 @@ function generateIssuesSummary(startTime, endTime, clientName) {
   summary.push('**Note:** This summary scans for common issues. Check the full bug report for complete details.');
 
   return summary.join('\n');
+}
+
+/**
+ * Diagnoses Fathom draft creation issues.
+ * @param {Date} startTime - Start time
+ * @param {Date} endTime - End time
+ * @returns {string} Diagnostic report
+ */
+function diagnoseFathomDrafts(startTime, endTime) {
+  const diagnostics = [];
+
+  try {
+    // 1. Check Processing_Log for Fathom webhook/polling activity
+    const processingLogs = getProcessingLogEntries(startTime, endTime, null);
+    const webhookLogs = processingLogs.filter(log =>
+      log.action_type === 'WEBHOOK_PROCESS' ||
+      log.action_type === 'WEBHOOK_PAYLOAD' ||
+      log.action_type === 'WEBHOOK_SUCCESS' ||
+      log.action_type === 'WEBHOOK_ERROR' ||
+      log.action_type === 'FATHOM_POLL'
+    );
+
+    diagnostics.push(`### Fathom Activity in Processing_Log`);
+    diagnostics.push('');
+    if (webhookLogs.length > 0) {
+      diagnostics.push(`Found ${webhookLogs.length} Fathom-related log entries:`);
+      diagnostics.push('');
+      webhookLogs.forEach(log => {
+        diagnostics.push(`- **${log.timestamp}** [${log.action_type}] ${log.status}`);
+        diagnostics.push(`  Details: ${log.details || 'N/A'}`);
+      });
+    } else {
+      diagnostics.push('❌ **NO Fathom activity found** - Webhooks/polling not triggering');
+    }
+    diagnostics.push('');
+
+    // 2. Check Processed_Fathom sheet
+    diagnostics.push(`### Processed Fathom Meetings`);
+    diagnostics.push('');
+    const processedMeetings = getProcessedFathomMeetings(startTime, endTime);
+    if (processedMeetings.length > 0) {
+      diagnostics.push(`Found ${processedMeetings.length} processed meetings:`);
+      diagnostics.push('');
+      processedMeetings.forEach(meeting => {
+        diagnostics.push(`- **${meeting.meeting_title}**`);
+        diagnostics.push(`  Meeting Date: ${meeting.meeting_date}`);
+        diagnostics.push(`  Processed At: ${meeting.processed_at}`);
+        diagnostics.push(`  Client: ${meeting.client_name || '(no match)'}`);
+        diagnostics.push(`  Draft ID: ${meeting.draft_id || 'NONE'}`);
+      });
+    } else {
+      diagnostics.push('No meetings recorded in Processed_Fathom sheet');
+    }
+    diagnostics.push('');
+
+    // 3. Check actual Gmail drafts
+    diagnostics.push(`### Current Gmail Drafts`);
+    diagnostics.push('');
+    try {
+      const drafts = GmailApp.getDrafts();
+      diagnostics.push(`Total drafts in Gmail: ${drafts.length}`);
+      diagnostics.push('');
+
+      if (drafts.length > 0) {
+        diagnostics.push('Recent drafts (last 10):');
+        const recentDrafts = drafts.slice(0, 10);
+        recentDrafts.forEach(draft => {
+          const message = draft.getMessage();
+          const draftDate = message.getDate();
+          const subject = message.getSubject();
+          diagnostics.push(`- **${subject}**`);
+          diagnostics.push(`  Created: ${draftDate.toISOString()}`);
+          diagnostics.push(`  To: ${message.getTo() || '(no recipient)'}`);
+        });
+      } else {
+        diagnostics.push('⚠️ **NO drafts in Gmail** - Drafts may have been sent or deleted');
+      }
+    } catch (e) {
+      diagnostics.push(`Error checking Gmail drafts: ${e.message}`);
+    }
+    diagnostics.push('');
+
+    // 4. Analysis
+    diagnostics.push(`### Analysis`);
+    diagnostics.push('');
+
+    if (webhookLogs.length === 0) {
+      diagnostics.push('❌ **ROOT CAUSE: No Fathom webhook/polling activity detected**');
+      diagnostics.push('   - Check if Fathom webhook is configured correctly');
+      diagnostics.push('   - Check if polling trigger is running every 30 minutes');
+      diagnostics.push('   - Verify FATHOM_API_KEY is set in Settings');
+    } else if (processedMeetings.length === 0) {
+      diagnostics.push('⚠️ **Webhooks received but meetings not being processed**');
+      diagnostics.push('   - Check Processing_Log for WEBHOOK_ERROR entries');
+      diagnostics.push('   - Verify meeting payload format from Fathom');
+    } else if (processedMeetings.some(m => !m.draft_id)) {
+      diagnostics.push('⚠️ **Meetings processed but draft creation failing**');
+      diagnostics.push('   - Check for Gmail API errors');
+      diagnostics.push('   - Verify GmailApp.createDraft() permissions');
+    } else {
+      diagnostics.push('✅ Meetings processed and drafts created successfully');
+      if (drafts.length === 0) {
+        diagnostics.push('   Note: Drafts may have been sent or manually deleted');
+      }
+    }
+
+  } catch (e) {
+    diagnostics.push(`Error diagnosing Fathom drafts: ${e.message}`);
+  }
+
+  return diagnostics.join('\n');
+}
+
+/**
+ * Gets processed Fathom meetings from the sheet.
+ * @param {Date} startTime - Start time
+ * @param {Date} endTime - End time
+ * @returns {Array} Array of meeting records
+ */
+function getProcessedFathomMeetings(startTime, endTime) {
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const sheet = ss.getSheetByName('Processed_Fathom');
+
+    if (!sheet) return [];
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return [];
+
+    const headers = data[0];
+    const processedAtIdx = headers.indexOf('Processed At');
+
+    if (processedAtIdx === -1) return [];
+
+    const meetings = [];
+    for (let i = 1; i < data.length; i++) {
+      const processedAt = new Date(data[i][processedAtIdx]);
+      if (processedAt >= startTime && processedAt <= endTime) {
+        meetings.push({
+          meeting_id: data[i][0],
+          meeting_title: data[i][1],
+          meeting_date: data[i][2],
+          processed_at: data[i][3],
+          client_name: data[i][4],
+          draft_id: data[i][5]
+        });
+      }
+    }
+
+    return meetings;
+  } catch (e) {
+    Logger.log(`Error getting processed Fathom meetings: ${e.message}`);
+    return [];
+  }
 }
 
 /**
