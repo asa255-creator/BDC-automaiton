@@ -150,6 +150,18 @@
     </div>
 
     <div class="section">
+      <label>Report Type</label>
+      <select id="reportType">
+        <option value="all">All Automations</option>
+        <option value="daily_briefing">Daily Briefing</option>
+        <option value="weekly_briefing">Weekly Briefing</option>
+        <option value="pre_meeting_agenda">Pre-Meeting Agenda</option>
+        <option value="fathom_drafts">Fathom Meeting Drafts</option>
+        <option value="meeting_notes">Meeting Notes Append & Todoist</option>
+      </select>
+    </div>
+
+    <div class="section">
       <label>Client (optional - leave blank for all clients)</label>
       <select id="clientSelect">
         <option value="">All Clients</option>
@@ -242,14 +254,16 @@
         startTime = new Date(endTime.getTime() - (parseInt(timeRangeValue) * 60 * 60 * 1000));
       }
 
-      // Get client
+      // Get client and report type
       const clientName = document.getElementById('clientSelect').value;
+      const reportType = document.getElementById('reportType').value;
 
       // Build criteria
       const criteria = {
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
-        clientName: clientName || null
+        clientName: clientName || null,
+        reportType: reportType
       };
 
       // Show loading
