@@ -390,7 +390,9 @@ function generateBugReport(criteria) {
       // No label to check - provide helpful message based on report type
       if (reportType === 'fathom_drafts' || reportType === 'meeting_notes') {
         report.push('**Note:** No client specified. To check sent meeting summaries, select a specific client.');
-        report.push('The automation creates drafts in Gmail and sends them with the client\'s Meeting Summaries label.');
+        report.push('');
+        report.push('Flow: Fathom meeting → draft created → you send → Gmail filters auto-label → monitoring processes it');
+        report.push('This section checks for SENT emails that filters have labeled, not drafts.');
         report.push('');
         report.push('Check Section 3 (Fathom Drafts Status) above for draft creation diagnostics.');
       } else if (reportType === 'pre_meeting_agenda') {
