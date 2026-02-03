@@ -1412,7 +1412,24 @@ function pollFathomForNewMeetings() {
     let missingIdCount = 0;
 
     for (const meeting of meetings) {
-      const meetingId = meeting.id || meeting.meeting_id;
+      // Extract meeting ID from various sources
+      let meetingId = meeting.id || meeting.meeting_id;
+
+      // If no direct ID field, try extracting from URL
+      if (!meetingId && meeting.url) {
+        // Extract numeric ID from URL: https://fathom.video/calls/553083152
+        const urlMatch = meeting.url.match(/\/calls\/(\d+)/);
+        if (urlMatch && urlMatch[1]) {
+          meetingId = urlMatch[1];
+          logProcessing('FATHOM_POLL', null, `Extracted meeting ID "${meetingId}" from URL for "${meeting.title || 'Unknown'}"`, 'info');
+        }
+      }
+
+      // Fall back to recording_id if still no ID
+      if (!meetingId && meeting.recording_id) {
+        meetingId = meeting.recording_id;
+        logProcessing('FATHOM_POLL', null, `Using recording_id "${meetingId}" for "${meeting.title || 'Unknown'}"`, 'info');
+      }
 
       if (!meetingId) {
         missingIdCount++;
