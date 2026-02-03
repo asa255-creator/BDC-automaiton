@@ -705,7 +705,63 @@ function diagnoseFathomDrafts(startTime, endTime) {
     }
     diagnostics.push('');
 
-    // 4. Analysis
+    // 4. Check actual Fathom API meetings
+    diagnostics.push(`### Fathom API Recent Meetings`);
+    diagnostics.push('');
+    try {
+      const apiKey = PropertiesService.getScriptProperties().getProperty('FATHOM_API_KEY');
+      if (!apiKey) {
+        diagnostics.push('⚠️ Fathom API key not configured - cannot fetch meeting data');
+      } else {
+        const url = 'https://api.fathom.ai/external/v1/meetings?include_transcript=false&include_summary=false&include_action_items=false&limit=5';
+        const options = {
+          method: 'GET',
+          headers: {
+            'X-Api-Key': apiKey,
+            'Content-Type': 'application/json'
+          },
+          muteHttpExceptions: true
+        };
+
+        const response = UrlFetchApp.fetch(url, options);
+        const responseCode = response.getResponseCode();
+
+        if (responseCode !== 200) {
+          diagnostics.push(`❌ Fathom API error (${responseCode}): ${response.getContentText().substring(0, 200)}`);
+        } else {
+          const data = JSON.parse(response.getContentText());
+          const meetings = data.items || (Array.isArray(data) ? data : []);
+
+          if (meetings.length === 0) {
+            diagnostics.push('No meetings found in Fathom API');
+          } else {
+            diagnostics.push(`Found ${meetings.length} recent meetings in Fathom API:`);
+            diagnostics.push('');
+            meetings.forEach((meeting, index) => {
+              diagnostics.push(`**Meeting ${index + 1}:**`);
+              diagnostics.push('```json');
+              // Show key fields to diagnose the ID issue
+              const meetingInfo = {
+                id: meeting.id || 'MISSING',
+                meeting_id: meeting.meeting_id || 'MISSING',
+                title: meeting.title || meeting.meeting_title || 'MISSING',
+                created_at: meeting.created_at || 'MISSING',
+                url: meeting.url || meeting.share_url || 'MISSING',
+                available_fields: Object.keys(meeting)
+              };
+              diagnostics.push(JSON.stringify(meetingInfo, null, 2));
+              diagnostics.push('```');
+              diagnostics.push('');
+            });
+          }
+        }
+      }
+    } catch (e) {
+      diagnostics.push(`Error fetching Fathom API data: ${e.message}`);
+    }
+    diagnostics.push('');
+
+    // 5. Analysis
     diagnostics.push(`### Analysis`);
     diagnostics.push('');
 

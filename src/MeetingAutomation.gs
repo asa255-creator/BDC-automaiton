@@ -1409,11 +1409,15 @@ function pollFathomForNewMeetings() {
     // Check each meeting to see if we've already processed it
     let newMeetingsCount = 0;
     let skippedCount = 0;
+    let missingIdCount = 0;
 
     for (const meeting of meetings) {
       const meetingId = meeting.id || meeting.meeting_id;
 
       if (!meetingId) {
+        missingIdCount++;
+        const title = meeting.title || meeting.meeting_title || 'Unknown';
+        logProcessing('FATHOM_POLL', null, `Skipped meeting "${title}" - no ID field found. Available fields: ${Object.keys(meeting).join(', ')}`, 'warning');
         continue; // Skip meetings without IDs
       }
 
@@ -1448,9 +1452,12 @@ function pollFathomForNewMeetings() {
     }
 
     if (newMeetingsCount > 0) {
-      logProcessing('FATHOM_POLL', null, `Processed ${newMeetingsCount} new meetings (skipped ${skippedCount} already processed)`, 'success');
+      logProcessing('FATHOM_POLL', null, `Processed ${newMeetingsCount} new meetings (skipped ${skippedCount} already processed, ${missingIdCount} missing IDs)`, 'success');
     } else {
-      logProcessing('FATHOM_POLL', null, `No new meetings to process (${skippedCount} already processed)`, 'info');
+      const reason = missingIdCount > 0
+        ? `${missingIdCount} missing IDs, ${skippedCount} already processed`
+        : `${skippedCount} already processed`;
+      logProcessing('FATHOM_POLL', null, `No new meetings to process (${reason})`, 'info');
     }
 
   } catch (error) {
