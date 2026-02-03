@@ -97,9 +97,12 @@ function generateBugReport(criteria) {
       report.push(`Setup Complete: ${client.setup_complete}`);
       report.push(`Doc URL: ${client.meeting_notes_doc_url || '(none)'}`);
       report.push(`Todoist Project: ${client.todoist_project_id || '(none)'}`);
-      report.push(`Gmail Label: ${client.gmail_label || '(default)'}`);
-      report.push(`Meeting Summaries Label: ${client.meeting_summaries_label || '(default)'}`);
-      report.push(`Meeting Agendas Label: ${client.meeting_agendas_label || '(default)'}`);
+      report.push(`Gmail Label: ${client.gmail_label || `Client: ${client.client_name}` || '(none)'}`);
+      report.push('');
+      report.push('Expected Sub-Labels (used by automation):');
+      report.push(`  Meeting Summaries: Client: ${client.client_name}/Meeting Summaries`);
+      report.push(`  Meeting Agendas: Client: ${client.client_name}/Meeting Agendas`);
+      report.push('');
       report.push(`From Filter ID: ${client.from_filter_id || '(none)'}`);
       report.push(`To Filter ID: ${client.to_filter_id || '(none)'}`);
       report.push(`Summary Filter ID: ${client.summary_filter_id || '(none)'}`);
@@ -331,20 +334,23 @@ function generateBugReport(criteria) {
 
     if (reportType === 'pre_meeting_agenda' && criteria.clientName) {
       const client = getClientByName(criteria.clientName);
-      if (client && client.meeting_agendas_label) {
-        labelToCheck = client.meeting_agendas_label;
+      if (client) {
+        // Build label name dynamically
+        labelToCheck = `Client: ${client.client_name}/Meeting Agendas`;
         labelDescription = 'Meeting Agendas';
       }
     } else if (reportType === 'fathom_drafts' && criteria.clientName) {
       const client = getClientByName(criteria.clientName);
-      if (client && client.meeting_summaries_label) {
-        labelToCheck = client.meeting_summaries_label;
+      if (client) {
+        // Build label name the same way MeetingAutomation.gs does
+        labelToCheck = `Client: ${client.client_name}/Meeting Summaries`;
         labelDescription = 'Meeting Summaries';
       }
     } else if (reportType === 'meeting_notes' && criteria.clientName) {
       const client = getClientByName(criteria.clientName);
-      if (client && client.meeting_summaries_label) {
-        labelToCheck = client.meeting_summaries_label;
+      if (client) {
+        // Build label name the same way MeetingAutomation.gs does
+        labelToCheck = `Client: ${client.client_name}/Meeting Summaries`;
         labelDescription = 'Meeting Summaries';
       }
     } else if (reportType === 'daily_briefing') {
