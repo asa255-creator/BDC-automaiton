@@ -62,10 +62,21 @@ function generateBugReport(criteria) {
   const report = [];
   const startTime = new Date(criteria.startTime);
   const endTime = new Date(criteria.endTime);
+  const reportType = criteria.reportType || 'all';
+
+  const reportTypeNames = {
+    all: 'All Automations',
+    daily_briefing: 'Daily Briefing',
+    weekly_briefing: 'Weekly Briefing',
+    pre_meeting_agenda: 'Pre-Meeting Agenda',
+    fathom_drafts: 'Fathom Meeting Drafts',
+    meeting_notes: 'Meeting Notes Append & Todoist'
+  };
 
   report.push('# BUG REPORT');
   report.push('');
   report.push(`**Generated:** ${new Date().toISOString()}`);
+  report.push(`**Report Type:** ${reportTypeNames[reportType] || 'All Automations'}`);
   report.push(`**Time Range:** ${startTime.toISOString()} to ${endTime.toISOString()}`);
   if (criteria.clientName) {
     report.push(`**Client:** ${criteria.clientName}`);
@@ -74,8 +85,8 @@ function generateBugReport(criteria) {
   report.push('---');
   report.push('');
 
-  // Section 1: Client Details
-  if (criteria.clientName) {
+  // Section 1: Client Details (if specified)
+  if (criteria.clientName && (reportType === 'all' || reportType === 'pre_meeting_agenda' || reportType === 'meeting_notes')) {
     report.push('## 1. CLIENT DETAILS');
     report.push('');
     const client = getClientByName(criteria.clientName);
@@ -104,7 +115,23 @@ function generateBugReport(criteria) {
   // Section 2: Processing Log Entries
   report.push('## 2. PROCESSING LOG');
   report.push('');
-  const processingLogs = getProcessingLogEntries(startTime, endTime, criteria.clientName);
+  let processingLogs = getProcessingLogEntries(startTime, endTime, criteria.clientName);
+
+  // Filter by action_type based on reportType
+  const actionTypeFilters = {
+    daily_briefing: ['DAILY_OUTLOOK', 'OUTLOOK_SEND', 'DAILY_BRIEF_GEN', 'DAILY_BRIEF_EMAIL'],
+    weekly_briefing: ['WEEKLY_OUTLOOK', 'OUTLOOK_SEND', 'WEEKLY_BRIEF_GEN', 'WEEKLY_BRIEF_EMAIL'],
+    pre_meeting_agenda: ['AGENDA_GEN', 'AGENDA_EMAIL', 'AGENDA_SEND'],
+    fathom_drafts: ['WEBHOOK_PROCESS', 'WEBHOOK_PAYLOAD', 'WEBHOOK_SUCCESS', 'WEBHOOK_ERROR', 'FATHOM_POLL', 'FATHOM_PROCESS', 'FATHOM_DRAFT'],
+    meeting_notes: ['NOTES_APPEND', 'TODOIST_CREATE', 'TODOIST_UPDATE', 'TODOIST_TASK', 'MEETING_SUMMARY']
+  };
+
+  if (reportType !== 'all' && actionTypeFilters[reportType]) {
+    processingLogs = processingLogs.filter(log =>
+      actionTypeFilters[reportType].includes(log.action_type)
+    );
+  }
+
   if (processingLogs.length > 0) {
     processingLogs.forEach(log => {
       report.push(`### ${log.timestamp} - ${log.action_type} [${log.status}]`);
@@ -119,20 +146,41 @@ function generateBugReport(criteria) {
     report.push('');
   }
 
-  // Section 3: Fathom Drafts Status
-  report.push('## 3. FATHOM DRAFTS STATUS');
-  report.push('');
-  const fathomDiagnostics = diagnoseFathomDrafts(startTime, endTime);
-  report.push(fathomDiagnostics);
-  report.push('');
+  // Section 3: Fathom Drafts Status (only for fathom_drafts or all)
+  if (reportType === 'all' || reportType === 'fathom_drafts') {
+    report.push('## 3. FATHOM DRAFTS STATUS');
+    report.push('');
+    const fathomDiagnostics = diagnoseFathomDrafts(startTime, endTime);
+    report.push(fathomDiagnostics);
+    report.push('');
+  }
 
   // Section 4: Diagnostic Logs (if available)
   if (isDiagnosticModeEnabled()) {
     report.push('## 4. DIAGNOSTIC LOGS');
     report.push('');
 
+    // Define API name filters based on report type
+    const apiNameFilters = {
+      daily_briefing: ['Claude API', 'claude-daily-briefing'],
+      weekly_briefing: ['Claude API', 'claude-weekly-briefing'],
+      pre_meeting_agenda: ['Claude API', 'claude-agenda', 'Google Calendar API'],
+      fathom_drafts: ['Fathom API', 'Claude API', 'claude-summary'],
+      meeting_notes: ['Claude API', 'Todoist API', 'Google Docs API']
+    };
+
     // API Request Log
-    const apiRequests = getDiagnosticLogEntries('API_Request_Log', startTime, endTime, criteria.clientName);
+    let apiRequests = getDiagnosticLogEntries('API_Request_Log', startTime, endTime, criteria.clientName);
+
+    // Filter by API name if specific report type
+    if (reportType !== 'all' && apiNameFilters[reportType]) {
+      apiRequests = apiRequests.filter(log =>
+        apiNameFilters[reportType].some(filter =>
+          log.api_name && log.api_name.includes(filter)
+        )
+      );
+    }
+
     if (apiRequests.length > 0) {
       report.push('### API Requests');
       report.push('');
@@ -148,7 +196,16 @@ function generateBugReport(criteria) {
     }
 
     // API Response Log
-    const apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, criteria.clientName);
+    let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, criteria.clientName);
+
+    // Filter by API name if specific report type
+    if (reportType !== 'all' && apiNameFilters[reportType]) {
+      apiResponses = apiResponses.filter(log =>
+        apiNameFilters[reportType].some(filter =>
+          log.api_name && log.api_name.includes(filter)
+        )
+      );
+    }
     if (apiResponses.length > 0) {
       report.push('### API Responses');
       report.push('');
@@ -236,23 +293,25 @@ function generateBugReport(criteria) {
       });
     }
 
-    // Agenda Generation Trace
-    const agendaTraces = getDiagnosticLogEntries('Agenda_Generation_Trace', startTime, endTime, criteria.clientName);
-    if (agendaTraces.length > 0) {
-      report.push('### Agenda Generation Trace');
-      report.push('');
-      agendaTraces.forEach(log => {
-        report.push(`**${log.timestamp}** - Step ${log.step_number}: ${log.step_name} [${log.step_status}]`);
-        report.push('```');
-        report.push(`Event ID: ${log.event_id || 'N/A'}`);
-        report.push(`Event Title: ${log.event_title || 'N/A'}`);
-        report.push(`Client ID: ${log.client_id || 'N/A'}`);
-        report.push(`Details: ${truncateForReport(log.step_details, 300)}`);
-        report.push(`Data: ${truncateForReport(log.data_summary, 300)}`);
-        report.push(`Duration: ${log.duration_ms || 0}ms`);
-        report.push('```');
+    // Agenda Generation Trace (only for pre_meeting_agenda or all)
+    if (reportType === 'all' || reportType === 'pre_meeting_agenda') {
+      const agendaTraces = getDiagnosticLogEntries('Agenda_Generation_Trace', startTime, endTime, criteria.clientName);
+      if (agendaTraces.length > 0) {
+        report.push('### Agenda Generation Trace');
         report.push('');
-      });
+        agendaTraces.forEach(log => {
+          report.push(`**${log.timestamp}** - Step ${log.step_number}: ${log.step_name} [${log.step_status}]`);
+          report.push('```');
+          report.push(`Event ID: ${log.event_id || 'N/A'}`);
+          report.push(`Event Title: ${log.event_title || 'N/A'}`);
+          report.push(`Client ID: ${log.client_id || 'N/A'}`);
+          report.push(`Details: ${truncateForReport(log.step_details, 300)}`);
+          report.push(`Data: ${truncateForReport(log.data_summary, 300)}`);
+          report.push(`Duration: ${log.duration_ms || 0}ms`);
+          report.push('```');
+          report.push('');
+        });
+      }
     }
   } else {
     report.push('## 4. DIAGNOSTIC LOGS');
@@ -262,14 +321,52 @@ function generateBugReport(criteria) {
   }
 
   // Section 5: Recent Emails (if Gmail API available)
-  if (typeof Gmail !== 'undefined' && criteria.clientName) {
+  if (typeof Gmail !== 'undefined') {
     report.push('## 5. RECENT EMAILS');
     report.push('');
-    const client = getClientByName(criteria.clientName);
-    if (client && client.meeting_agendas_label) {
+
+    // Determine which label to check based on report type
+    let labelToCheck = null;
+    let labelDescription = '';
+
+    if (reportType === 'pre_meeting_agenda' && criteria.clientName) {
+      const client = getClientByName(criteria.clientName);
+      if (client && client.meeting_agendas_label) {
+        labelToCheck = client.meeting_agendas_label;
+        labelDescription = 'Meeting Agendas';
+      }
+    } else if (reportType === 'fathom_drafts' && criteria.clientName) {
+      const client = getClientByName(criteria.clientName);
+      if (client && client.meeting_summaries_label) {
+        labelToCheck = client.meeting_summaries_label;
+        labelDescription = 'Meeting Summaries';
+      }
+    } else if (reportType === 'meeting_notes' && criteria.clientName) {
+      const client = getClientByName(criteria.clientName);
+      if (client && client.meeting_summaries_label) {
+        labelToCheck = client.meeting_summaries_label;
+        labelDescription = 'Meeting Summaries';
+      }
+    } else if (reportType === 'daily_briefing') {
+      labelToCheck = 'Daily Briefing';
+      labelDescription = 'Daily Briefing';
+    } else if (reportType === 'weekly_briefing') {
+      labelToCheck = 'Weekly Briefing';
+      labelDescription = 'Weekly Briefing';
+    } else if (reportType === 'all' && criteria.clientName) {
+      const client = getClientByName(criteria.clientName);
+      if (client && client.gmail_label) {
+        labelToCheck = client.gmail_label;
+        labelDescription = 'Client Emails';
+      }
+    }
+
+    if (labelToCheck) {
       try {
-        const emails = getRecentEmailsFromLabel(client.meeting_agendas_label, startTime, endTime);
+        const emails = getRecentEmailsFromLabel(labelToCheck, startTime, endTime);
         if (emails.length > 0) {
+          report.push(`Found ${emails.length} email(s) in "${labelDescription}" label:`);
+          report.push('');
           emails.forEach(email => {
             report.push(`### ${email.subject || '(No Subject)'}`);
             report.push('```');
@@ -282,13 +379,16 @@ function generateBugReport(criteria) {
             report.push('');
           });
         } else {
-          report.push('No emails found in Meeting Agendas label for this time range.');
+          report.push(`No emails found in "${labelDescription}" label for this time range.`);
           report.push('');
         }
       } catch (e) {
         report.push(`Error fetching emails: ${e.message}`);
         report.push('');
       }
+    } else {
+      report.push('No relevant email label to check for this report type.');
+      report.push('');
     }
   }
 
@@ -311,7 +411,7 @@ function generateBugReport(criteria) {
   report.push('**END OF BUG REPORT**');
 
   // Generate issues summary separately
-  const issuesSummary = generateIssuesSummary(startTime, endTime, criteria.clientName);
+  const issuesSummary = generateIssuesSummary(startTime, endTime, criteria.clientName, reportType);
 
   return {
     report: report.join('\n'),
@@ -324,15 +424,27 @@ function generateBugReport(criteria) {
  * @param {Date} startTime - Start time
  * @param {Date} endTime - End time
  * @param {string} clientName - Optional client filter
+ * @param {string} reportType - Report type filter
  * @returns {string} Formatted issues summary
  */
-function generateIssuesSummary(startTime, endTime, clientName) {
+function generateIssuesSummary(startTime, endTime, clientName, reportType) {
   const summary = [];
   const issues = [];
+  reportType = reportType || 'all';
+
+  const reportTypeNames = {
+    all: 'All Automations',
+    daily_briefing: 'Daily Briefing',
+    weekly_briefing: 'Weekly Briefing',
+    pre_meeting_agenda: 'Pre-Meeting Agenda',
+    fathom_drafts: 'Fathom Meeting Drafts',
+    meeting_notes: 'Meeting Notes Append & Todoist'
+  };
 
   summary.push('# ISSUES SUMMARY');
   summary.push('');
   summary.push(`**Scanned:** ${new Date().toISOString()}`);
+  summary.push(`**Report Type:** ${reportTypeNames[reportType] || 'All Automations'}`);
   summary.push(`**Time Range:** ${startTime.toISOString()} to ${endTime.toISOString()}`);
   if (clientName) {
     summary.push(`**Client:** ${clientName}`);
@@ -343,7 +455,25 @@ function generateIssuesSummary(startTime, endTime, clientName) {
 
   // Check for truncated API responses
   if (isDiagnosticModeEnabled()) {
-    const apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, clientName);
+    let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, clientName);
+
+    // Filter by API name based on report type
+    const apiNameFilters = {
+      daily_briefing: ['Claude API', 'claude-daily-briefing'],
+      weekly_briefing: ['Claude API', 'claude-weekly-briefing'],
+      pre_meeting_agenda: ['Claude API', 'claude-agenda', 'Google Calendar API'],
+      fathom_drafts: ['Fathom API', 'Claude API', 'claude-summary'],
+      meeting_notes: ['Claude API', 'Todoist API', 'Google Docs API']
+    };
+
+    if (reportType !== 'all' && apiNameFilters[reportType]) {
+      apiResponses = apiResponses.filter(log =>
+        apiNameFilters[reportType].some(filter =>
+          log.api_name && log.api_name.includes(filter)
+        )
+      );
+    }
+
     const truncatedResponses = [];
     const errorResponses = [];
 
@@ -391,7 +521,23 @@ function generateIssuesSummary(startTime, endTime, clientName) {
   }
 
   // Check processing log for errors
-  const processingLogs = getProcessingLogEntries(startTime, endTime, clientName);
+  let processingLogs = getProcessingLogEntries(startTime, endTime, clientName);
+
+  // Filter by action_type based on reportType
+  const actionTypeFilters = {
+    daily_briefing: ['DAILY_OUTLOOK', 'OUTLOOK_SEND', 'DAILY_BRIEF_GEN', 'DAILY_BRIEF_EMAIL'],
+    weekly_briefing: ['WEEKLY_OUTLOOK', 'OUTLOOK_SEND', 'WEEKLY_BRIEF_GEN', 'WEEKLY_BRIEF_EMAIL'],
+    pre_meeting_agenda: ['AGENDA_GEN', 'AGENDA_EMAIL', 'AGENDA_SEND'],
+    fathom_drafts: ['WEBHOOK_PROCESS', 'WEBHOOK_PAYLOAD', 'WEBHOOK_SUCCESS', 'WEBHOOK_ERROR', 'FATHOM_POLL', 'FATHOM_PROCESS', 'FATHOM_DRAFT'],
+    meeting_notes: ['NOTES_APPEND', 'TODOIST_CREATE', 'TODOIST_UPDATE', 'TODOIST_TASK', 'MEETING_SUMMARY']
+  };
+
+  if (reportType !== 'all' && actionTypeFilters[reportType]) {
+    processingLogs = processingLogs.filter(log =>
+      actionTypeFilters[reportType].includes(log.action_type)
+    );
+  }
+
   const errorLogs = processingLogs.filter(log => log.status === 'error');
   if (errorLogs.length > 0) {
     issues.push({
@@ -406,8 +552,8 @@ function generateIssuesSummary(startTime, endTime, clientName) {
     });
   }
 
-  // Check for missing filter IDs
-  if (clientName) {
+  // Check for missing filter IDs (only for client-specific report types)
+  if (clientName && (reportType === 'all' || reportType === 'pre_meeting_agenda' || reportType === 'meeting_notes')) {
     const client = getClientByName(clientName);
     if (client && client.setup_complete) {
       const missingFilters = [];
