@@ -2063,6 +2063,9 @@ function getSettingsForEditor() {
     AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0',
     DAILY_BRIEFING_LABEL: props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily',
     WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly',
+    DAILY_OUTLOOK_SCHEDULE: props.getProperty('DAILY_OUTLOOK_SCHEDULE') || 'day_of',
+    DAILY_OUTLOOK_LOCATION: props.getProperty('DAILY_OUTLOOK_LOCATION') || '',
+    WEATHER_API_KEY: props.getProperty('WEATHER_API_KEY') || '',
     DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false'
   };
 }
@@ -2160,6 +2163,10 @@ function saveSettingsFromEditor(settings) {
     props.setProperty('FATHOM_WEBHOOK_SECRET', settings.FATHOM_WEBHOOK_SECRET);
   }
 
+  if (settings.WEATHER_API_KEY) {
+    props.setProperty('WEATHER_API_KEY', settings.WEATHER_API_KEY);
+  }
+
   // Track if subject template changed (for filter update)
   const oldSubjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE');
   const subjectTemplateChanged = settings.MEETING_SUBJECT_TEMPLATE &&
@@ -2199,6 +2206,15 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.WEEKLY_BRIEFING_LABEL) {
     props.setProperty('WEEKLY_BRIEFING_LABEL', settings.WEEKLY_BRIEFING_LABEL);
+  }
+
+  if (settings.DAILY_OUTLOOK_SCHEDULE) {
+    props.setProperty('DAILY_OUTLOOK_SCHEDULE', settings.DAILY_OUTLOOK_SCHEDULE);
+    updateDailyOutlookTrigger();
+  }
+
+  if (settings.DAILY_OUTLOOK_LOCATION !== undefined) {
+    props.setProperty('DAILY_OUTLOOK_LOCATION', settings.DAILY_OUTLOOK_LOCATION);
   }
 
   // Diagnostic mode setting (allow true/false)

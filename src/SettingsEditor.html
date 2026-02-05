@@ -409,6 +409,14 @@ Thanks,
           <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testHubSpotConnection()">Test Connection</button>
           <div id="hubspotTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
+
+        <div class="section-title">Weather (Daily Outlook)</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Weather API Key</div>
+          <div class="setting-description">Used to add weather and clothing recommendations to daily outlooks</div>
+          <input type="password" id="weather_api_key" placeholder="Enter weather API key">
+        </div>
       </div>
     </div>
 
@@ -448,6 +456,23 @@ Thanks,
           <select id="weekly_label" style="width: 100%;">
             <option value="">Loading labels...</option>
           </select>
+        </div>
+
+        <div class="section-title">Daily Outlook Timing & Location</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Daily Outlook Delivery Time</div>
+          <div class="setting-description">Send the daily outlook on the day of, or at 8 PM the night before</div>
+          <select id="daily_outlook_schedule" style="width: 100%;">
+            <option value="day_of">Day of (morning)</option>
+            <option value="night_before">Night before (8 PM)</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Daily Outlook Location</div>
+          <div class="setting-description">Location used for weather checks and clothing recommendations</div>
+          <input type="text" id="daily_outlook_location" placeholder="City, State or Zip">
         </div>
       </div>
     </div>
@@ -511,6 +536,7 @@ Thanks,
           document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
           document.getElementById('fathom_keep_links').checked = settings.FATHOM_KEEP_LINKS === 'true';
           document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
+          document.getElementById('weather_api_key').value = settings.WEATHER_API_KEY || '';
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
           document.getElementById('claude_agenda_max_tokens').value = settings.CLAUDE_AGENDA_MAX_TOKENS || '4000';
@@ -521,6 +547,8 @@ Thanks,
           // Schedule tab
           document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
           document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
+          document.getElementById('daily_outlook_schedule').value = settings.DAILY_OUTLOOK_SCHEDULE || 'day_of';
+          document.getElementById('daily_outlook_location').value = settings.DAILY_OUTLOOK_LOCATION || '';
 
           // Set label dropdowns after they're populated
           setTimeout(function() {
@@ -599,7 +627,7 @@ Thanks,
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
 
-      const settings = {
+        const settings = {
         // General
         USER_NAME: document.getElementById('user_name').value.trim(),
         DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
@@ -615,6 +643,7 @@ Thanks,
         FATHOM_WEBHOOK_SECRET: document.getElementById('fathom_webhook_secret').value.trim(),
         FATHOM_KEEP_LINKS: document.getElementById('fathom_keep_links').checked ? 'true' : 'false',
         HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
+        WEATHER_API_KEY: document.getElementById('weather_api_key').value.trim(),
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
         CLAUDE_AGENDA_MAX_TOKENS: document.getElementById('claude_agenda_max_tokens').value.trim() || '4000',
@@ -625,7 +654,9 @@ Thanks,
         BUSINESS_HOURS_START: document.getElementById('hours_start').value.trim(),
         BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
         DAILY_BRIEFING_LABEL: document.getElementById('daily_label').value.trim(),
-        WEEKLY_BRIEFING_LABEL: document.getElementById('weekly_label').value.trim()
+        WEEKLY_BRIEFING_LABEL: document.getElementById('weekly_label').value.trim(),
+        DAILY_OUTLOOK_SCHEDULE: document.getElementById('daily_outlook_schedule').value,
+        DAILY_OUTLOOK_LOCATION: document.getElementById('daily_outlook_location').value.trim()
       };
 
       google.script.run

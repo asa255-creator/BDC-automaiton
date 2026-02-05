@@ -28,26 +28,27 @@ function generateDailyOutlook() {
   // Run auto-mark-read before generating report (if enabled)
   autoMarkOldEmailsAsRead();
 
-  const today = new Date();
-  const reportData = compileDailyData(today);
+  const triggerDate = new Date();
+  const reportDate = getDailyOutlookReportDate(triggerDate);
+  const reportData = compileDailyData(reportDate);
 
   // Generate HTML report using AI
   let htmlReport;
-  const aiGenerated = generateDailyOutlookWithClaude(reportData, today);
+  const aiGenerated = generateDailyOutlookWithClaude(reportData, reportDate);
 
   if (aiGenerated) {
     htmlReport = aiGenerated;
     Logger.log('Daily outlook generated with AI');
   } else {
     // Fallback to template-based if AI fails
-    htmlReport = formatDailyOutlookHtml(reportData, today);
+    htmlReport = formatDailyOutlookHtml(reportData, reportDate);
     Logger.log('Daily outlook generated with fallback template (AI unavailable)');
   }
 
   // Send email
   const props = PropertiesService.getScriptProperties();
   const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
-  const subject = `Daily Outlook - ${formatDate(today)}`;
+  const subject = `Daily Outlook - ${formatDate(reportDate)}`;
   sendOutlookEmail(subject, htmlReport, dailyLabel);
 
   Logger.log('Daily outlook sent');
@@ -199,6 +200,16 @@ function buildDailyOutlookPrompt(data, date) {
     }
   }
 
+  let weatherSection = '';
+  if (data.weather) {
+    weatherSection = `Weather (${data.weather.location}): ${data.weather.condition}, ` +
+      `${data.weather.minTemp}°-${data.weather.maxTemp}°F. ` +
+      `Rain chance: ${data.weather.rainChance}. ` +
+      `Clothing: ${data.weather.clothingRecommendation}\n`;
+  } else {
+    weatherSection = 'Weather: Not available.\n';
+  }
+
   // Get the prompt template
   const template = getPrompt('DAILY_BRIEFING_CLAUDE_PROMPT');
 
@@ -207,7 +218,8 @@ function buildDailyOutlookPrompt(data, date) {
     current_date: formatDate(date),
     todays_calendar: calendarSection + conflictsSection,
     todays_tasks: tasksSection,
-    urgent_emails: unreadSection || 'No unread emails to report.'
+    urgent_emails: unreadSection || 'No unread emails to report.',
+    weather_summary: weatherSection
   });
 }
 
@@ -226,7 +238,8 @@ function compileDailyData(date) {
     missingAgendas: [],
     overdueTasks: [],
     unreadEmails: { recentUnread: [], olderBacklog: [], totalUnread: 0 },
-    includeUnreadEmails: false
+    includeUnreadEmails: false,
+    weather: null
   };
 
   // Check if unread emails should be included (controlled by settings)
@@ -238,6 +251,9 @@ function compileDailyData(date) {
     // Fetch unread emails from last 1 day for daily report
     data.unreadEmails = fetchUnreadEmails(1);
   }
+
+  const location = props.getProperty('DAILY_OUTLOOK_LOCATION') || '';
+  data.weather = getDailyOutlookWeather(date, location);
 
   // Get today's events
   const calendar = CalendarApp.getDefaultCalendar();
@@ -295,7 +311,7 @@ function compileDailyData(date) {
   const clients = getClientRegistry();
   for (const client of clients) {
     if (client.todoist_project_id) {
-      const tasks = fetchTodoistTasksDueToday(client.todoist_project_id);
+      const tasks = fetchTodoistTasksDueToday(client.todoist_project_id, date);
 
       for (const task of tasks) {
         const taskInfo = {
@@ -371,6 +387,14 @@ function formatDailyOutlookHtml(data, date) {
     }
 
     html += applyTemplate(alertsTemplate, { alerts_content: alertsContent });
+  }
+
+  if (data.weather) {
+    html += `<h2>Weather & Clothing</h2>`;
+    html += `<p><strong>${data.weather.location}</strong>: ${data.weather.condition}, ` +
+      `${data.weather.minTemp}°-${data.weather.maxTemp}°F</p>`;
+    html += `<p>Rain chance: ${data.weather.rainChance}</p>`;
+    html += `<p>Clothing recommendation: ${data.weather.clothingRecommendation}</p>`;
   }
 
   // Today's Schedule

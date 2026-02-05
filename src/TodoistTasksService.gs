@@ -228,15 +228,15 @@ function fetchTodoistTasks(projectId) {
  * @param {string} projectId - Todoist project ID
  * @returns {Object[]} Array of task objects due today or overdue
  */
-function fetchTodoistTasksDueToday(projectId) {
+function fetchTodoistTasksDueToday(projectId, targetDate) {
   const tasks = fetchTodoistTasks(projectId);
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
+  const day = targetDate ? new Date(targetDate) : new Date();
+  day.setHours(23, 59, 59, 999);
 
   return tasks.filter(task => {
     if (!task.due) return false;
 
     const dueDate = new Date(task.due.date);
-    return dueDate <= today;
+    return dueDate <= day;
   });
 }
