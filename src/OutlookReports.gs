@@ -272,10 +272,13 @@ function compileDailyData(date) {
   endOfDay.setHours(23, 59, 59, 999);
 
   const events = calendar.getEvents(startOfDay, endOfDay);
-  const secondaryLocation = getSecondaryWeatherLocationFromCalendar(events);
-  if (secondaryLocation) {
-    data.secondaryWeatherLocation = secondaryLocation;
-    data.secondaryWeather = getDailyOutlookWeather(date, secondaryLocation);
+  const travelWeatherEnabled = props.getProperty('TRAVEL_WEATHER_ENABLED') === 'true';
+  if (travelWeatherEnabled) {
+    const secondaryLocation = getSecondaryWeatherLocationFromCalendar(events);
+    if (secondaryLocation) {
+      data.secondaryWeatherLocation = secondaryLocation;
+      data.secondaryWeather = getDailyOutlookWeather(date, secondaryLocation);
+    }
   }
 
   // Process each event

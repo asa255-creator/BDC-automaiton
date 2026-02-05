@@ -48,6 +48,7 @@ This system automates the complete client management lifecycle for consulting te
 - **Conflict Detection**: Automatic identification of overlapping meetings
 - **Client Onboarding**: Automatic Google Doc and Todoist project creation for new clients
 - **Drive Folder Sync**: Keep folder dropdowns in sync with Google Drive structure
+- **Weather Insights**: Optional National Weather Service (US) or OpenWeather forecasts in daily outlooks
 
 ### 🎯 Advanced Features
 
@@ -505,6 +506,14 @@ In Apps Script editor:
 | `USER_NAME` | Your name | For email signatures |
 | `DOC_NAME_TEMPLATE` | Doc naming template | `Client Notes - {client_name}` |
 | `MEETING_SUBJECT_TEMPLATE` | Email subject template | `Meeting Summary: {client_name} - {meeting_title} ({date})` |
+| `NWS_WEATHER_ENABLED` | Enable NWS forecasts | `true` |
+| `NWS_WEATHER_STATE` | Primary weather state (US) | `WA` |
+| `NWS_WEATHER_CITY` | Primary weather city | `Seattle` |
+| `NWS_WEATHER_LAT` | Primary weather latitude | `47.6062` |
+| `NWS_WEATHER_LON` | Primary weather longitude | `-122.3321` |
+| `WEATHER_API_KEY` | OpenWeather API key (optional) | `your-key` |
+
+> Tip: You can also run `SETUP_RUN_THIS_FIRST()` from Apps Script to answer prompts (including National Weather Service setup) and then fine-tune the location in the Settings editor.
 
 ### Step 5: Deploy as Web App
 
@@ -589,9 +598,16 @@ Add your first client to `Client_Registry`:
 | `DAILY_BRIEFING_LABEL` | String | `Brief: Daily` | Gmail label for daily outlooks |
 | `WEEKLY_BRIEFING_LABEL` | String | `Brief: Weekly` | Gmail label for weekly outlooks |
 | `INCLUDE_UNREAD_EMAILS` | Boolean | `false` | Include unread count in outlooks |
-| `UNREAD_AUTO_MARK_DAYS` | Number | `0` | Auto-mark old emails read (0=disabled) |
+| `AUTO_MARK_READ_AFTER_DAYS` | Number | `0` | Auto-mark old emails read (0=disabled) |
 | `BUSINESS_HOURS_START` | Number | `8` | Agenda generation start hour |
 | `BUSINESS_HOURS_END` | Number | `18` | Agenda generation end hour |
+| `NWS_WEATHER_ENABLED` | Boolean | `false` | Enable National Weather Service forecasts |
+| `NWS_WEATHER_STATE` | String | (blank) | Primary weather state (US) |
+| `NWS_WEATHER_CITY` | String | (blank) | Primary weather city |
+| `NWS_WEATHER_LAT` | Number | (blank) | Primary weather latitude |
+| `NWS_WEATHER_LON` | Number | (blank) | Primary weather longitude |
+| `WEATHER_API_KEY` | String | Optional | OpenWeather fallback API key |
+| `TRAVEL_WEATHER_ENABLED` | Boolean | `false` | Reserve secondary weather (travel) support |
 
 ### Client Registry Columns
 
@@ -870,6 +886,20 @@ Edit prompts in `Prompts` sheet (hidden) or use the web UI:
 - Daily outlook: 2000-4000 tokens
 - Weekly outlook: 3000-5000 tokens
 - Action extraction: 300-500 tokens
+
+### National Weather Service (US) + OpenWeather (Fallback)
+
+**NWS API**: Public NOAA/NWS endpoints (no key required)  
+**OpenWeather API**: Optional fallback when NWS is disabled or unavailable
+
+**Settings**:
+- `NWS_WEATHER_ENABLED`: Toggle NWS usage on/off
+- `NWS_WEATHER_STATE`, `NWS_WEATHER_CITY`, `NWS_WEATHER_LAT`, `NWS_WEATHER_LON`: Primary location selection (via Settings editor dropdowns)
+- `WEATHER_API_KEY`: OpenWeather API key
+
+**Behavior**:
+- Daily outlooks prioritize NWS when enabled and a location is selected.
+- OpenWeather is used only if NWS is disabled or missing location data.
 
 ### Gmail (Email & Organization)
 

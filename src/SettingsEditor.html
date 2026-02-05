@@ -883,6 +883,7 @@ Thanks,
           updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
           updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
           updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
+          updateBadge('nwsStatus', settings.NWS_WEATHER_ENABLED === 'true');
 
           saveBtn.disabled = false;
           saveBtn.textContent = 'Save Changes';
