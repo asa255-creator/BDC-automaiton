@@ -952,8 +952,23 @@ function runInteractiveSetup(ui, ss, props) {
   }
 
   // Step 10: Create all sheets
-  ui.alert('Creating Sheets', 'Creating all required sheets...', ui.ButtonSet.OK);
+  const existingSheets = getExistingSheetNames(ss, getRequiredSheetNames());
+  if (existingSheets.length > 0) {
+    const proceed = ui.alert(
+      'Existing Sheets Detected',
+      'The following sheets already exist and will be preserved:\n\n' +
+      existingSheets.join('\n') +
+      '\n\nContinue setup and create any missing sheets?',
+      ui.ButtonSet.OK_CANCEL
+    );
 
+    if (proceed !== ui.Button.OK) {
+      ui.alert('Setup cancelled.');
+      return;
+    }
+  }
+
+  ui.alert('Creating Sheets', 'Creating all required sheets...', ui.ButtonSet.OK);
   createAllSheets(ss);
 
   // Step 11: Set up triggers
@@ -1089,6 +1104,10 @@ function runStandaloneSetup(props) {
   Logger.log('');
   Logger.log('Creating sheets...');
   const ss = SpreadsheetApp.openById(spreadsheetId);
+  const existingSheets = getExistingSheetNames(ss, getRequiredSheetNames());
+  if (existingSheets.length > 0) {
+    Logger.log(`Existing sheets detected (will be preserved): ${existingSheets.join(', ')}`);
+  }
   createAllSheets(ss);
   Logger.log('Sheets created.');
 
@@ -1198,6 +1217,34 @@ function createAllSheets(ss) {
   createJsonFormatsSheet(ss);
 
   Logger.log('All sheets created.');
+}
+
+/**
+ * Returns the list of required sheet names for setup.
+ *
+ * @returns {string[]} Sheet names
+ */
+function getRequiredSheetNames() {
+  return [
+    'Client_Registry',
+    'Generated_Agendas',
+    'Processing_Log',
+    'Unmatched',
+    'Folders',
+    'Prompts',
+    'JSON_Formats'
+  ];
+}
+
+/**
+ * Returns existing sheet names from a list.
+ *
+ * @param {Spreadsheet} ss - The spreadsheet object
+ * @param {string[]} sheetNames - Names to check
+ * @returns {string[]} Existing sheet names
+ */
+function getExistingSheetNames(ss, sheetNames) {
+  return sheetNames.filter(name => ss.getSheetByName(name));
 }
 
 /**

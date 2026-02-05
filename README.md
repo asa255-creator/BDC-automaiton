@@ -484,6 +484,8 @@ For each client with `setup_complete = TRUE`:
    - PromptsEditor.html
    - MigrationWizard.html
 
+> Setup note: `SETUP_RUN_THIS_FIRST()` now detects existing sheets and will preserve them, creating only missing sheets after a confirmation prompt.
+
 ### Step 3: Enable Advanced Services
 
 In Apps Script editor:
