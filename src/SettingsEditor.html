@@ -572,6 +572,17 @@ Thanks,
     let weatherLocationOptions = [];
     let weatherLocationSettings = null;
     let weatherLocationsLoaded = false;
+    const stateTimezones = {
+      CA: 'America/Los_Angeles',
+      CO: 'America/Denver',
+      FL: 'America/New_York',
+      IL: 'America/Chicago',
+      KY: 'America/New_York',
+      MA: 'America/New_York',
+      NY: 'America/New_York',
+      TX: 'America/Chicago',
+      WA: 'America/Los_Angeles'
+    };
 
     function loadSettings() {
       google.script.run
@@ -821,6 +832,10 @@ Thanks,
         latitudeInput.value = matchedCity.latitude;
         longitudeInput.value = matchedCity.longitude;
         document.getElementById('user_location').value = `${matchedCity.city}, ${state}`;
+        const timezoneInput = document.getElementById('user_timezone');
+        if (timezoneInput && !timezoneInput.value.trim() && stateTimezones[state]) {
+          timezoneInput.value = stateTimezones[state];
+        }
       } else {
         latitudeInput.value = '';
         longitudeInput.value = '';
