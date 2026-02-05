@@ -878,7 +878,10 @@ function getProcessingLogEntries(startTime, endTime, clientName) {
 
   const entries = [];
   for (let i = 1; i < data.length; i++) {
-    const timestamp = new Date(data[i][timestampIdx]);
+    const timestamp = parseProcessingLogTimestamp(data[i][timestampIdx]);
+    if (!timestamp) {
+      continue;
+    }
     if (timestamp >= startTime && timestamp <= endTime) {
       if (clientName && data[i][clientIdIdx] !== clientName) continue;
 
@@ -891,6 +894,29 @@ function getProcessingLogEntries(startTime, endTime, clientName) {
   }
 
   return entries;
+}
+
+/**
+ * Parses Processing_Log timestamps (Date objects or formatted strings).
+ *
+ * @param {Date|string} value - Timestamp value
+ * @returns {Date|null} Parsed Date or null if invalid
+ */
+function parseProcessingLogTimestamp(value) {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (!isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  return null;
 }
 
 /**
