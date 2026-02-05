@@ -223,6 +223,18 @@
           <input type="text" id="user_name" placeholder="Enter your name">
         </div>
 
+        <div class="setting-group">
+          <div class="setting-label">Location</div>
+          <div class="setting-description">Used for time-based outputs and weather recommendations</div>
+          <input type="text" id="user_location" placeholder="City, State or Zip">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Timezone</div>
+          <div class="setting-description">IANA timezone (e.g., America/New_York)</div>
+          <input type="text" id="user_timezone" placeholder="America/New_York">
+        </div>
+
         <div class="section-title">Document Settings</div>
 
         <div class="setting-group">
@@ -458,7 +470,7 @@ Thanks,
           </select>
         </div>
 
-        <div class="section-title">Daily Outlook Timing & Location</div>
+        <div class="section-title">Daily Outlook Timing</div>
 
         <div class="setting-group">
           <div class="setting-label">Daily Outlook Delivery Time</div>
@@ -469,11 +481,7 @@ Thanks,
           </select>
         </div>
 
-        <div class="setting-group">
-          <div class="setting-label">Daily Outlook Location</div>
-          <div class="setting-description">Location used for weather checks and clothing recommendations</div>
-          <input type="text" id="daily_outlook_location" placeholder="City, State or Zip">
-        </div>
+        
       </div>
     </div>
 
@@ -521,6 +529,8 @@ Thanks,
         .withSuccessHandler(function(settings) {
           // General tab
           document.getElementById('user_name').value = settings.USER_NAME || '';
+          document.getElementById('user_location').value = settings.USER_LOCATION || '';
+          document.getElementById('user_timezone').value = settings.USER_TIMEZONE || '';
           document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
           document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
           document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
@@ -548,7 +558,6 @@ Thanks,
           document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
           document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
           document.getElementById('daily_outlook_schedule').value = settings.DAILY_OUTLOOK_SCHEDULE || 'day_of';
-          document.getElementById('daily_outlook_location').value = settings.DAILY_OUTLOOK_LOCATION || '';
 
           // Set label dropdowns after they're populated
           setTimeout(function() {
@@ -630,6 +639,8 @@ Thanks,
         const settings = {
         // General
         USER_NAME: document.getElementById('user_name').value.trim(),
+        USER_LOCATION: document.getElementById('user_location').value.trim(),
+        USER_TIMEZONE: document.getElementById('user_timezone').value.trim(),
         DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
         DIAGNOSTIC_MODE: document.getElementById('diagnostic_mode').checked ? 'true' : 'false',
         INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
@@ -655,8 +666,7 @@ Thanks,
         BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
         DAILY_BRIEFING_LABEL: document.getElementById('daily_label').value.trim(),
         WEEKLY_BRIEFING_LABEL: document.getElementById('weekly_label').value.trim(),
-        DAILY_OUTLOOK_SCHEDULE: document.getElementById('daily_outlook_schedule').value,
-        DAILY_OUTLOOK_LOCATION: document.getElementById('daily_outlook_location').value.trim()
+        DAILY_OUTLOOK_SCHEDULE: document.getElementById('daily_outlook_schedule').value
       };
 
       google.script.run

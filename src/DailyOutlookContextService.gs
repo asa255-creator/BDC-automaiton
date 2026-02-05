@@ -8,7 +8,7 @@
  * @returns {string} Location string
  */
 function getDailyOutlookLocation() {
-  return PropertiesService.getScriptProperties().getProperty('DAILY_OUTLOOK_LOCATION') || '';
+  return getUserLocation();
 }
 
 /**

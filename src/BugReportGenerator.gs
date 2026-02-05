@@ -942,8 +942,9 @@ function getDiagnosticLogEntries(sheetName, startTime, endTime, clientName) {
  */
 function getRecentEmailsFromLabel(labelName, startTime, endTime) {
   try {
-    const startStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'yyyy/MM/dd');
-    const endStr = Utilities.formatDate(endTime, Session.getScriptTimeZone(), 'yyyy/MM/dd');
+    const timezone = getUserTimezone();
+    const startStr = Utilities.formatDate(startTime, timezone, 'yyyy/MM/dd');
+    const endStr = Utilities.formatDate(endTime, timezone, 'yyyy/MM/dd');
 
     const query = `label:"${labelName}" after:${startStr} before:${endStr}`;
     const threads = GmailApp.search(query, 0, 10);

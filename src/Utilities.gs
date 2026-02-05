@@ -20,11 +20,7 @@ function formatDate(date) {
     return '';
   }
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
+  return Utilities.formatDate(date, getUserTimezone(), 'yyyy-MM-dd');
 }
 
 /**
@@ -38,8 +34,7 @@ function formatDateLong(date) {
     return '';
   }
 
-  const options = { year: 'numeric', month: 'long', day: 'numeric' };
-  return date.toLocaleDateString('en-US', options);
+  return Utilities.formatDate(date, getUserTimezone(), 'MMMM d, yyyy');
 }
 
 /**
@@ -53,10 +48,9 @@ function formatDateShort(date) {
     return '';
   }
 
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const month = months[date.getMonth()];
-  const day = date.getDate();
+  const timezone = getUserTimezone();
+  const month = Utilities.formatDate(date, timezone, 'MMM');
+  const day = parseInt(Utilities.formatDate(date, timezone, 'd'), 10);
   const ordinal = getOrdinalSuffix(day);
 
   return `${month} ${day}${ordinal}`;
@@ -85,14 +79,7 @@ function formatTime(date) {
     return '';
   }
 
-  let hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-
-  hours = hours % 12;
-  hours = hours ? hours : 12; // 0 should be 12
-
-  return `${hours}:${minutes} ${ampm}`;
+  return Utilities.formatDate(date, getUserTimezone(), 'h:mm a');
 }
 
 /**
@@ -190,20 +177,7 @@ function getEndOfWeek() {
  */
 function getHumanReadableTimestamp() {
   const date = new Date();
-
-  // Format options for EST
-  const options = {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZoneName: 'short'
-  };
-
-  return date.toLocaleString('en-US', options);
+  return Utilities.formatDate(date, getUserTimezone(), 'MMM d, yyyy h:mm a z');
 }
 
 /**
@@ -2064,7 +2038,8 @@ function getSettingsForEditor() {
     DAILY_BRIEFING_LABEL: props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily',
     WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly',
     DAILY_OUTLOOK_SCHEDULE: props.getProperty('DAILY_OUTLOOK_SCHEDULE') || 'day_of',
-    DAILY_OUTLOOK_LOCATION: props.getProperty('DAILY_OUTLOOK_LOCATION') || '',
+    USER_LOCATION: props.getProperty('USER_LOCATION') || props.getProperty('DAILY_OUTLOOK_LOCATION') || '',
+    USER_TIMEZONE: props.getProperty('USER_TIMEZONE') || Session.getScriptTimeZone(),
     WEATHER_API_KEY: props.getProperty('WEATHER_API_KEY') || '',
     DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false'
   };
@@ -2167,6 +2142,14 @@ function saveSettingsFromEditor(settings) {
     props.setProperty('WEATHER_API_KEY', settings.WEATHER_API_KEY);
   }
 
+  if (settings.USER_LOCATION !== undefined) {
+    props.setProperty('USER_LOCATION', settings.USER_LOCATION);
+  }
+
+  if (settings.USER_TIMEZONE !== undefined) {
+    props.setProperty('USER_TIMEZONE', settings.USER_TIMEZONE);
+  }
+
   // Track if subject template changed (for filter update)
   const oldSubjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE');
   const subjectTemplateChanged = settings.MEETING_SUBJECT_TEMPLATE &&
@@ -2211,10 +2194,6 @@ function saveSettingsFromEditor(settings) {
   if (settings.DAILY_OUTLOOK_SCHEDULE) {
     props.setProperty('DAILY_OUTLOOK_SCHEDULE', settings.DAILY_OUTLOOK_SCHEDULE);
     updateDailyOutlookTrigger();
-  }
-
-  if (settings.DAILY_OUTLOOK_LOCATION !== undefined) {
-    props.setProperty('DAILY_OUTLOOK_LOCATION', settings.DAILY_OUTLOOK_LOCATION);
   }
 
   // Diagnostic mode setting (allow true/false)
