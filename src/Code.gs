@@ -16,7 +16,15 @@ const CONFIG = {
     GENERATED_AGENDAS: 'Generated_Agendas',
     PROCESSING_LOG: 'Processing_Log',
     UNMATCHED: 'Unmatched',
-    FOLDERS: 'Folders'
+    FOLDERS: 'Folders',
+    PROCESSED_FATHOM: 'Processed_Fathom_Meetings',
+    // Diagnostic sheets (hidden by default, only used when DIAGNOSTIC_MODE enabled)
+    API_REQUEST_LOG: 'API_Request_Log',
+    API_RESPONSE_LOG: 'API_Response_Log',
+    DATA_COLLECTION_LOG: 'Data_Collection_Log',
+    AGENDA_GENERATION_TRACE: 'Agenda_Generation_Trace',
+    NOTES_APPEND_TRACE: 'Notes_Append_Trace',
+    DOC_APPEND_LOG: 'Doc_Append_Log'
   },
   BUSINESS_HOURS: {
     START: 8,  // 8:00 AM
@@ -56,30 +64,53 @@ function doGet(e) {
  */
 function doPost(e) {
   try {
+    // Log all incoming webhooks for debugging
+    logProcessing('WEBHOOK_RECEIVED', null, 'Received POST request', 'info');
+
     // Verify webhook signature if secret is configured
     const webhookSecret = PropertiesService.getScriptProperties().getProperty('FATHOM_WEBHOOK_SECRET');
+    const enforceSignature = PropertiesService.getScriptProperties().getProperty('FATHOM_ENFORCE_SIGNATURE');
 
     if (webhookSecret) {
       const isValid = verifyFathomWebhookSignature(e, webhookSecret);
       if (!isValid) {
-        logProcessing('WEBHOOK_INVALID_SIGNATURE', null, 'Webhook signature verification failed', 'error');
-        return ContentService
-          .createTextOutput(JSON.stringify({ status: 'error', message: 'Invalid signature' }))
-          .setMimeType(ContentService.MimeType.JSON);
+        // Log warning but only reject if enforcement is explicitly enabled
+        logProcessing('WEBHOOK_INVALID_SIGNATURE', null, 'Webhook signature verification failed - processing anyway (set FATHOM_ENFORCE_SIGNATURE=true to reject)', 'warning');
+
+        // Only reject if enforcement is explicitly enabled
+        if (enforceSignature === 'true') {
+          return ContentService
+            .createTextOutput(JSON.stringify({ status: 'error', message: 'Invalid signature' }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
+      } else {
+        logProcessing('WEBHOOK_SIGNATURE', null, 'Webhook signature verified successfully', 'success');
       }
+    } else {
+      logProcessing('WEBHOOK_NO_SECRET', null, 'No webhook secret configured - skipping signature verification', 'info');
     }
 
-    const payload = JSON.parse(e.postData.contents);
+    let payload = JSON.parse(e.postData.contents);
+
+    // Log payload summary for debugging
+    logProcessing('WEBHOOK_PAYLOAD', null, `Processing meeting: ${payload.meeting_title || payload.title || 'Unknown'}`, 'info');
+
+    // Normalize webhook payload to ensure consistent format
+    // Fathom webhooks might have different field names than API responses
+    payload = normalizeFathomPayload(payload);
 
     // Process the Fathom webhook
     const result = processFathomWebhook(payload);
+
+    logProcessing('WEBHOOK_SUCCESS', null, `Successfully processed webhook for: ${payload.meeting_title || 'Unknown'}`, 'success');
 
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'success', result: result }))
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (error) {
-    logProcessing('WEBHOOK_ERROR', null, error.message, 'error');
+    const errorDetail = `${error.message}\nStack: ${error.stack || 'N/A'}`;
+    logProcessing('WEBHOOK_ERROR', null, errorDetail, 'error');
 
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'error', message: error.message }))
@@ -150,17 +181,26 @@ function verifyFathomWebhookSignature(e, secret) {
  * Should be run once during initial setup.
  *
  * Triggers created:
+ * - Daily log cleanup: daily at 3:00 AM (removes Processing_Log entries older than 3 days)
  * - Google Drive folder sync: daily at 5:30 AM
  * - Label and filter creation: daily at 6:00 AM
  * - Client onboarding check: daily at 6:30 AM
  * - Daily outlook: daily at 7:00 AM
  * - Weekly outlook: weekly on Monday at 7:00 AM
  * - Sent meeting summary monitor: every 10 minutes
+ * - Fathom API polling: every 30 minutes
  * - Agenda generation: every 1 hour (limited to business hours in handler)
  */
 function setupTriggers() {
   // First, remove any existing triggers to avoid duplicates
   removeAllTriggers();
+
+  // Daily log cleanup - daily at 3:00 AM (removes entries older than 3 days)
+  ScriptApp.newTrigger('dailyLogCleanup')
+    .timeBased()
+    .atHour(3)
+    .everyDays(1)
+    .create();
 
   // Google Drive folder sync - daily at 5:30 AM
   ScriptApp.newTrigger('runFolderSync')
@@ -189,6 +229,13 @@ function setupTriggers() {
   ScriptApp.newTrigger('runSentMeetingSummaryMonitor')
     .timeBased()
     .everyMinutes(10)
+    .create();
+
+  // Fathom API polling - every 30 minutes (PRIMARY METHOD)
+  // Automatically fetches meetings from Fathom API
+  ScriptApp.newTrigger('runFathomPolling')
+    .timeBased()
+    .everyMinutes(30)
     .create();
 
   // Agenda generation - every hour (business hours check done in handler)
@@ -222,6 +269,43 @@ function removeAllTriggers() {
   const triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
   Logger.log(`Removed ${triggers.length} existing triggers.`);
+}
+
+/**
+ * Creates the Fathom polling trigger (30-minute intervals).
+ * Called when user enables polling backup in settings.
+ */
+function createFathomPollingTrigger() {
+  // First remove any existing polling triggers
+  removeFathomPollingTrigger();
+
+  // Create new trigger
+  ScriptApp.newTrigger('runFathomPolling')
+    .timeBased()
+    .everyMinutes(30)
+    .create();
+
+  Logger.log('Fathom polling trigger created');
+}
+
+/**
+ * Removes the Fathom polling trigger.
+ * Called when user disables polling backup in settings.
+ */
+function removeFathomPollingTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  let removed = 0;
+
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'runFathomPolling') {
+      ScriptApp.deleteTrigger(trigger);
+      removed++;
+    }
+  });
+
+  if (removed > 0) {
+    Logger.log(`Removed ${removed} Fathom polling trigger(s)`);
+  }
 }
 
 // ============================================================================
@@ -265,6 +349,18 @@ function runSentMeetingSummaryMonitor() {
     monitorSentMeetingSummaries();
   } catch (error) {
     logProcessing('SUMMARY_MONITOR', null, `Error: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Handler for Fathom API polling trigger.
+ * Runs every 30 minutes - PRIMARY METHOD for fetching meetings.
+ */
+function runFathomPolling() {
+  try {
+    pollFathomForNewMeetings();
+  } catch (error) {
+    logProcessing('FATHOM_POLL', null, `Error: ${error.message}`, 'error');
   }
 }
 

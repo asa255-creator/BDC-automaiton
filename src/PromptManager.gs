@@ -209,6 +209,9 @@ Previous meeting notes:
 Action items from last meeting:
 {action_items_section}
 
+Calendar event attachments:
+{attachments_section}
+
 Generate a strategic meeting agenda with:
 
 1. 🎯 Meeting Objective (1 sentence)
@@ -283,7 +286,7 @@ const PROMPT_METADATA = {
   AGENDA_CLAUDE_PROMPT: {
     label: '📋 Meeting Agenda AI Prompt',
     description: 'Claude prompt for meeting preparation. Generates strategic agendas with time allocations, preparation notes, and desired outcomes.',
-    variables: ['{event_title}', '{client_name}', '{date_time}', '{duration}', '{todoist_section}', '{emails_section}', '{notes_section}', '{action_items_section}']
+    variables: ['{event_title}', '{client_name}', '{date_time}', '{duration}', '{todoist_section}', '{emails_section}', '{notes_section}', '{action_items_section}', '{attachments_section}']
   },
   AGENDA_EMAIL_TEMPLATE: {
     label: 'Agenda Email Wrapper',

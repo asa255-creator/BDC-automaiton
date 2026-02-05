@@ -97,25 +97,37 @@ function processEventForAgenda(event) {
 function generateAgendaForEvent(event, client) {
   Logger.log(`Generating agenda for: ${event.getTitle()} (${client.client_name})`);
 
+  // DIAGNOSTIC: Start trace
+  const traceId = startAgendaTrace(event, client);
+
   // Gather context
-  const context = gatherAgendaContext(event, client);
+  if (traceId) logAgendaStep(traceId, event, client, 4, 'GATHER_CONTEXT_START', 'started', 'Starting context gathering');
+  const context = gatherAgendaContext(event, client, traceId);
+  if (traceId) logAgendaStep(traceId, event, client, 4, 'GATHER_CONTEXT_START', 'success', 'Context gathering complete');
 
   // Generate agenda with Claude
-  const agendaContent = generateAgendaWithClaude(event, client, context);
+  const agendaResult = generateAgendaWithClaude(event, client, context, traceId);
 
-  if (!agendaContent) {
+  if (!agendaResult) {
     Logger.log('Failed to generate agenda content from Claude');
+    if (traceId) logAgendaStep(traceId, event, client, 8, 'AGENDA_FAILED', 'failed', 'Failed to generate agenda content');
     return;
   }
 
   // Send agenda email (will apply label from Client Registry)
-  sendAgendaEmail(event, client, agendaContent);
+  if (traceId) logAgendaStep(traceId, event, client, 9, 'SEND_EMAIL', 'started', 'Sending agenda email');
+  sendAgendaEmail(event, client, agendaResult.content, traceId, agendaResult.isTruncated);
+  if (traceId) logAgendaStep(traceId, event, client, 9, 'SEND_EMAIL', 'success', 'Email sent successfully');
 
   // Append to client's Google Doc
-  appendAgendaToDoc(event, client, agendaContent);
+  if (traceId) logAgendaStep(traceId, event, client, 10, 'APPEND_TO_DOC', 'started', 'Appending agenda to Google Doc');
+  appendAgendaToDoc(event, client, agendaResult.content, traceId);
+  if (traceId) logAgendaStep(traceId, event, client, 10, 'APPEND_TO_DOC', 'success', 'Appended to doc successfully');
 
   // Record the generation
   recordGeneratedAgenda(event, client);
+
+  if (traceId) logAgendaStep(traceId, event, client, 11, 'COMPLETE', 'success', 'Agenda generation completed successfully');
 
   logProcessing(
     'AGENDA_GENERATED',
@@ -134,28 +146,64 @@ function generateAgendaForEvent(event, client) {
  *
  * @param {CalendarEvent} event - The calendar event
  * @param {Object} client - The client object
+ * @param {string} traceId - Optional trace ID for diagnostic logging
  * @returns {Object} Context object with tasks, emails, and meeting history
  */
-function gatherAgendaContext(event, client) {
+function gatherAgendaContext(event, client, traceId) {
   const context = {
     todoistTasks: [],
     recentEmails: [],
     previousMeetingNotes: null,
-    unmatchedActionItems: []
+    unmatchedActionItems: [],
+    calendarAttachments: []
   };
 
   // Fetch Todoist tasks due today or overdue
   if (client.todoist_project_id) {
+    if (traceId) logAgendaStep(traceId, event, client, 3.1, 'FETCH_TODOIST', 'started', `Fetching Todoist tasks for project: ${client.todoist_project_id}`);
+
     context.todoistTasks = fetchTodoistTasksDueToday(client.todoist_project_id);
     Logger.log(`Found ${context.todoistTasks.length} Todoist tasks`);
+
+    // DIAGNOSTIC: Log Todoist data collection
+    logDataCollection(
+      client.client_name,
+      event.getId(),
+      'Todoist',
+      `project_id=${client.todoist_project_id}, due<=today`,
+      context.todoistTasks,
+      context.todoistTasks.slice(0, 3).map(t => ({ content: t.content, due: t.due ? t.due.date : 'no date' })),
+      null
+    );
+
+    if (traceId) logAgendaStep(traceId, event, client, 3.1, 'FETCH_TODOIST', 'success', `Found ${context.todoistTasks.length} tasks`);
+  } else {
+    if (traceId) logAgendaStep(traceId, event, client, 3.1, 'FETCH_TODOIST', 'skipped', 'No Todoist project ID configured');
   }
 
   // Fetch recent emails
+  if (traceId) logAgendaStep(traceId, event, client, 3.2, 'FETCH_EMAILS', 'started', 'Fetching recent emails from Gmail');
+
   context.recentEmails = fetchRecentClientEmails(client);
   Logger.log(`Found ${context.recentEmails.length} recent emails`);
 
+  // DIAGNOSTIC: Log Gmail data collection
+  logDataCollection(
+    client.client_name,
+    event.getId(),
+    'Gmail',
+    `from/to: ${client.contact_emails}, newer_than:7d`,
+    context.recentEmails,
+    context.recentEmails.slice(0, 3).map(e => ({ subject: e.subject, from: e.from, date: e.date })),
+    null
+  );
+
+  if (traceId) logAgendaStep(traceId, event, client, 3.2, 'FETCH_EMAILS', 'success', `Found ${context.recentEmails.length} emails`);
+
   // Fetch previous meeting notes and identify unmatched action items
   if (client.google_doc_url) {
+    if (traceId) logAgendaStep(traceId, event, client, 3.3, 'FETCH_DOC_NOTES', 'started', 'Fetching previous meeting notes from Google Doc');
+
     const meetingHistory = fetchPreviousMeetingNotes(client);
     context.previousMeetingNotes = meetingHistory.notes;
     context.unmatchedActionItems = findUnmatchedActionItems(
@@ -163,54 +211,213 @@ function gatherAgendaContext(event, client) {
       context.todoistTasks
     );
     Logger.log(`Found ${context.unmatchedActionItems.length} unmatched action items`);
+
+    // DIAGNOSTIC: Log Google Doc data collection
+    logDataCollection(
+      client.client_name,
+      event.getId(),
+      'Google Doc',
+      `doc_url: ${client.google_doc_url}`,
+      meetingHistory.notes ? [meetingHistory.notes] : [],
+      meetingHistory.notes ? [{
+        notes_preview: meetingHistory.notes.substring(0, 200),
+        notes_length: meetingHistory.notes.length,
+        action_items_count: meetingHistory.actionItems.length,
+        action_items: meetingHistory.actionItems.slice(0, 3)
+      }] : [],
+      null
+    );
+
+    if (traceId) logAgendaStep(traceId, event, client, 3.3, 'FETCH_DOC_NOTES', 'success', `Found notes with ${context.unmatchedActionItems.length} unmatched action items`);
+  } else {
+    if (traceId) logAgendaStep(traceId, event, client, 3.3, 'FETCH_DOC_NOTES', 'skipped', 'No Google Doc URL configured');
   }
+
+  // Fetch calendar event attachments (excluding running meeting notes)
+  if (traceId) logAgendaStep(traceId, event, client, 3.4, 'FETCH_ATTACHMENTS', 'started', 'Fetching calendar event attachments');
+
+  context.calendarAttachments = fetchCalendarAttachments(event, client);
+  Logger.log(`Found ${context.calendarAttachments.length} calendar attachments`);
+
+  // DIAGNOSTIC: Log calendar attachments
+  logDataCollection(
+    client.client_name,
+    event.getId(),
+    'Calendar Attachments',
+    `event_id: ${event.getId()}`,
+    context.calendarAttachments,
+    context.calendarAttachments.slice(0, 3).map(a => ({ title: a.title, url: a.url })),
+    null
+  );
+
+  if (traceId) logAgendaStep(traceId, event, client, 3.4, 'FETCH_ATTACHMENTS', 'success', `Found ${context.calendarAttachments.length} attachments`);
 
   return context;
 }
 
 /**
- * Fetches recent emails from/to the client.
+ * Fetches recent emails from/to the client, including from their Gmail labels.
+ * Pulls full email bodies for agenda context.
  *
  * @param {Object} client - The client object
- * @returns {Object[]} Array of email summary objects
+ * @returns {Object[]} Array of email objects with full bodies
  */
 function fetchRecentClientEmails(client) {
-  const contacts = parseCommaSeparatedList(client.contact_emails);
-
-  if (contacts.length === 0) {
-    return [];
-  }
-
-  // Build search query using contact emails
-  const fromParts = [];
-  const toParts = [];
-
-  for (const contact of contacts) {
-    fromParts.push(`from:${contact}`);
-    toParts.push(`to:${contact}`);
-  }
-
-  const query = `(${fromParts.join(' OR ')} OR ${toParts.join(' OR ')}) newer_than:7d`;
+  const emails = [];
+  const seenMessageIds = new Set(); // Avoid duplicates
 
   try {
-    const threads = GmailApp.search(query, 0, 20);
-    const emails = [];
+    // 1. Get emails from contact addresses (last 7 days)
+    const contacts = parseCommaSeparatedList(client.contact_emails);
 
-    for (const thread of threads) {
-      const messages = thread.getMessages();
-      const lastMessage = messages[messages.length - 1];
+    if (contacts.length > 0) {
+      const fromParts = [];
+      const toParts = [];
 
-      emails.push({
-        subject: thread.getFirstMessageSubject(),
-        sender: lastMessage.getFrom(),
-        date: lastMessage.getDate(),
-        snippet: lastMessage.getPlainBody().substring(0, 500)
-      });
+      for (const contact of contacts) {
+        fromParts.push(`from:${contact}`);
+        toParts.push(`to:${contact}`);
+      }
+
+      const contactQuery = `(${fromParts.join(' OR ')} OR ${toParts.join(' OR ')}) newer_than:7d`;
+      const contactThreads = GmailApp.search(contactQuery, 0, 20);
+
+      for (const thread of contactThreads) {
+        const messages = thread.getMessages();
+        const lastMessage = messages[messages.length - 1];
+        const messageId = lastMessage.getId();
+
+        if (!seenMessageIds.has(messageId)) {
+          seenMessageIds.add(messageId);
+          emails.push({
+            subject: thread.getFirstMessageSubject(),
+            from: lastMessage.getFrom(),
+            date: lastMessage.getDate(),
+            body: lastMessage.getPlainBody() // Full body, no truncation
+          });
+        }
+      }
     }
+
+    // 2. Get emails from meeting summaries label
+    if (client.meeting_summaries_label) {
+      try {
+        const summariesLabel = GmailApp.getUserLabelByName(client.meeting_summaries_label);
+        if (summariesLabel) {
+          const summaryThreads = summariesLabel.getThreads(0, 20);
+
+          for (const thread of summaryThreads) {
+            const messages = thread.getMessages();
+            const lastMessage = messages[messages.length - 1];
+            const messageId = lastMessage.getId();
+
+            if (!seenMessageIds.has(messageId)) {
+              seenMessageIds.add(messageId);
+              emails.push({
+                subject: thread.getFirstMessageSubject(),
+                from: lastMessage.getFrom(),
+                date: lastMessage.getDate(),
+                body: lastMessage.getPlainBody() // Full body
+              });
+            }
+          }
+        }
+      } catch (e) {
+        Logger.log(`Could not fetch from label ${client.meeting_summaries_label}: ${e.message}`);
+      }
+    }
+
+    // 3. Get emails from meeting agendas label
+    if (client.meeting_agendas_label) {
+      try {
+        const agendasLabel = GmailApp.getUserLabelByName(client.meeting_agendas_label);
+        if (agendasLabel) {
+          const agendaThreads = agendasLabel.getThreads(0, 20);
+
+          for (const thread of agendaThreads) {
+            const messages = thread.getMessages();
+            const lastMessage = messages[messages.length - 1];
+            const messageId = lastMessage.getId();
+
+            if (!seenMessageIds.has(messageId)) {
+              seenMessageIds.add(messageId);
+              emails.push({
+                subject: thread.getFirstMessageSubject(),
+                from: lastMessage.getFrom(),
+                date: lastMessage.getDate(),
+                body: lastMessage.getPlainBody() // Full body
+              });
+            }
+          }
+        }
+      } catch (e) {
+        Logger.log(`Could not fetch from label ${client.meeting_agendas_label}: ${e.message}`);
+      }
+    }
+
+    // Sort by date, most recent first
+    emails.sort((a, b) => b.date.getTime() - a.date.getTime());
 
     return emails;
   } catch (error) {
     Logger.log(`Failed to fetch client emails: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Fetches attachments from a calendar event, excluding the running meeting notes doc.
+ * Uses Advanced Calendar Service if available to access attachments.
+ *
+ * @param {CalendarEvent} event - The calendar event
+ * @param {Object} client - The client object
+ * @returns {Object[]} Array of attachment objects with title and url
+ */
+function fetchCalendarAttachments(event, client) {
+  try {
+    // Get the running meeting notes doc ID to exclude it
+    let runningNotesDocId = null;
+    if (client.google_doc_url) {
+      try {
+        runningNotesDocId = extractDocIdFromUrl(client.google_doc_url);
+      } catch (e) {
+        Logger.log(`Could not extract doc ID from ${client.google_doc_url}: ${e.message}`);
+      }
+    }
+
+    // Try to use Advanced Calendar Service for attachments
+    try {
+      const calendarId = event.getOriginalCalendarId() || 'primary';
+      const eventId = event.getId().split('@')[0]; // Remove calendar ID suffix
+
+      const advancedEvent = Calendar.Events.get(calendarId, eventId);
+
+      if (advancedEvent.attachments && advancedEvent.attachments.length > 0) {
+        const attachments = [];
+
+        for (const attachment of advancedEvent.attachments) {
+          // Check if this is the running meeting notes doc
+          const isRunningNotes = runningNotesDocId && attachment.fileUrl && attachment.fileUrl.includes(runningNotesDocId);
+
+          if (!isRunningNotes) {
+            attachments.push({
+              title: attachment.title || 'Untitled Attachment',
+              url: attachment.fileUrl || null,
+              mimeType: attachment.mimeType || null
+            });
+          }
+        }
+
+        return attachments;
+      }
+    } catch (e) {
+      // Advanced Calendar Service not available or error accessing it
+      Logger.log(`Could not fetch attachments via Advanced Calendar Service: ${e.message}`);
+    }
+
+    return [];
+  } catch (error) {
+    Logger.log(`Failed to fetch calendar attachments: ${error.message}`);
     return [];
   }
 }
@@ -379,17 +586,30 @@ function similarityScore(str1, str2) {
  * @param {CalendarEvent} event - The calendar event
  * @param {Object} client - The client object
  * @param {Object} context - The gathered context
- * @returns {string|null} The generated agenda content or null
+ * @param {string} traceId - Optional trace ID for diagnostic logging
+ * @returns {Object|null} Object with {content: string, isTruncated: boolean} or null
  */
-function generateAgendaWithClaude(event, client, context) {
+function generateAgendaWithClaude(event, client, context, traceId) {
+  const startTime = new Date().getTime();
+
+  // DIAGNOSTIC: Log step - Check API key
+  if (traceId) logAgendaStep(traceId, event, client, 5, 'CHECK_API_KEY', 'started', 'Verifying Claude API key');
   const apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
 
   if (!apiKey) {
+    if (traceId) logAgendaStep(traceId, event, client, 5, 'CHECK_API_KEY', 'failed', 'Claude API key not configured');
     logProcessing('AGENDA_ERROR', client.client_name, 'Claude API key not configured - cannot generate agenda', 'error');
     return null;
   }
 
+  if (traceId) logAgendaStep(traceId, event, client, 5, 'CHECK_API_KEY', 'success', 'API key found');
+
+  // DIAGNOSTIC: Log step - Build prompt
+  if (traceId) logAgendaStep(traceId, event, client, 6, 'BUILD_PROMPT', 'started', 'Building Claude prompt with context');
+
   const prompt = buildAgendaPrompt(event, client, context);
+
+  if (traceId) logAgendaStep(traceId, event, client, 6, 'BUILD_PROMPT', 'success', `Prompt built (${prompt.length} chars)`);
 
   try {
     const url = 'https://api.anthropic.com/v1/messages';
@@ -398,9 +618,12 @@ function generateAgendaWithClaude(event, client, context) {
     const model = getModelForPrompt('AGENDA_CLAUDE_PROMPT');
     logProcessing('AGENDA_GEN', client.client_name, `Using Claude model: ${model}`, 'info');
 
+    // Get max_tokens from settings (default 4000)
+    const maxTokens = parseInt(PropertiesService.getScriptProperties().getProperty('CLAUDE_AGENDA_MAX_TOKENS') || '4000');
+
     const payload = {
       model: model,
-      max_tokens: 1000,
+      max_tokens: maxTokens,
       messages: [
         {
           role: 'user',
@@ -409,47 +632,134 @@ function generateAgendaWithClaude(event, client, context) {
       ]
     };
 
+    const headers = {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json'
+    };
+
     const options = {
       method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json'
-      },
+      headers: headers,
       payload: JSON.stringify(payload),
       muteHttpExceptions: true
     };
 
+    // DIAGNOSTIC: Log API request
+    const requestId = logAPIRequest(
+      'Claude API',
+      url,
+      'POST',
+      headers,
+      payload,
+      {
+        clientId: client.client_name,
+        eventId: event.getId(),
+        flow: 'Agenda Generation'
+      }
+    );
+
+    if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'started', `Calling Claude API (request ID: ${requestId || 'N/A'})`);
+
+    // Make API call and measure duration
+    const apiStartTime = new Date().getTime();
     const response = UrlFetchApp.fetch(url, options);
+    const apiDuration = new Date().getTime() - apiStartTime;
+
     const responseCode = response.getResponseCode();
 
+    // Parse response with explicit UTF-8 handling to preserve emojis
+    // Get raw bytes and convert to string properly
+    const responseBytes = response.getContent();
+    const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
+
+    // DIAGNOSTIC: Log API response
+    let parseSuccess = false;
+    let result = null;
+    let extractedData = null;
+    let apiError = null;
+
+    try {
+      if (responseCode === 200) {
+        result = JSON.parse(responseText);
+        parseSuccess = true;
+        extractedData = {
+          model: result.model || model,
+          stop_reason: result.stop_reason,
+          content_length: result.content && result.content[0] ? result.content[0].text.length : 0
+        };
+      } else {
+        apiError = `HTTP ${responseCode}`;
+      }
+    } catch (e) {
+      apiError = `Parse error: ${e.message}`;
+    }
+
+    logAPIResponse(
+      requestId,
+      'Claude API',
+      responseCode,
+      { 'content-type': response.getHeaders()['Content-Type'] || '' },
+      responseText,
+      parseSuccess,
+      extractedData,
+      apiError,
+      apiDuration
+    );
+
     if (responseCode !== 200) {
-      const errorDetail = `Claude API returned ${responseCode}: ${response.getContentText()}`;
+      const errorDetail = `Claude API returned ${responseCode}: ${responseText}`;
+      if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'failed', `API error: ${responseCode}`, null, apiDuration);
       logProcessing('AGENDA_ERROR', client.client_name, errorDetail, 'error');
       return null;
     }
 
-    const result = JSON.parse(response.getContentText());
+    if (!result) {
+      result = JSON.parse(responseText);
+    }
 
     if (result.content && result.content.length > 0) {
+      // Check if response was truncated
+      const isTruncated = result.stop_reason === 'max_tokens';
+      if (isTruncated) {
+        logProcessing('AGENDA_ERROR', client.client_name, 'Claude response was truncated due to max_tokens limit - agenda may be incomplete', 'warning');
+        if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'warning', `Response truncated (max_tokens reached)`, `Partial response: ${result.content[0].text.length} chars`, apiDuration);
+      } else {
+        if (traceId) logAgendaStep(traceId, event, client, 7, 'CALL_CLAUDE_API', 'success', `API call successful (${apiDuration}ms)`, `Response: ${extractedData ? extractedData.content_length : 0} chars`, apiDuration);
+      }
+
       logProcessing('AGENDA_GEN', client.client_name, 'Successfully generated agenda with Claude', 'success');
       let content = result.content[0].text;
 
+      if (!content || content.trim().length === 0) {
+        logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty text content', 'error');
+        return null;
+      }
+
       // Strip markdown code fences if present (Claude sometimes wraps HTML in ```html ... ```)
       content = content.replace(/^```html\s*/i, '').replace(/\s*```$/, '');
+      content = content.replace(/^```\s*/i, '').replace(/\s*```$/, '');
       content = content.trim();
 
       // Extract body content from full HTML document if present
       // Claude sometimes returns full HTML with <!DOCTYPE>, <head>, <style>, etc.
       const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-      if (bodyMatch) {
+      if (bodyMatch && bodyMatch[1].trim().length > 0) {
         content = bodyMatch[1].trim();
+        logProcessing('AGENDA_GEN', client.client_name, 'Extracted body content from full HTML document', 'info');
       }
 
-      return content;
+      // If content is still empty or too short after extraction, log error
+      if (!content || content.trim().length < 10) {
+        logProcessing('AGENDA_ERROR', client.client_name, `Generated agenda is too short or empty: "${content}"`, 'error');
+        return null;
+      }
+
+      logProcessing('AGENDA_GEN', client.client_name, `Generated agenda content (${content.length} chars)`, 'success');
+      return {content: content, isTruncated: isTruncated};
     }
 
-    logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty content', 'error');
+    logProcessing('AGENDA_ERROR', client.client_name, 'Claude returned empty content array', 'error');
     return null;
 
   } catch (error) {
@@ -485,15 +795,20 @@ function buildAgendaPrompt(event, client, context) {
 
   let emailsSection = '';
   if (context.recentEmails.length > 0) {
-    emailsSection = `Recent Email Activity (Last 7 Days):\n`;
-    for (const email of context.recentEmails.slice(0, 5)) {
-      emailsSection += `- ${email.subject} (${formatDate(email.date)})\n`;
+    emailsSection = `Recent Email Activity:\n\n`;
+    for (const email of context.recentEmails.slice(0, 10)) {
+      emailsSection += `Subject: ${email.subject}\n`;
+      emailsSection += `From: ${email.from}\n`;
+      emailsSection += `Date: ${formatDate(email.date)}\n`;
+      emailsSection += `Body:\n${email.body}\n`;
+      emailsSection += `---\n\n`;
     }
   }
 
   let notesSection = '';
   if (context.previousMeetingNotes) {
-    notesSection = `Previous Meeting Notes Summary:\n${context.previousMeetingNotes.substring(0, 500)}`;
+    // Send FULL meeting notes, no truncation
+    notesSection = `Previous Meeting Notes:\n${context.previousMeetingNotes}`;
   }
 
   let actionItemsSection = '';
@@ -501,6 +816,18 @@ function buildAgendaPrompt(event, client, context) {
     actionItemsSection = `Action Items from Last Meeting Not Yet in Task List:\n`;
     for (const item of context.unmatchedActionItems) {
       actionItemsSection += `- ${item}\n`;
+    }
+  }
+
+  let attachmentsSection = '';
+  if (context.calendarAttachments && context.calendarAttachments.length > 0) {
+    attachmentsSection = `Calendar Event Attachments:\n`;
+    for (const attachment of context.calendarAttachments) {
+      attachmentsSection += `- ${attachment.title}`;
+      if (attachment.url) {
+        attachmentsSection += ` (${attachment.url})`;
+      }
+      attachmentsSection += `\n`;
     }
   }
 
@@ -516,7 +843,8 @@ function buildAgendaPrompt(event, client, context) {
     todoist_section: todoistSection,
     emails_section: emailsSection,
     notes_section: notesSection,
-    action_items_section: actionItemsSection
+    action_items_section: actionItemsSection,
+    attachments_section: attachmentsSection
   });
 }
 
@@ -543,7 +871,7 @@ function getEventDurationMinutes(event) {
  * @param {Object} client - The client object
  * @param {string} agendaContent - The generated agenda
  */
-function sendAgendaEmail(event, client, agendaContent) {
+function sendAgendaEmail(event, client, agendaContent, traceId, isTruncated) {
   const userEmail = getCurrentUserEmail();
   const eventDateTime = formatDateTime(event.getStartTime());
   const eventDate = formatDateShort(event.getStartTime());
@@ -557,18 +885,51 @@ function sendAgendaEmail(event, client, agendaContent) {
     .replace('{meeting_title}', event.getTitle())
     .replace('{date}', eventDate);
 
+  // Add truncation warning if needed
+  let warningBanner = '';
+  if (isTruncated) {
+    warningBanner = `
+<div style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 12px; margin-bottom: 16px;">
+  <strong>⚠️ Warning:</strong> This agenda was truncated due to response length limits.
+  The content may be incomplete. Consider increasing the max_tokens setting or shortening the input context.
+</div>`;
+  }
+
   // Get email template from sheet
   const template = getPrompt('AGENDA_EMAIL_TEMPLATE');
 
-  const body = applyTemplate(template, {
+  let body = applyTemplate(template, {
     event_title: event.getTitle(),
     client_name: client.client_name,
     date_time: eventDateTime,
-    agenda_content: agendaContent
+    agenda_content: warningBanner + agendaContent
   });
 
+  // Ensure proper UTF-8 encoding by adding meta tag if not present
+  if (!body.match(/<meta[^>]+charset/i)) {
+    // If body doesn't have HTML structure, wrap it
+    if (!body.match(/<html/i)) {
+      body = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+</head>
+<body>
+${body}
+</body>
+</html>`;
+    } else {
+      // Insert meta tag in existing HTML
+      body = body.replace(/<head[^>]*>/i, match => {
+        return match + '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">';
+      });
+    }
+  }
+
   GmailApp.sendEmail(userEmail, subject, '', {
-    htmlBody: body
+    htmlBody: body,
+    charset: 'UTF-8'
   });
 
   Logger.log(`Sent agenda email for: ${event.getTitle()}`);
@@ -643,19 +1004,58 @@ function htmlToPlainText(html) {
   text = text.replace(/<\/ol>/gi, '\n');
   text = text.replace(/<ol[^>]*>/gi, '');
 
-  // Strip ALL remaining HTML tags (including any stray style/script that weren't caught)
+  // Strip ALL remaining HTML tags - including partial/malformed tags
+  // First pass: Remove complete tags
   text = text.replace(/<[^>]+>/g, '');
 
-  // Decode common HTML entities
-  text = text.replace(/&nbsp;/g, ' ');
-  text = text.replace(/&amp;/g, '&');
-  text = text.replace(/&lt;/g, '<');
-  text = text.replace(/&gt;/g, '>');
-  text = text.replace(/&quot;/g, '"');
-  text = text.replace(/&#39;/g, "'");
-  text = text.replace(/&mdash;/g, '—');
-  text = text.replace(/&ndash;/g, '–');
-  text = text.replace(/&bull;/g, '•');
+  // Second pass: Remove any remaining partial tags (handles malformed HTML like "</h" or "<div")
+  // This catches incomplete opening tags
+  text = text.replace(/<[^>]*$/gm, '');
+  // This catches incomplete closing tags or any remaining angle brackets with text
+  text = text.replace(/<\/?[a-zA-Z][^>]*/g, '');
+  // Clean up any stray angle brackets
+  text = text.replace(/[<>]/g, '');
+
+  // Decode ALL HTML entities - including numeric ones
+  // First, decode numeric entities (&#123; or &#x1F4; format)
+  text = text.replace(/&#(\d+);/g, (match, dec) => {
+    try {
+      return String.fromCharCode(parseInt(dec, 10));
+    } catch (e) {
+      return match;
+    }
+  });
+  text = text.replace(/&#x([0-9A-Fa-f]+);/g, (match, hex) => {
+    try {
+      return String.fromCharCode(parseInt(hex, 16));
+    } catch (e) {
+      return match;
+    }
+  });
+
+  // Decode common named HTML entities
+  text = text.replace(/&nbsp;/gi, ' ');
+  text = text.replace(/&amp;/gi, '&');
+  text = text.replace(/&lt;/gi, '<');
+  text = text.replace(/&gt;/gi, '>');
+  text = text.replace(/&quot;/gi, '"');
+  text = text.replace(/&#39;/gi, "'");
+  text = text.replace(/&apos;/gi, "'");
+  text = text.replace(/&mdash;/gi, '—');
+  text = text.replace(/&ndash;/gi, '–');
+  text = text.replace(/&bull;/gi, '•');
+  text = text.replace(/&hellip;/gi, '…');
+  text = text.replace(/&ldquo;/gi, '"');
+  text = text.replace(/&rdquo;/gi, '"');
+  text = text.replace(/&lsquo;/gi, '\u2018');
+  text = text.replace(/&rsquo;/gi, '\u2019');
+  text = text.replace(/&euro;/gi, '€');
+  text = text.replace(/&pound;/gi, '£');
+  text = text.replace(/&yen;/gi, '¥');
+  text = text.replace(/&cent;/gi, '¢');
+  text = text.replace(/&copy;/gi, '©');
+  text = text.replace(/&reg;/gi, '®');
+  text = text.replace(/&trade;/gi, '™');
 
   // Clean up excessive whitespace
   text = text.replace(/\n{3,}/g, '\n\n'); // Max 2 consecutive newlines
@@ -674,7 +1074,7 @@ function htmlToPlainText(html) {
  * @param {Object} client - The client object
  * @param {string} agendaContent - The generated agenda (HTML format)
  */
-function appendAgendaToDoc(event, client, agendaContent) {
+function appendAgendaToDoc(event, client, agendaContent, traceId) {
   if (!client.google_doc_url) {
     logProcessing('AGENDA_DOC', client.client_name, 'No Google Doc URL configured', 'warning');
     return;
@@ -682,6 +1082,16 @@ function appendAgendaToDoc(event, client, agendaContent) {
 
   try {
     const docId = extractDocIdFromUrl(client.google_doc_url);
+
+    // DIAGNOSTIC: Get doc length before
+    let beforeLength = 0;
+    try {
+      const doc = DocumentApp.openById(docId);
+      beforeLength = doc.getBody().getText().length;
+    } catch (e) {
+      // If we can't get before length, just continue
+    }
+
     const doc = DocumentApp.openById(docId);
     const body = doc.getBody();
 
@@ -716,8 +1126,47 @@ function appendAgendaToDoc(event, client, agendaContent) {
 
     doc.saveAndClose();
 
+    // DIAGNOSTIC: Get doc length after and verify
+    let afterLength = 0;
+    let verificationStatus = 'skipped';
+    try {
+      const verifyDoc = DocumentApp.openById(docId);
+      afterLength = verifyDoc.getBody().getText().length;
+      verificationStatus = afterLength > beforeLength ? 'verified' : 'failed';
+    } catch (e) {
+      verificationStatus = 'failed';
+    }
+
+    // DIAGNOSTIC: Log doc append
+    logDocAppend(
+      client,
+      docId,
+      client.google_doc_url,
+      'Agenda',
+      plainTextContent,
+      true,
+      null,
+      beforeLength,
+      afterLength,
+      verificationStatus
+    );
+
     logProcessing('AGENDA_DOC', client.client_name, `Appended agenda for: ${event.getTitle()}`, 'success');
   } catch (error) {
+    // DIAGNOSTIC: Log failed append
+    logDocAppend(
+      client,
+      extractDocIdFromUrl(client.google_doc_url || ''),
+      client.google_doc_url || '',
+      'Agenda',
+      agendaContent,
+      false,
+      error.message,
+      0,
+      0,
+      'failed'
+    );
+
     logProcessing('AGENDA_DOC', client.client_name, `Failed to append agenda: ${error.message}`, 'error');
   }
 }

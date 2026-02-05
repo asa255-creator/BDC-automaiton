@@ -49,7 +49,7 @@ function formatDateLong(date) {
  * @returns {string} Formatted date string
  */
 function formatDateShort(date) {
-  if (!date || !(date instanceof Date)) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
     return '';
   }
 
@@ -183,6 +183,30 @@ function getEndOfWeek() {
 // ============================================================================
 
 /**
+ * Returns a human-readable EST timestamp.
+ * Format: "Jan 20, 2026 4:29 PM EST"
+ *
+ * @returns {string} Formatted timestamp in EST
+ */
+function getHumanReadableTimestamp() {
+  const date = new Date();
+
+  // Format options for EST
+  const options = {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short'
+  };
+
+  return date.toLocaleString('en-US', options);
+}
+
+/**
  * Logs a processing action to the Processing_Log sheet.
  *
  * @param {string} actionType - Type of action (e.g., 'WEBHOOK_PROCESS', 'AGENDA_GEN')
@@ -201,7 +225,7 @@ function logProcessing(actionType, clientId, details, status) {
     }
 
     sheet.appendRow([
-      new Date().toISOString(),
+      getHumanReadableTimestamp(),
       actionType,
       clientId || '',
       details,
@@ -250,36 +274,72 @@ function getRecentLogs(limit = 50, actionType = null) {
 
 /**
  * Clears old processing logs (older than specified days).
+ * Handles both ISO format (2026-01-20T21:29:45.003Z) and human-readable format (Jan 20, 2026 4:29 PM EST).
  *
  * @param {number} daysToKeep - Number of days of logs to retain
+ * @returns {number} Number of rows deleted
  */
 function clearOldLogs(daysToKeep = 30) {
-  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(CONFIG.SHEETS.PROCESSING_LOG);
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.PROCESSING_LOG);
 
-  if (!sheet) {
-    return;
-  }
-
-  const data = sheet.getDataRange().getValues();
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-  const rowsToDelete = [];
-
-  for (let i = 1; i < data.length; i++) {
-    const timestamp = new Date(data[i][0]);
-    if (timestamp < cutoffDate) {
-      rowsToDelete.push(i + 1); // 1-based row index
+    if (!sheet) {
+      Logger.log('Processing_Log sheet not found');
+      return 0;
     }
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      // Only header row or empty
+      return 0;
+    }
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+
+    const rowsToDelete = [];
+
+    for (let i = 1; i < data.length; i++) {
+      try {
+        // Parse timestamp - works with both ISO and human-readable formats
+        const timestamp = new Date(data[i][0]);
+
+        // Check if valid date and older than cutoff
+        if (!isNaN(timestamp.getTime()) && timestamp < cutoffDate) {
+          rowsToDelete.push(i + 1); // 1-based row index
+        }
+      } catch (e) {
+        Logger.log(`Could not parse timestamp: ${data[i][0]}`);
+      }
+    }
+
+    // Delete rows from bottom to top to preserve indices
+    rowsToDelete.reverse().forEach(rowIndex => {
+      sheet.deleteRow(rowIndex);
+    });
+
+    if (rowsToDelete.length > 0) {
+      logProcessing('LOG_CLEANUP', null, `Deleted ${rowsToDelete.length} log entries older than ${daysToKeep} days`, 'info');
+    }
+
+    Logger.log(`Cleared ${rowsToDelete.length} old log entries`);
+    return rowsToDelete.length;
+
+  } catch (error) {
+    Logger.log(`Error clearing old logs: ${error.message}`);
+    return 0;
   }
+}
 
-  // Delete rows from bottom to top to preserve indices
-  rowsToDelete.reverse().forEach(rowIndex => {
-    sheet.deleteRow(rowIndex);
-  });
-
-  Logger.log(`Cleared ${rowsToDelete.length} old log entries`);
+/**
+ * Daily cleanup job - deletes Processing_Log entries older than 3 days.
+ * Called by daily trigger.
+ */
+function dailyLogCleanup() {
+  Logger.log('Running daily log cleanup...');
+  const deleted = clearOldLogs(3);
+  Logger.log(`Daily cleanup complete: ${deleted} entries removed`);
 }
 
 // ============================================================================
@@ -1680,12 +1740,15 @@ function onOpen() {
       .addSeparator()
       .addItem('Check for New Clients', 'checkForNewClients')
       .addItem('Update Folders', 'manualUpdateFolders')
+      .addItem('Sync Gmail Labels & Filters', 'manualSyncLabelsAndFiltersUI')
       .addItem('Load Latest Meeting', 'loadLatestFathomMeeting')
       .addSeparator()
       .addItem('Update Settings...', 'showSettingsEditor')
       .addItem('Adjust Prompts...', 'showPromptsEditor')
       .addSeparator()
+      .addItem('Initialize Diagnostic Sheets', 'initializeDiagnosticSheetsUI')
       .addItem('View Processing Log', 'showProcessingLog')
+      .addItem('Generate Bug Report...', 'showBugReportGenerator')
       .addSeparator()
       .addItem('Disable Automation...', 'disableAutomationWithConfirmation')
       .addToUi();
@@ -1710,6 +1773,131 @@ function manualUpdateFolders() {
   } catch (e) {
     ui.alert('Error', `Failed to update folders: ${e.message}`, ui.ButtonSet.OK);
     Logger.log(`manualUpdateFolders error: ${e.message}`);
+  }
+}
+
+/**
+ * Manually syncs Gmail labels and filters for all clients with setup_complete=true.
+ */
+function manualSyncLabelsAndFiltersUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  // Check Gmail API first
+  if (typeof Gmail === 'undefined' || !Gmail.Users) {
+    ui.alert(
+      '❌ Gmail API Not Enabled',
+      'Gmail API is required for filter management.\n\n' +
+      'TO ENABLE:\n' +
+      '1. Open Extensions > Apps Script\n' +
+      '2. Click "Services" (+) in left sidebar\n' +
+      '3. Add "Gmail API"\n' +
+      '4. Run this sync again',
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  // Get count of clients to process
+  const allClients = getClientRegistry();
+  const setupCompleteClients = allClients.filter(c => c.setup_complete === true);
+
+  if (setupCompleteClients.length === 0) {
+    ui.alert(
+      'No Clients Found',
+      'No clients with setup_complete=true found in Client_Registry.',
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  const response = ui.alert(
+    'Sync Gmail Labels & Filters',
+    `This will sync Gmail labels and filters for ${setupCompleteClients.length} client(s).\n\n` +
+    'This will:\n' +
+    '• Create any missing labels\n' +
+    '• Link existing filters to Client_Registry\n' +
+    '• Create any missing filters\n' +
+    '• Update Client_Registry with filter IDs\n\n' +
+    'Continue?',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (response !== ui.Button.YES) {
+    return;
+  }
+
+  try {
+    // Step 1: Create labels
+    ui.alert('Syncing', 'Creating labels...', ui.ButtonSet.OK);
+
+    for (const client of setupCompleteClients) {
+      syncClientLabels(client);
+    }
+    createBriefingLabels();
+
+    // Step 2: Run reconciliation
+    ui.alert('Syncing', 'Checking filter IDs and reconciling with Gmail...', ui.ButtonSet.OK);
+    const reconciliation = reconcileClientFilters();
+
+    // Step 3: Link and create filters
+    let linkedCount = 0;
+    let createdCount = 0;
+    let alreadyTrackedCount = 0;
+
+    for (const clientResult of reconciliation.clients) {
+      if (clientResult.missing.length === 0) {
+        // All filters already tracked
+        alreadyTrackedCount += 4; // Assuming 4 filter types per client
+        continue;
+      }
+
+      Logger.log(`\n=== SYNCING: ${clientResult.clientName} ===`);
+
+      for (const missing of clientResult.missing) {
+        if (missing.matches.length > 0) {
+          // Link the first match
+          const match = missing.matches[0];
+          linkFilterToClient(clientResult.clientName, missing.type, match.id);
+          Logger.log(`✅ LINKED ${missing.name}: ${match.id}`);
+          linkedCount++;
+        } else {
+          // Create new filter
+          const created = createGmailApiFilter(missing.expectedCriteria, missing.expectedLabel);
+          if (created && created.id) {
+            const filterIds = {};
+            filterIds[missing.type] = created.id;
+            storeFilterIds(clientResult.clientName, filterIds);
+            Logger.log(`✅ CREATED ${missing.name}: ${created.id}`);
+            createdCount++;
+          } else {
+            Logger.log(`❌ FAILED to create ${missing.name}`);
+          }
+        }
+      }
+    }
+
+    // Step 4: Show results
+    let message = `Sync complete for ${setupCompleteClients.length} client(s):\n\n`;
+
+    if (linkedCount > 0) {
+      message += `✅ Linked ${linkedCount} existing filter(s)\n`;
+    }
+    if (createdCount > 0) {
+      message += `✅ Created ${createdCount} new filter(s)\n`;
+    }
+    if (alreadyTrackedCount > 0) {
+      message += `✅ ${alreadyTrackedCount} filter(s) already tracked\n`;
+    }
+
+    message += '\nClient_Registry updated with all filter IDs.\n';
+    message += 'Check Gmail Settings > Filters to verify.';
+
+    ui.alert('Sync Complete', message, ui.ButtonSet.OK);
+
+  } catch (e) {
+    ui.alert('Error', `Failed to sync: ${e.message}\n\nCheck Apps Script logs for details.`, ui.ButtonSet.OK);
+    Logger.log(`manualSyncLabelsAndFiltersUI error: ${e.message}`);
+    Logger.log(e.stack);
   }
 }
 
@@ -1759,6 +1947,10 @@ function showProcessingLog() {
   }
 }
 
+/**
+ * Runs filter and label verification and shows results to user.
+ * Includes broken filter detection and optional cleanup.
+ */
 // ============================================================================
 // DISABLE AUTOMATION
 // ============================================================================
@@ -1852,9 +2044,14 @@ function getSettingsForEditor() {
   return {
     FATHOM_API_KEY: props.getProperty('FATHOM_API_KEY') || '',
     FATHOM_WEBHOOK_SECRET: props.getProperty('FATHOM_WEBHOOK_SECRET') || '',
+    FATHOM_KEEP_LINKS: props.getProperty('FATHOM_KEEP_LINKS') || 'false',
     HUBSPOT_API_KEY: props.getProperty('HUBSPOT_API_KEY') || '',
     TODOIST_API_TOKEN: props.getProperty('TODOIST_API_TOKEN') || '',
     CLAUDE_API_KEY: props.getProperty('CLAUDE_API_KEY') || '',
+    CLAUDE_AGENDA_MAX_TOKENS: props.getProperty('CLAUDE_AGENDA_MAX_TOKENS') || '4000',
+    CLAUDE_DAILY_BRIEF_MAX_TOKENS: props.getProperty('CLAUDE_DAILY_BRIEF_MAX_TOKENS') || '4000',
+    CLAUDE_WEEKLY_BRIEF_MAX_TOKENS: props.getProperty('CLAUDE_WEEKLY_BRIEF_MAX_TOKENS') || '8000',
+    CLAUDE_SUMMARY_MAX_TOKENS: props.getProperty('CLAUDE_SUMMARY_MAX_TOKENS') || '2000',
     USER_NAME: props.getProperty('USER_NAME') || '',
     MEETING_SUBJECT_TEMPLATE: props.getProperty('MEETING_SUBJECT_TEMPLATE') || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}',
     MEETING_SIGNATURE: props.getProperty('MEETING_SIGNATURE') || 'Did I miss anything?\n\nThanks,\n{user_name}',
@@ -1865,7 +2062,8 @@ function getSettingsForEditor() {
     INCLUDE_UNREAD_EMAILS: props.getProperty('INCLUDE_UNREAD_EMAILS') || 'false',
     AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0',
     DAILY_BRIEFING_LABEL: props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily',
-    WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly'
+    WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly',
+    DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false'
   };
 }
 
@@ -1918,6 +2116,28 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.CLAUDE_API_KEY) {
     props.setProperty('CLAUDE_API_KEY', settings.CLAUDE_API_KEY);
+  }
+
+  // Claude max_tokens settings
+  if (settings.CLAUDE_AGENDA_MAX_TOKENS) {
+    props.setProperty('CLAUDE_AGENDA_MAX_TOKENS', settings.CLAUDE_AGENDA_MAX_TOKENS);
+  }
+
+  if (settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS) {
+    props.setProperty('CLAUDE_DAILY_BRIEF_MAX_TOKENS', settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS);
+  }
+
+  if (settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS) {
+    props.setProperty('CLAUDE_WEEKLY_BRIEF_MAX_TOKENS', settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS);
+  }
+
+  if (settings.CLAUDE_SUMMARY_MAX_TOKENS) {
+    props.setProperty('CLAUDE_SUMMARY_MAX_TOKENS', settings.CLAUDE_SUMMARY_MAX_TOKENS);
+  }
+
+  // Fathom settings
+  if (settings.FATHOM_KEEP_LINKS !== undefined) {
+    props.setProperty('FATHOM_KEEP_LINKS', settings.FATHOM_KEEP_LINKS);
   }
 
   if (settings.USER_NAME) {
@@ -1981,6 +2201,11 @@ function saveSettingsFromEditor(settings) {
     props.setProperty('WEEKLY_BRIEFING_LABEL', settings.WEEKLY_BRIEFING_LABEL);
   }
 
+  // Diagnostic mode setting (allow true/false)
+  if (settings.DIAGNOSTIC_MODE !== undefined) {
+    props.setProperty('DIAGNOSTIC_MODE', settings.DIAGNOSTIC_MODE);
+  }
+
   logProcessing('SETTINGS', null, 'Settings updated via editor', 'info');
 
   // If subject template changed, update filters to match new pattern
@@ -2009,7 +2234,7 @@ function updateFiltersFromEditor() {
   try {
     // Check if Gmail Advanced Service is available
     if (typeof Gmail === 'undefined' || !Gmail.Users) {
-      const msg = 'Gmail Advanced Service not enabled. Enable it in Apps Script Editor > Services > Gmail API.';
+      const msg = 'Gmail Advanced Service not enabled. Run "Sync Gmail Labels & Filters" from the menu instead, or enable Gmail API in Apps Script Services.';
       logProcessing('FILTER_UPDATE', null, msg, 'error');
       return {
         success: false,
@@ -2029,6 +2254,196 @@ function updateFiltersFromEditor() {
     return {
       success: false,
       message: 'Failed to update filters: ' + error.message
+    };
+  }
+}
+
+// ============================================================================
+// API CONNECTION TESTS
+// ============================================================================
+
+/**
+ * Tests Fathom API connection.
+ * @param {string} apiKey - The Fathom API key to test
+ * @returns {Object} Result with success status and message
+ */
+function testFathomAPI(apiKey) {
+  try {
+    const url = 'https://api.fathom.ai/external/v1/meetings?limit=1';
+    const options = {
+      method: 'GET',
+      headers: {
+        'X-Api-Key': apiKey,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode === 200) {
+      return {
+        success: true,
+        message: '✓ Connected successfully! API key is valid.'
+      };
+    } else if (responseCode === 401) {
+      return {
+        success: false,
+        message: '✗ Authentication failed. Invalid API key.'
+      };
+    } else {
+      return {
+        success: false,
+        message: `✗ Connection failed (HTTP ${responseCode})`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: `✗ Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Tests Todoist API connection.
+ * @param {string} apiToken - The Todoist API token to test
+ * @returns {Object} Result with success status and message
+ */
+function testTodoistAPI(apiToken) {
+  try {
+    const url = 'https://api.todoist.com/rest/v2/projects';
+    const options = {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode === 200) {
+      const projects = JSON.parse(response.getContentText());
+      return {
+        success: true,
+        message: `✓ Connected successfully! Found ${projects.length} projects.`
+      };
+    } else if (responseCode === 401 || responseCode === 403) {
+      return {
+        success: false,
+        message: '✗ Authentication failed. Invalid API token.'
+      };
+    } else {
+      return {
+        success: false,
+        message: `✗ Connection failed (HTTP ${responseCode})`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: `✗ Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Tests Claude API connection.
+ * @param {string} apiKey - The Claude API key to test
+ * @returns {Object} Result with success status and message
+ */
+function testClaudeAPI(apiKey) {
+  try {
+    const url = 'https://api.anthropic.com/v1/messages';
+    const options = {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 10,
+        messages: [{
+          role: 'user',
+          content: 'Hi'
+        }]
+      }),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode === 200) {
+      return {
+        success: true,
+        message: '✓ Connected successfully! API key is valid.'
+      };
+    } else if (responseCode === 401) {
+      return {
+        success: false,
+        message: '✗ Authentication failed. Invalid API key.'
+      };
+    } else {
+      return {
+        success: false,
+        message: `✗ Connection failed (HTTP ${responseCode})`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: `✗ Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Tests HubSpot API connection.
+ * @param {string} apiKey - The HubSpot API key to test
+ * @returns {Object} Result with success status and message
+ */
+function testHubSpotAPI(apiKey) {
+  try {
+    const url = 'https://api.hubapi.com/contacts/v1/lists/all/contacts/all?count=1';
+    const options = {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode === 200) {
+      return {
+        success: true,
+        message: '✓ Connected successfully! API key is valid.'
+      };
+    } else if (responseCode === 401 || responseCode === 403) {
+      return {
+        success: false,
+        message: '✗ Authentication failed. Invalid API key.'
+      };
+    } else {
+      return {
+        success: false,
+        message: `✗ Connection failed (HTTP ${responseCode})`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: `✗ Error: ${error.message}`
     };
   }
 }
@@ -2864,4 +3279,177 @@ function importClientsFromWizard(importData) {
   logProcessing('MIGRATION_WIZARD', null, summary, 'success');
 
   return { imported: imported };
+}
+
+// ============================================================================
+// DIAGNOSTIC MODE UI FUNCTIONS
+// ============================================================================
+
+/**
+ * Toggles diagnostic mode on/off with user feedback.
+ */
+function toggleDiagnosticModeUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    const currentState = isDiagnosticModeEnabled();
+    const newState = toggleDiagnosticMode();
+
+    const statusText = newState ? 'ENABLED' : 'DISABLED';
+    const icon = newState ? '✅' : '❌';
+
+    ui.alert(
+      `Diagnostic Mode ${statusText}`,
+      `${icon} Diagnostic mode is now ${statusText}.\n\n` +
+      (newState ?
+        'Detailed logging will now be captured for:\n' +
+        '• API requests and responses (Claude, Todoist)\n' +
+        '• Data collection from all sources\n' +
+        '• Step-by-step agenda generation traces\n' +
+        '• Notes appending operations\n' +
+        '• Document append operations\n\n' +
+        'View diagnostic data via:\n' +
+        'Client Automation > Diagnostic Mode > View Diagnostic Sheets'
+        :
+        'Detailed logging has been disabled.\n' +
+        'Diagnostic sheets remain hidden but data is preserved.\n' +
+        'Re-enable diagnostic mode to resume logging.'
+      ),
+      ui.ButtonSet.OK
+    );
+
+    logProcessing('DIAGNOSTIC_MODE', null, `Diagnostic mode ${statusText}`, 'info');
+
+  } catch (error) {
+    ui.alert('Error', `Failed to toggle diagnostic mode: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`toggleDiagnosticModeUI error: ${error.message}`);
+  }
+}
+
+/**
+ * Shows all diagnostic sheets (unhides them).
+ */
+function showDiagnosticSheetsUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    const shown = showDiagnosticSheets();
+
+    if (shown === 0) {
+      ui.alert(
+        'Diagnostic Sheets',
+        'Diagnostic sheets are already visible.\n\n' +
+        'Available sheets:\n' +
+        '• API_Request_Log\n' +
+        '• API_Response_Log\n' +
+        '• Data_Collection_Log\n' +
+        '• Agenda_Generation_Trace\n' +
+        '• Notes_Append_Trace\n' +
+        '• Doc_Append_Log',
+        ui.ButtonSet.OK
+      );
+    } else {
+      ui.alert(
+        'Diagnostic Sheets Visible',
+        `✅ ${shown} diagnostic sheet(s) are now visible.\n\n` +
+        'You can browse them to diagnose issues.\n\n' +
+        'To hide them again:\n' +
+        '1. Right-click on any diagnostic sheet tab\n' +
+        '2. Select "Hide sheet"',
+        ui.ButtonSet.OK
+      );
+    }
+
+  } catch (error) {
+    ui.alert('Error', `Failed to show diagnostic sheets: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`showDiagnosticSheetsUI error: ${error.message}`);
+  }
+}
+
+/**
+ * Clears all diagnostic data with user confirmation.
+ */
+function clearDiagnosticSheetsUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    const response = ui.alert(
+      'Clear Diagnostic Data?',
+      'This will delete all diagnostic data from:\n' +
+      '• API_Request_Log\n' +
+      '• API_Response_Log\n' +
+      '• Data_Collection_Log\n' +
+      '• Agenda_Generation_Trace\n' +
+      '• Notes_Append_Trace\n' +
+      '• Doc_Append_Log\n\n' +
+      'Headers will be preserved.\n\n' +
+      'Are you sure?',
+      ui.ButtonSet.YES_NO
+    );
+
+    if (response !== ui.Button.YES) {
+      ui.alert('Cancelled', 'Diagnostic data was not cleared.', ui.ButtonSet.OK);
+      return;
+    }
+
+    const cleared = clearDiagnosticSheets();
+
+    ui.alert(
+      'Diagnostic Data Cleared',
+      `✅ Cleared ${cleared} diagnostic sheet(s).\n\n` +
+      'All diagnostic data has been removed.\n' +
+      'New data will be logged when diagnostic mode is enabled.',
+      ui.ButtonSet.OK
+    );
+
+    logProcessing('DIAGNOSTIC_CLEAR', null, `Cleared ${cleared} diagnostic sheets`, 'info');
+
+  } catch (error) {
+    ui.alert('Error', `Failed to clear diagnostic data: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`clearDiagnosticSheetsUI error: ${error.message}`);
+  }
+}
+
+/**
+ * Initializes all diagnostic sheets.
+ */
+function initializeDiagnosticSheetsUI() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    ui.alert(
+      'Initialize Diagnostic Sheets',
+      'Creating diagnostic sheets with headers...\n' +
+      'This may take a moment.',
+      ui.ButtonSet.OK
+    );
+
+    const created = initializeDiagnosticSheets();
+
+    if (created === 0) {
+      ui.alert(
+        'Already Initialized',
+        'All diagnostic sheets already exist.\n\n' +
+        'No new sheets were created.',
+        ui.ButtonSet.OK
+      );
+    } else {
+      ui.alert(
+        'Diagnostic Sheets Created',
+        `✅ Created ${created} diagnostic sheet(s).\n\n` +
+        'Sheets are hidden by default.\n\n' +
+        'To use diagnostic mode:\n' +
+        '1. Client Automation > Diagnostic Mode > Toggle Diagnostic Mode\n' +
+        '2. Perform actions you want to diagnose\n' +
+        '3. Client Automation > Diagnostic Mode > View Diagnostic Sheets',
+        ui.ButtonSet.OK
+      );
+
+      logProcessing('DIAGNOSTIC_INIT', null, `Created ${created} diagnostic sheets`, 'success');
+    }
+
+  } catch (error) {
+    ui.alert('Error', `Failed to initialize diagnostic sheets: ${error.message}`, ui.ButtonSet.OK);
+    Logger.log(`initializeDiagnosticSheetsUI error: ${error.message}`);
+  }
 }

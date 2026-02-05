@@ -20,6 +20,9 @@
 function syncLabelsAndFilters() {
   Logger.log('Starting label and filter synchronization...');
 
+  // Ensure filter ID columns exist in Client_Registry
+  ensureFilterIdColumnsExist();
+
   // Get all clients
   const allClients = getClientRegistry();
 
@@ -83,32 +86,51 @@ function syncClientLabels(client) {
 
   // Create filters (requires Gmail API Advanced Service)
   const contacts = parseCommaSeparatedList(client.contact_emails);
+  const filterIds = {};
 
   if (contacts.length > 0) {
     // Filter for incoming emails from client contacts
     const fromCriteria = buildFromCriteria(contacts);
     if (fromCriteria) {
-      createGmailApiFilter(fromCriteria, baseLabelName);
+      const fromFilter = createGmailApiFilter(fromCriteria, baseLabelName);
+      if (fromFilter && fromFilter.id) {
+        filterIds.from_filter_id = fromFilter.id;
+      }
     }
 
     // Filter for outgoing emails to client contacts
     const toCriteria = buildToCriteria(contacts);
     if (toCriteria) {
-      createGmailApiFilter(toCriteria, baseLabelName);
+      const toFilter = createGmailApiFilter(toCriteria, baseLabelName);
+      if (toFilter && toFilter.id) {
+        filterIds.to_filter_id = toFilter.id;
+      }
     }
 
     // Filter for sent meeting summaries to client (uses client name in subject)
     if (toCriteria) {
       const subjectPattern = getSubjectFilterPatternForClient(client.client_name);
       const summaryCriteria = `from:me subject:"${subjectPattern}" ${toCriteria}`;
-      createGmailApiFilter(summaryCriteria, summaryLabelName);
+      const summaryFilter = createGmailApiFilter(summaryCriteria, summaryLabelName);
+      if (summaryFilter && summaryFilter.id) {
+        filterIds.summary_filter_id = summaryFilter.id;
+      }
     }
   }
 
   // Filter for self-sent agendas (uses client name in subject)
   const agendaPattern = getAgendaFilterPatternForClient(client.client_name);
   const agendaCriteria = `from:me to:me subject:"${agendaPattern}"`;
-  createGmailApiFilter(agendaCriteria, agendaLabelName);
+  const agendaFilter = createGmailApiFilter(agendaCriteria, agendaLabelName);
+  if (agendaFilter && agendaFilter.id) {
+    filterIds.agenda_filter_id = agendaFilter.id;
+  }
+
+  // Store filter IDs in Client_Registry
+  if (Object.keys(filterIds).length > 0) {
+    storeFilterIds(client.client_name, filterIds);
+    Logger.log(`Stored ${Object.keys(filterIds).length} filter IDs for ${client.client_name}`);
+  }
 
   Logger.log(`Synced filters for client: ${client.client_name}`);
 }
@@ -332,6 +354,48 @@ function logFilterSpec(filterType, clientName, spec) {
 // ============================================================================
 
 /**
+ * Checks if a label is system-managed (safe to create filters for).
+ * System-managed labels are:
+ * - Any label in Client_Registry (gmail_label, meeting_summaries_label, meeting_agendas_label)
+ * - Brief: Daily and Brief: Weekly
+ *
+ * @param {string} labelName - Label name to check
+ * @returns {boolean} True if system-managed
+ */
+function isSystemManagedLabel(labelName) {
+  // Allow briefing labels
+  const props = PropertiesService.getScriptProperties();
+  const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
+  const weeklyLabel = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
+
+  if (labelName === dailyLabel || labelName === weeklyLabel ||
+      labelName === 'Brief: Daily' || labelName === 'Brief: Weekly') {
+    return true;
+  }
+
+  // Get all client labels from Client_Registry
+  try {
+    const clients = getClientRegistry();
+
+    for (const client of clients) {
+      const baseLabelName = client.gmail_label || `Client: ${client.client_name}`;
+      const summaryLabelName = client.meeting_summaries_label || `${baseLabelName}/Meeting Summaries`;
+      const agendaLabelName = client.meeting_agendas_label || `${baseLabelName}/Meeting Agendas`;
+
+      if (labelName === baseLabelName ||
+          labelName === summaryLabelName ||
+          labelName === agendaLabelName) {
+        return true;
+      }
+    }
+  } catch (e) {
+    Logger.log(`Error checking system labels: ${e.message}`);
+  }
+
+  return false;
+}
+
+/**
  * Creates a Gmail filter using the Gmail API.
  * Requires the Gmail Advanced Service to be enabled.
  * ONLY creates filters for system-managed labels.
@@ -349,17 +413,7 @@ function createGmailApiFilter(criteria, labelName) {
     }
 
     // Safety check: Only create filters for system-managed labels
-    const props = PropertiesService.getScriptProperties();
-    const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
-    const weeklyLabel = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
-
-    const isSystemLabel = labelName.startsWith('Client: ') ||
-                         labelName === dailyLabel ||
-                         labelName === weeklyLabel ||
-                         labelName === 'Brief: Daily' ||
-                         labelName === 'Brief: Weekly';
-
-    if (!isSystemLabel) {
+    if (!isSystemManagedLabel(labelName)) {
       Logger.log(`SAFETY: Refusing to create filter for non-system label: ${labelName}`);
       return null;
     }

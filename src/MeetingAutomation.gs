@@ -37,6 +37,22 @@ function processFathomWebhook(payload) {
     throw new Error('Invalid webhook payload: missing meeting_title');
   }
 
+  // Extract meeting ID for tracking
+  let meetingId = payload.meeting_id || payload.id;
+
+  // Try extracting from fathom_url if no direct ID
+  if (!meetingId && payload.fathom_url) {
+    const urlMatch = payload.fathom_url.match(/\/calls\/(\d+)/);
+    if (urlMatch && urlMatch[1]) {
+      meetingId = urlMatch[1];
+    }
+  }
+
+  // Fall back to generated ID from title+date
+  if (!meetingId) {
+    meetingId = `${payload.meeting_title}_${payload.meeting_date}`;
+  }
+
   // Extract participant emails for logging
   const participantEmails = (payload.participants || [])
     .map(p => p.email)
@@ -53,6 +69,15 @@ function processFathomWebhook(payload) {
 
   // ALWAYS create draft email (user will add recipient if needed)
   const draftId = createMeetingSummaryDraft(payload, client);
+
+  // Record meeting as processed in spreadsheet
+  recordFathomMeetingProcessed(
+    meetingId,
+    payload.meeting_title,
+    payload.meeting_date,
+    client ? client.client_name : null,
+    draftId
+  );
 
   // Log processing result
   const clientName = client ? client.client_name : null;
@@ -72,6 +97,40 @@ function processFathomWebhook(payload) {
 }
 
 /**
+ * Strips calendar response prefixes from meeting titles.
+ * Google Calendar adds prefixes like "Confirmed:", "Accepted:", "Tentative:", etc.
+ *
+ * @param {string} title - The meeting title
+ * @returns {string} The cleaned title
+ */
+function cleanMeetingTitle(title) {
+  if (!title) return title;
+
+  // Strip common calendar response prefixes
+  const prefixes = [
+    'Confirmed:',
+    'Accepted:',
+    'Tentative:',
+    'Declined:',
+    'Not Responded:',
+    'Maybe:',
+    'Yes:',
+    'No:'
+  ];
+
+  let cleanedTitle = title.trim();
+
+  for (const prefix of prefixes) {
+    if (cleanedTitle.startsWith(prefix)) {
+      cleanedTitle = cleanedTitle.substring(prefix.length).trim();
+      break;
+    }
+  }
+
+  return cleanedTitle;
+}
+
+/**
  * Creates a Gmail draft with the meeting summary.
  * Works with or without a matched client.
  *
@@ -83,21 +142,35 @@ function createMeetingSummaryDraft(payload, client) {
   const props = PropertiesService.getScriptProperties();
   const meetingDate = formatDateShort(new Date(payload.meeting_date));
 
+  // Clean meeting title to remove calendar prefixes like "Confirmed:", "Accepted:", etc.
+  const cleanedTitle = cleanMeetingTitle(payload.meeting_title);
+
   // Build subject and greeting based on whether we have a client
-  const clientName = client ? client.client_name : '[ADD CLIENT NAME]';
+  let subject, body;
 
-  // Get customizable subject template from settings
-  const subjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE')
-    || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
-  const subject = subjectTemplate
-    .replace('{client_name}', clientName)
-    .replace('{meeting_title}', payload.meeting_title)
-    .replace('{date}', meetingDate);
+  if (client) {
+    // CLIENT MEETING: Use client-specific language
+    const clientName = client.client_name;
 
-  // Build email body with greeting that matches subject style
-  let body = `<p>Team ${clientName} -</p>`;
-  body += `<p>Here are the notes from the meeting "${payload.meeting_title}" ${meetingDate}.</p>`;
-  body += `<hr/>`;
+    const subjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE')
+      || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+    subject = subjectTemplate
+      .replace('{client_name}', clientName)
+      .replace('{meeting_title}', cleanedTitle)
+      .replace('{date}', meetingDate);
+
+    body = `<p>Team ${clientName} -</p>`;
+    body += `<p>Here are the notes from the meeting "${cleanedTitle}" ${meetingDate}.</p>`;
+    body += `<hr/>`;
+
+  } else {
+    // NON-CLIENT MEETING: Use generic professional language
+    subject = `Meeting notes: ${cleanedTitle} (${meetingDate})`;
+
+    body = `<p>Hello -</p>`;
+    body += `<p>Here are the notes from "${cleanedTitle}" on ${meetingDate}.</p>`;
+    body += `<hr/>`;
+  }
 
   // Add summary - convert markdown to HTML preserving formatting (headings, bold, lists)
   const summaryHtml = markdownToHtml(payload.summary || 'No summary provided.');
@@ -142,6 +215,19 @@ function createMeetingSummaryDraft(payload, client) {
   }
   body += `</div>`;
 
+  // Ensure proper UTF-8 encoding by wrapping in HTML structure with charset meta tags
+  const fullHtmlBody = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Meeting Summary</title>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+
   // Get current user's email to exclude from recipients
   const myEmail = (Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || '').toLowerCase();
 
@@ -155,9 +241,9 @@ function createMeetingSummaryDraft(payload, client) {
     ? participantEmails.join(', ')
     : myEmail; // Fallback to own email if no other participants
 
-  // Create draft
+  // Create draft with proper UTF-8 encoding
   const draft = GmailApp.createDraft(toAddress, subject, '', {
-    htmlBody: body
+    htmlBody: fullHtmlBody
   });
 
   Logger.log(`Created draft with ID: ${draft.getId()}`);
@@ -447,9 +533,12 @@ If no action items found, return: {"tasks": []}`;
     const sonnet = models.find(m => m.id.includes('sonnet'));
     const model = sonnet ? sonnet.id : models[0]?.id || FALLBACK_MODELS[0].id;
 
+    // Get max_tokens from settings (default 2000)
+    const maxTokens = parseInt(PropertiesService.getScriptProperties().getProperty('CLAUDE_SUMMARY_MAX_TOKENS') || '2000');
+
     const payload = {
       model: model,
-      max_tokens: 2000,
+      max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }]
     };
 
@@ -472,7 +561,10 @@ If no action items found, return: {"tasks": []}`;
       return extractActionItemsManually(emailBody);
     }
 
-    const result = JSON.parse(response.getContentText());
+    // Parse response with explicit UTF-8 handling to preserve emojis
+    const responseBytes = response.getContent();
+    const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
+    const result = JSON.parse(responseText);
 
     if (result.content && result.content.length > 0) {
       const aiResponse = result.content[0].text;
@@ -1066,6 +1158,35 @@ function markdownToHtml(markdown) {
 }
 
 /**
+ * Normalizes Fathom payload from any source (webhook or API) to a consistent format.
+ * Handles both webhook payloads and API responses.
+ *
+ * @param {Object} payload - The raw payload from Fathom (webhook or API)
+ * @returns {Object} Normalized payload with consistent field names
+ */
+function normalizeFathomPayload(payload) {
+  if (!payload) return null;
+
+  // If this looks like an API response (has fields like 'default_summary', 'calendar_invitees'),
+  // convert it using the full conversion function
+  if (payload.default_summary || payload.calendar_invitees || payload.recorded_by) {
+    return convertFathomMeetingToPayload(payload);
+  }
+
+  // Otherwise, assume it's a webhook payload and normalize field names
+  return {
+    meeting_title: payload.meeting_title || payload.title || 'Untitled Meeting',
+    meeting_date: payload.meeting_date || payload.start_time || payload.created_at || new Date().toISOString(),
+    transcript: payload.transcript || '',
+    summary: payload.summary || payload.notes || '',
+    action_items: payload.action_items || [],
+    participants: payload.participants || payload.attendees || [],
+    fathom_url: payload.fathom_url || payload.url || payload.share_url || null,
+    meeting_id: payload.meeting_id || payload.id || null
+  };
+}
+
+/**
  * Converts Fathom API meeting data to webhook payload format.
  * This normalizes the API response to match the expected webhook structure.
  *
@@ -1090,14 +1211,23 @@ function convertFathomMeetingToPayload(fathomMeeting) {
   }
 
   // Extract summary - Fathom uses default_summary.markdown_formatted
-  // Strip markdown links and formatting for cleaner email
+  // Check setting to determine if we should keep or strip video timestamp hyperlinks
+  const props = PropertiesService.getScriptProperties();
+  const keepLinks = props.getProperty('FATHOM_KEEP_LINKS') === 'true';
+
   let summaryText = '';
   if (fathomMeeting.default_summary && fathomMeeting.default_summary.markdown_formatted) {
-    summaryText = stripMarkdownLinks(fathomMeeting.default_summary.markdown_formatted);
+    summaryText = keepLinks
+      ? fathomMeeting.default_summary.markdown_formatted
+      : stripMarkdownLinks(fathomMeeting.default_summary.markdown_formatted);
   } else if (typeof fathomMeeting.summary === 'string') {
-    summaryText = stripMarkdownLinks(fathomMeeting.summary);
+    summaryText = keepLinks
+      ? fathomMeeting.summary
+      : stripMarkdownLinks(fathomMeeting.summary);
   } else if (fathomMeeting.summary && fathomMeeting.summary.markdown_formatted) {
-    summaryText = stripMarkdownLinks(fathomMeeting.summary.markdown_formatted);
+    summaryText = keepLinks
+      ? fathomMeeting.summary.markdown_formatted
+      : stripMarkdownLinks(fathomMeeting.summary.markdown_formatted);
   }
 
   // Fathom uses calendar_invitees for participants
@@ -1169,6 +1299,188 @@ function loadLatestFathomMeeting() {
   } catch (error) {
     ui.alert('Error', `Failed to load meeting: ${error.message}`, ui.ButtonSet.OK);
     Logger.log(`loadLatestFathomMeeting error: ${error.message}`);
+  }
+}
+
+/**
+ * Checks if a Fathom meeting has already been processed.
+ * Uses spreadsheet tracking instead of cache for visibility.
+ *
+ * @param {string} meetingId - The Fathom meeting ID
+ * @returns {boolean} True if already processed
+ */
+function isFathomMeetingProcessed(meetingId) {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(CONFIG.SHEETS.PROCESSED_FATHOM);
+
+  // Create sheet if it doesn't exist
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEETS.PROCESSED_FATHOM);
+    sheet.appendRow(['Meeting ID', 'Meeting Title', 'Meeting Date', 'Processed At', 'Client Name', 'Draft ID']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  }
+
+  const data = sheet.getDataRange().getValues();
+
+  // Check if meeting ID exists in column A (skip header row)
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === meetingId) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Records that a Fathom meeting has been processed.
+ *
+ * @param {string} meetingId - The Fathom meeting ID
+ * @param {string} meetingTitle - The meeting title
+ * @param {string} meetingDate - The meeting date
+ * @param {string|null} clientName - The matched client name (or null)
+ * @param {string} draftId - The created draft ID
+ */
+function recordFathomMeetingProcessed(meetingId, meetingTitle, meetingDate, clientName, draftId) {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(CONFIG.SHEETS.PROCESSED_FATHOM);
+
+  // Create sheet if it doesn't exist
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEETS.PROCESSED_FATHOM);
+    sheet.appendRow(['Meeting ID', 'Meeting Title', 'Meeting Date', 'Processed At', 'Client Name', 'Draft ID']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  }
+
+  sheet.appendRow([
+    meetingId,
+    meetingTitle,
+    meetingDate,
+    new Date().toISOString(),
+    clientName || 'No client match',
+    draftId || 'N/A'
+  ]);
+}
+
+/**
+ * Polls Fathom API for new meetings and processes them automatically.
+ * This is a backup mechanism in case webhooks fail.
+ * Should be called periodically (e.g., every 30 minutes).
+ */
+function pollFathomForNewMeetings() {
+  logProcessing('FATHOM_POLL', null, 'Starting Fathom polling check', 'info');
+
+  const apiKey = PropertiesService.getScriptProperties().getProperty('FATHOM_API_KEY');
+
+  if (!apiKey) {
+    logProcessing('FATHOM_POLL', null, 'Fathom API key not configured - skipping poll', 'warning');
+    return;
+  }
+
+  try {
+    // Fetch latest meetings from Fathom
+    const url = 'https://api.fathom.ai/external/v1/meetings?include_transcript=true&include_summary=true&include_action_items=true&limit=10';
+
+    const options = {
+      method: 'GET',
+      headers: {
+        'X-Api-Key': apiKey,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+
+    if (responseCode !== 200) {
+      logProcessing('FATHOM_POLL', null, `API error (${responseCode})`, 'error');
+      return;
+    }
+
+    const data = JSON.parse(response.getContentText());
+    const meetings = data.items || (Array.isArray(data) ? data : []);
+
+    if (meetings.length === 0) {
+      logProcessing('FATHOM_POLL', null, 'No meetings found', 'info');
+      return;
+    }
+
+    logProcessing('FATHOM_POLL', null, `Found ${meetings.length} recent meetings`, 'info');
+
+    // Check each meeting to see if we've already processed it
+    let newMeetingsCount = 0;
+    let skippedCount = 0;
+    let missingIdCount = 0;
+
+    for (const meeting of meetings) {
+      // Extract meeting ID from various sources
+      let meetingId = meeting.id || meeting.meeting_id;
+
+      // If no direct ID field, try extracting from URL
+      if (!meetingId && meeting.url) {
+        // Extract numeric ID from URL: https://fathom.video/calls/553083152
+        const urlMatch = meeting.url.match(/\/calls\/(\d+)/);
+        if (urlMatch && urlMatch[1]) {
+          meetingId = urlMatch[1];
+          logProcessing('FATHOM_POLL', null, `Extracted meeting ID "${meetingId}" from URL for "${meeting.title || 'Unknown'}"`, 'info');
+        }
+      }
+
+      // Fall back to recording_id if still no ID
+      if (!meetingId && meeting.recording_id) {
+        meetingId = meeting.recording_id;
+        logProcessing('FATHOM_POLL', null, `Using recording_id "${meetingId}" for "${meeting.title || 'Unknown'}"`, 'info');
+      }
+
+      if (!meetingId) {
+        missingIdCount++;
+        const title = meeting.title || meeting.meeting_title || 'Unknown';
+        logProcessing('FATHOM_POLL', null, `Skipped meeting "${title}" - no ID field found. Available fields: ${Object.keys(meeting).join(', ')}`, 'warning');
+        continue; // Skip meetings without IDs
+      }
+
+      // Check if we've already processed this meeting (using SPREADSHEET tracking)
+      if (isFathomMeetingProcessed(meetingId)) {
+        skippedCount++;
+        continue; // Skip already processed meetings
+      }
+
+      // Convert to webhook payload format and process
+      try {
+        const payload = convertFathomMeetingToPayload(meeting);
+        logProcessing('FATHOM_POLL', null, `Processing new meeting: ${payload.meeting_title}`, 'info');
+
+        const result = processFathomWebhook(payload);
+
+        // Record as processed in spreadsheet
+        recordFathomMeetingProcessed(
+          meetingId,
+          payload.meeting_title,
+          payload.meeting_date,
+          result.client_name,
+          result.draft_id
+        );
+
+        newMeetingsCount++;
+
+        logProcessing('FATHOM_POLL', result.client_name, `Successfully processed: ${payload.meeting_title}`, 'success');
+      } catch (error) {
+        logProcessing('FATHOM_POLL', null, `Failed to process meeting ${meetingId}: ${error.message}`, 'error');
+      }
+    }
+
+    if (newMeetingsCount > 0) {
+      logProcessing('FATHOM_POLL', null, `Processed ${newMeetingsCount} new meetings (skipped ${skippedCount} already processed, ${missingIdCount} missing IDs)`, 'success');
+    } else {
+      const reason = missingIdCount > 0
+        ? `${missingIdCount} missing IDs, ${skippedCount} already processed`
+        : `${skippedCount} already processed`;
+      logProcessing('FATHOM_POLL', null, `No new meetings to process (${reason})`, 'info');
+    }
+
+  } catch (error) {
+    logProcessing('FATHOM_POLL', null, `Polling failed: ${error.message}`, 'error');
   }
 }
 

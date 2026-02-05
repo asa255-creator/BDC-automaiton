@@ -232,6 +232,20 @@
           <div class="placeholder-hint">Placeholders: {client_name}</div>
         </div>
 
+        <div class="section-title">Diagnostic Mode</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Enable Diagnostic Mode</div>
+          <div class="setting-description">When enabled, detailed logging captures API requests/responses, data collection, and execution traces to help diagnose issues with agenda generation and notes appending</div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <input type="checkbox" id="diagnostic_mode" style="width: auto;">
+            <span>Enable diagnostic logging</span>
+          </label>
+          <div class="placeholder-hint" style="margin-top: 8px;">
+            ⚠️ Diagnostic sheets will be created automatically when first used. They are hidden by default. Disable when not actively debugging to reduce overhead.
+          </div>
+        </div>
+
         <div class="section-title">Email Inbox Management</div>
 
         <div class="setting-group">
@@ -304,17 +318,28 @@ Thanks,
             API Key
             <span id="fathomStatus" class="status-badge"></span>
           </div>
-          <div class="setting-description">Get from Fathom Settings > Integrations > API. Used for "Load Latest Meeting" testing.</div>
+          <div class="setting-description">Get from Fathom Settings > Integrations > API. Polls for new meetings every 30 minutes (PRIMARY METHOD).</div>
           <input type="password" id="fathom_key" placeholder="Enter Fathom API key">
+          <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testFathomConnection()">Test Connection</button>
+          <div id="fathomTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
 
         <div class="setting-group">
           <div class="setting-label">
-            Webhook Secret
+            Webhook Secret (Optional)
             <span id="fathomWebhookStatus" class="status-badge"></span>
           </div>
-          <div class="setting-description">Get from Fathom when creating a webhook. Used to verify incoming meeting data.</div>
-          <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret">
+          <div class="setting-description">Optional: Add webhook secret if you've configured a Fathom webhook as backup. Webhooks push meetings immediately after recording ends.</div>
+          <input type="password" id="fathom_webhook_secret" placeholder="Enter Fathom webhook secret (optional)">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Keep Video Timestamp Links</div>
+          <div class="setting-description">When enabled, hyperlinks to specific video timestamps in Fathom summaries will be preserved in meeting emails</div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <input type="checkbox" id="fathom_keep_links" style="width: auto;">
+            <span>Keep hyperlinks to video timestamps</span>
+          </label>
         </div>
 
         <div class="section-title">Todoist (Task Management)</div>
@@ -326,6 +351,8 @@ Thanks,
           </div>
           <div class="setting-description">Get from Todoist Settings > Integrations > Developer</div>
           <input type="password" id="todoist_token" placeholder="Enter Todoist API token">
+          <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testTodoistConnection()">Test Connection</button>
+          <div id="todoistTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
 
         <div class="section-title">Claude AI (Content Generation)</div>
@@ -337,6 +364,37 @@ Thanks,
           </div>
           <div class="setting-description">Get from console.anthropic.com. Used for AI-generated content.</div>
           <input type="password" id="claude_key" placeholder="Enter Claude API key">
+          <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testClaudeConnection()">Test Connection</button>
+          <div id="claudeTestStatus" class="setting-description" style="margin-top: 4px;"></div>
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Max Tokens (Response Length Limits)</div>
+          <div class="setting-description">Controls maximum response length for different Claude API calls. Higher = longer responses but more expensive. Responses will be truncated if limit is reached.</div>
+
+          <div style="margin-top: 12px;">
+            <div class="setting-label" style="font-size: 13px;">Meeting Agendas</div>
+            <input type="number" id="claude_agenda_max_tokens" min="1000" max="20000" placeholder="4000" style="margin-bottom: 8px;">
+            <div class="placeholder-hint">Default: 4000 tokens (~3000 words). Used for pre-meeting agenda generation.</div>
+          </div>
+
+          <div style="margin-top: 12px;">
+            <div class="setting-label" style="font-size: 13px;">Daily Briefings</div>
+            <input type="number" id="claude_daily_brief_max_tokens" min="1000" max="20000" placeholder="4000" style="margin-bottom: 8px;">
+            <div class="placeholder-hint">Default: 4000 tokens. Used for daily outlook emails.</div>
+          </div>
+
+          <div style="margin-top: 12px;">
+            <div class="setting-label" style="font-size: 13px;">Weekly Briefings</div>
+            <input type="number" id="claude_weekly_brief_max_tokens" min="1000" max="20000" placeholder="8000" style="margin-bottom: 8px;">
+            <div class="placeholder-hint">Default: 8000 tokens. Used for weekly outlook emails.</div>
+          </div>
+
+          <div style="margin-top: 12px;">
+            <div class="setting-label" style="font-size: 13px;">Meeting Summaries</div>
+            <input type="number" id="claude_summary_max_tokens" min="1000" max="20000" placeholder="2000" style="margin-bottom: 8px;">
+            <div class="placeholder-hint">Default: 2000 tokens. Used for meeting summary generation.</div>
+          </div>
         </div>
 
         <div class="section-title">HubSpot (CRM - Future)</div>
@@ -348,6 +406,8 @@ Thanks,
           </div>
           <div class="setting-description">Get from HubSpot Settings > Integrations > Private Apps. For future CRM integration.</div>
           <input type="password" id="hubspot_key" placeholder="Enter HubSpot API key">
+          <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testHubSpotConnection()">Test Connection</button>
+          <div id="hubspotTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
       </div>
     </div>
@@ -437,6 +497,7 @@ Thanks,
           // General tab
           document.getElementById('user_name').value = settings.USER_NAME || '';
           document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
+          document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
           document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
           document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
 
@@ -448,9 +509,14 @@ Thanks,
           // Integrations tab
           document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
           document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
+          document.getElementById('fathom_keep_links').checked = settings.FATHOM_KEEP_LINKS === 'true';
           document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
+          document.getElementById('claude_agenda_max_tokens').value = settings.CLAUDE_AGENDA_MAX_TOKENS || '4000';
+          document.getElementById('claude_daily_brief_max_tokens').value = settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS || '4000';
+          document.getElementById('claude_weekly_brief_max_tokens').value = settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS || '8000';
+          document.getElementById('claude_summary_max_tokens').value = settings.CLAUDE_SUMMARY_MAX_TOKENS || '2000';
 
           // Schedule tab
           document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
@@ -537,6 +603,7 @@ Thanks,
         // General
         USER_NAME: document.getElementById('user_name').value.trim(),
         DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
+        DIAGNOSTIC_MODE: document.getElementById('diagnostic_mode').checked ? 'true' : 'false',
         INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
         AUTO_MARK_READ_AFTER_DAYS: document.getElementById('auto_mark_read_days').value.trim() || '0',
         // Email Templates
@@ -546,9 +613,14 @@ Thanks,
         // Integrations
         FATHOM_API_KEY: document.getElementById('fathom_key').value.trim(),
         FATHOM_WEBHOOK_SECRET: document.getElementById('fathom_webhook_secret').value.trim(),
+        FATHOM_KEEP_LINKS: document.getElementById('fathom_keep_links').checked ? 'true' : 'false',
         HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
+        CLAUDE_AGENDA_MAX_TOKENS: document.getElementById('claude_agenda_max_tokens').value.trim() || '4000',
+        CLAUDE_DAILY_BRIEF_MAX_TOKENS: document.getElementById('claude_daily_brief_max_tokens').value.trim() || '4000',
+        CLAUDE_WEEKLY_BRIEF_MAX_TOKENS: document.getElementById('claude_weekly_brief_max_tokens').value.trim() || '8000',
+        CLAUDE_SUMMARY_MAX_TOKENS: document.getElementById('claude_summary_max_tokens').value.trim() || '2000',
         // Schedule
         BUSINESS_HOURS_START: document.getElementById('hours_start').value.trim(),
         BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
@@ -611,6 +683,106 @@ Thanks,
           statusEl.style.color = '#ea4335';
         })
         .updateFiltersFromEditor();
+    }
+
+    function testFathomConnection() {
+      const statusEl = document.getElementById('fathomTestStatus');
+      const apiKey = document.getElementById('fathom_key').value.trim();
+
+      if (!apiKey) {
+        statusEl.textContent = 'Please enter an API key first';
+        statusEl.style.color = '#ea4335';
+        return;
+      }
+
+      statusEl.textContent = 'Testing connection...';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .testFathomAPI(apiKey);
+    }
+
+    function testTodoistConnection() {
+      const statusEl = document.getElementById('todoistTestStatus');
+      const apiToken = document.getElementById('todoist_token').value.trim();
+
+      if (!apiToken) {
+        statusEl.textContent = 'Please enter an API token first';
+        statusEl.style.color = '#ea4335';
+        return;
+      }
+
+      statusEl.textContent = 'Testing connection...';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .testTodoistAPI(apiToken);
+    }
+
+    function testClaudeConnection() {
+      const statusEl = document.getElementById('claudeTestStatus');
+      const apiKey = document.getElementById('claude_key').value.trim();
+
+      if (!apiKey) {
+        statusEl.textContent = 'Please enter an API key first';
+        statusEl.style.color = '#ea4335';
+        return;
+      }
+
+      statusEl.textContent = 'Testing connection...';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .testClaudeAPI(apiKey);
+    }
+
+    function testHubSpotConnection() {
+      const statusEl = document.getElementById('hubspotTestStatus');
+      const apiKey = document.getElementById('hubspot_key').value.trim();
+
+      if (!apiKey) {
+        statusEl.textContent = 'Please enter an API key first';
+        statusEl.style.color = '#ea4335';
+        return;
+      }
+
+      statusEl.textContent = 'Testing connection...';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .testHubSpotAPI(apiKey);
     }
   </script>
 </body>
