@@ -1322,9 +1322,11 @@ function isFathomMeetingProcessed(meetingId) {
 
   const data = sheet.getDataRange().getValues();
 
+  const normalizedMeetingId = normalizeFathomMeetingId(meetingId);
+
   // Check if meeting ID exists in column A (skip header row)
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === meetingId) {
+    if (normalizeFathomMeetingId(data[i][0]) === normalizedMeetingId) {
       return true;
     }
   }
@@ -1353,13 +1355,27 @@ function recordFathomMeetingProcessed(meetingId, meetingTitle, meetingDate, clie
   }
 
   sheet.appendRow([
-    meetingId,
+    normalizeFathomMeetingId(meetingId),
     meetingTitle,
     meetingDate,
     new Date().toISOString(),
     clientName || 'No client match',
     draftId || 'N/A'
   ]);
+}
+
+/**
+ * Normalizes Fathom meeting IDs for consistent comparisons/storage.
+ * Handles numeric values stored in sheets and ensures trim.
+ *
+ * @param {string|number|null} meetingId - The meeting ID to normalize
+ * @returns {string} Normalized meeting ID
+ */
+function normalizeFathomMeetingId(meetingId) {
+  if (meetingId === null || meetingId === undefined) {
+    return '';
+  }
+  return String(meetingId).trim();
 }
 
 /**
