@@ -71,6 +71,7 @@ function getWeatherLocationOptions() {
       state: 'CA',
       cities: [
         { city: 'Los Angeles', latitude: 34.0522, longitude: -118.2437 },
+        { city: 'Sacramento', latitude: 38.5816, longitude: -121.4944 },
         { city: 'San Diego', latitude: 32.7157, longitude: -117.1611 },
         { city: 'San Francisco', latitude: 37.7749, longitude: -122.4194 }
       ]
@@ -86,8 +87,10 @@ function getWeatherLocationOptions() {
     {
       state: 'FL',
       cities: [
+        { city: 'Jacksonville', latitude: 30.3322, longitude: -81.6557 },
         { city: 'Miami', latitude: 25.7617, longitude: -80.1918 },
         { city: 'Orlando', latitude: 28.5383, longitude: -81.3792 },
+        { city: 'Tallahassee', latitude: 30.4383, longitude: -84.2807 },
         { city: 'Tampa', latitude: 27.9506, longitude: -82.4572 }
       ]
     },
@@ -96,7 +99,8 @@ function getWeatherLocationOptions() {
       cities: [
         { city: 'Chicago', latitude: 41.8781, longitude: -87.6298 },
         { city: 'Naperville', latitude: 41.7508, longitude: -88.1535 },
-        { city: 'Peoria', latitude: 40.6936, longitude: -89.5889 }
+        { city: 'Peoria', latitude: 40.6936, longitude: -89.5889 },
+        { city: 'Springfield', latitude: 39.7817, longitude: -89.6501 }
       ]
     },
     {
@@ -116,6 +120,17 @@ function getWeatherLocationOptions() {
       ]
     },
     {
+      state: 'KY',
+      cities: [
+        { city: 'Bowling Green', latitude: 36.9685, longitude: -86.4808 },
+        { city: 'Covington', latitude: 39.0837, longitude: -84.5086 },
+        { city: 'Frankfort', latitude: 38.2009, longitude: -84.8733 },
+        { city: 'Lexington', latitude: 38.0406, longitude: -84.5037 },
+        { city: 'Louisville', latitude: 38.2527, longitude: -85.7585 },
+        { city: 'Owensboro', latitude: 37.7719, longitude: -87.1112 }
+      ]
+    },
+    {
       state: 'TX',
       cities: [
         { city: 'Austin', latitude: 30.2672, longitude: -97.7431 },
@@ -127,6 +142,7 @@ function getWeatherLocationOptions() {
       state: 'WA',
       cities: [
         { city: 'Bellevue', latitude: 47.6101, longitude: -122.2015 },
+        { city: 'Olympia', latitude: 47.0379, longitude: -122.9007 },
         { city: 'Seattle', latitude: 47.6062, longitude: -122.3321 },
         { city: 'Spokane', latitude: 47.6588, longitude: -117.426 }
       ]
@@ -146,11 +162,75 @@ function findWeatherLocationEntry(state, city) {
     return null;
   }
 
+  const normalizedState = normalizeStateInput(state);
+  const normalizedCity = normalizeCityName(city);
+  if (!normalizedState || !normalizedCity) {
+    return null;
+  }
+
   const options = getWeatherLocationOptions();
-  const stateEntry = options.find(entry => entry.state === state);
+  const stateEntry = options.find(entry => entry.state === normalizedState);
   if (!stateEntry) {
     return null;
   }
 
-  return stateEntry.cities.find(entry => entry.city.toLowerCase() === city.toLowerCase()) || null;
+  const exactMatch = stateEntry.cities.find(entry => normalizeCityName(entry.city) === normalizedCity);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  return stateEntry.cities.find(entry => {
+    const entryCity = normalizeCityName(entry.city);
+    return entryCity.startsWith(normalizedCity) || normalizedCity.startsWith(entryCity);
+  }) || null;
+}
+
+/**
+ * Normalizes state input to a two-letter abbreviation.
+ *
+ * @param {string} stateInput - State abbreviation or name
+ * @returns {string} Two-letter abbreviation or empty string
+ */
+function normalizeStateInput(stateInput) {
+  if (!stateInput) {
+    return '';
+  }
+
+  const normalized = stateInput.toString().trim().toLowerCase();
+  if (normalized.length === 2) {
+    return normalized.toUpperCase();
+  }
+
+  const stateMap = {
+    california: 'CA',
+    colorado: 'CO',
+    florida: 'FL',
+    illinois: 'IL',
+    kentucky: 'KY',
+    massachusetts: 'MA',
+    newyork: 'NY',
+    texas: 'TX',
+    washington: 'WA'
+  };
+
+  const compact = normalized.replace(/\s+/g, '');
+  return stateMap[compact] || '';
+}
+
+/**
+ * Normalizes city input for comparison.
+ *
+ * @param {string} cityInput - City name
+ * @returns {string} Normalized city
+ */
+function normalizeCityName(cityInput) {
+  if (!cityInput) {
+    return '';
+  }
+
+  return cityInput
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 }
