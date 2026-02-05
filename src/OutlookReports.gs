@@ -252,7 +252,7 @@ function compileDailyData(date) {
     data.unreadEmails = fetchUnreadEmails(1);
   }
 
-  const location = props.getProperty('DAILY_OUTLOOK_LOCATION') || '';
+  const location = getDailyOutlookLocation();
   data.weather = getDailyOutlookWeather(date, location);
 
   // Get today's events

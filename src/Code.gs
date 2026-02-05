@@ -440,9 +440,10 @@ function runAgendaGeneration() {
  */
 function runDailyOutlook() {
   try {
-    logProcessing('DAILY_OUTLOOK', null, 'Generating daily outlook', 'processing');
+    const context = getDailyOutlookLogContext(new Date());
+    logProcessing('DAILY_OUTLOOK', null, `Generating daily outlook (${context})`, 'processing');
     generateDailyOutlook();
-    logProcessing('DAILY_OUTLOOK', null, 'Daily outlook generated', 'success');
+    logProcessing('DAILY_OUTLOOK', null, `Daily outlook generated (${context})`, 'success');
   } catch (error) {
     logProcessing('DAILY_OUTLOOK', null, `Error: ${error.message}`, 'error');
   }
