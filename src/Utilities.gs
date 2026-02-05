@@ -872,7 +872,61 @@ function runInteractiveSetup(ui, ss, props) {
   props.setProperty('DOC_NAME_TEMPLATE', docTemplate);
   Logger.log(`Set DOC_NAME_TEMPLATE: ${docTemplate}`);
 
-  // Step 9: Check Advanced Services
+  // Step 9: Configure National Weather Service (US)
+  const nwsEnableResponse = ui.alert(
+    'National Weather Service (US)',
+    'The National Weather Service provides a public weather API with no key required.\n\nEnable NWS weather integration?',
+    ui.ButtonSet.YES_NO
+  );
+
+  const nwsEnabled = nwsEnableResponse === ui.Button.YES;
+  props.setProperty('NWS_WEATHER_ENABLED', nwsEnabled ? 'true' : 'false');
+
+  if (nwsEnabled) {
+    const stateResponse = ui.prompt(
+      'Primary Weather State',
+      'Enter the two-letter state abbreviation for your primary weather location (e.g., CA, NY):',
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (stateResponse.getSelectedButton() === ui.Button.CANCEL) {
+      ui.alert('Setup cancelled.');
+      return;
+    }
+
+    const state = stateResponse.getResponseText().trim().toUpperCase();
+
+    const cityResponse = ui.prompt(
+      'Primary Weather City',
+      'Enter the city name for your primary weather location (e.g., Seattle, Austin):',
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (cityResponse.getSelectedButton() === ui.Button.CANCEL) {
+      ui.alert('Setup cancelled.');
+      return;
+    }
+
+    const city = cityResponse.getResponseText().trim();
+    const locationEntry = findWeatherLocationEntry(state, city);
+
+    if (locationEntry) {
+      props.setProperty('NWS_WEATHER_STATE', state);
+      props.setProperty('NWS_WEATHER_CITY', locationEntry.city);
+      props.setProperty('NWS_WEATHER_LAT', locationEntry.latitude.toString());
+      props.setProperty('NWS_WEATHER_LON', locationEntry.longitude.toString());
+      props.setProperty('USER_LOCATION', `${locationEntry.city}, ${state}`);
+      Logger.log(`Set NWS location: ${locationEntry.city}, ${state}`);
+    } else {
+      ui.alert(
+        'Location Not Found',
+        'The state/city combination was not found in the predefined list.\n\nYou can set it later in Settings > General.',
+        ui.ButtonSet.OK
+      );
+    }
+  }
+
+  // Step 10: Check Advanced Services
   const serviceStatus = checkAdvancedServices();
 
   if (serviceStatus.missing.length > 0) {
@@ -953,6 +1007,11 @@ function runStandaloneSetup(props) {
     Logger.log('- BUSINESS_HOURS_START: Start hour 0-23 (default: 8)');
     Logger.log('- BUSINESS_HOURS_END: End hour 0-24 (default: 18)');
     Logger.log('- DOC_NAME_TEMPLATE: Doc naming template (default: "Client Notes - {client_name}")');
+    Logger.log('- NWS_WEATHER_ENABLED: "true" to enable National Weather Service forecasts');
+    Logger.log('- NWS_WEATHER_STATE: Two-letter state code for NWS location');
+    Logger.log('- NWS_WEATHER_CITY: City name for NWS location');
+    Logger.log('- NWS_WEATHER_LAT: Latitude for NWS location');
+    Logger.log('- NWS_WEATHER_LON: Longitude for NWS location');
     throw new Error('SPREADSHEET_ID is required. See logs for instructions.');
   }
 
@@ -985,6 +1044,13 @@ function runStandaloneSetup(props) {
     Logger.log('Set default DOC_NAME_TEMPLATE: Client Notes - {client_name}');
   } else {
     Logger.log(`Using DOC_NAME_TEMPLATE: ${props.getProperty('DOC_NAME_TEMPLATE')}`);
+  }
+
+  if (!props.getProperty('NWS_WEATHER_ENABLED')) {
+    props.setProperty('NWS_WEATHER_ENABLED', 'false');
+    Logger.log('Set default NWS_WEATHER_ENABLED: false');
+  } else {
+    Logger.log(`Using NWS_WEATHER_ENABLED: ${props.getProperty('NWS_WEATHER_ENABLED')}`);
   }
 
   // Log optional integrations status
@@ -2041,6 +2107,12 @@ function getSettingsForEditor() {
     USER_LOCATION: props.getProperty('USER_LOCATION') || props.getProperty('DAILY_OUTLOOK_LOCATION') || '',
     USER_TIMEZONE: props.getProperty('USER_TIMEZONE') || Session.getScriptTimeZone(),
     WEATHER_API_KEY: props.getProperty('WEATHER_API_KEY') || '',
+    NWS_WEATHER_ENABLED: props.getProperty('NWS_WEATHER_ENABLED') || 'false',
+    NWS_WEATHER_STATE: props.getProperty('NWS_WEATHER_STATE') || '',
+    NWS_WEATHER_CITY: props.getProperty('NWS_WEATHER_CITY') || '',
+    NWS_WEATHER_LAT: props.getProperty('NWS_WEATHER_LAT') || '',
+    NWS_WEATHER_LON: props.getProperty('NWS_WEATHER_LON') || '',
+    TRAVEL_WEATHER_ENABLED: props.getProperty('TRAVEL_WEATHER_ENABLED') || 'false',
     DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false'
   };
 }
@@ -2140,6 +2212,30 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.WEATHER_API_KEY) {
     props.setProperty('WEATHER_API_KEY', settings.WEATHER_API_KEY);
+  }
+
+  if (settings.NWS_WEATHER_ENABLED !== undefined) {
+    props.setProperty('NWS_WEATHER_ENABLED', settings.NWS_WEATHER_ENABLED);
+  }
+
+  if (settings.NWS_WEATHER_STATE !== undefined) {
+    props.setProperty('NWS_WEATHER_STATE', settings.NWS_WEATHER_STATE);
+  }
+
+  if (settings.NWS_WEATHER_CITY !== undefined) {
+    props.setProperty('NWS_WEATHER_CITY', settings.NWS_WEATHER_CITY);
+  }
+
+  if (settings.NWS_WEATHER_LAT !== undefined) {
+    props.setProperty('NWS_WEATHER_LAT', settings.NWS_WEATHER_LAT);
+  }
+
+  if (settings.NWS_WEATHER_LON !== undefined) {
+    props.setProperty('NWS_WEATHER_LON', settings.NWS_WEATHER_LON);
+  }
+
+  if (settings.TRAVEL_WEATHER_ENABLED !== undefined) {
+    props.setProperty('TRAVEL_WEATHER_ENABLED', settings.TRAVEL_WEATHER_ENABLED);
   }
 
   if (settings.USER_LOCATION !== undefined) {

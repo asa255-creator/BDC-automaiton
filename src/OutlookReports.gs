@@ -210,6 +210,13 @@ function buildDailyOutlookPrompt(data, date) {
     weatherSection = 'Weather: Not available.\n';
   }
 
+  if (data.secondaryWeather) {
+    weatherSection += `Secondary Weather (${data.secondaryWeather.location}): ${data.secondaryWeather.condition}, ` +
+      `${data.secondaryWeather.minTemp}°-${data.secondaryWeather.maxTemp}°F. ` +
+      `Rain chance: ${data.secondaryWeather.rainChance}. ` +
+      `Clothing: ${data.secondaryWeather.clothingRecommendation}\n`;
+  }
+
   // Get the prompt template
   const template = getPrompt('DAILY_BRIEFING_CLAUDE_PROMPT');
 
@@ -239,7 +246,9 @@ function compileDailyData(date) {
     overdueTasks: [],
     unreadEmails: { recentUnread: [], olderBacklog: [], totalUnread: 0 },
     includeUnreadEmails: false,
-    weather: null
+    weather: null,
+    secondaryWeather: null,
+    secondaryWeatherLocation: null
   };
 
   // Check if unread emails should be included (controlled by settings)
@@ -252,8 +261,8 @@ function compileDailyData(date) {
     data.unreadEmails = fetchUnreadEmails(1);
   }
 
-  const location = getDailyOutlookLocation();
-  data.weather = getDailyOutlookWeather(date, location);
+  const primaryLocation = getPrimaryWeatherLocationDetails();
+  data.weather = getDailyOutlookWeather(date, primaryLocation);
 
   // Get today's events
   const calendar = CalendarApp.getDefaultCalendar();
@@ -263,6 +272,11 @@ function compileDailyData(date) {
   endOfDay.setHours(23, 59, 59, 999);
 
   const events = calendar.getEvents(startOfDay, endOfDay);
+  const secondaryLocation = getSecondaryWeatherLocationFromCalendar(events);
+  if (secondaryLocation) {
+    data.secondaryWeatherLocation = secondaryLocation;
+    data.secondaryWeather = getDailyOutlookWeather(date, secondaryLocation);
+  }
 
   // Process each event
   for (const event of events) {
@@ -395,6 +409,12 @@ function formatDailyOutlookHtml(data, date) {
       `${data.weather.minTemp}°-${data.weather.maxTemp}°F</p>`;
     html += `<p>Rain chance: ${data.weather.rainChance}</p>`;
     html += `<p>Clothing recommendation: ${data.weather.clothingRecommendation}</p>`;
+    if (data.secondaryWeather) {
+      html += `<hr><p><strong>${data.secondaryWeather.location}</strong>: ${data.secondaryWeather.condition}, ` +
+        `${data.secondaryWeather.minTemp}°-${data.secondaryWeather.maxTemp}°F</p>`;
+      html += `<p>Rain chance: ${data.secondaryWeather.rainChance}</p>`;
+      html += `<p>Clothing recommendation: ${data.secondaryWeather.clothingRecommendation}</p>`;
+    }
   }
 
   // Today's Schedule
