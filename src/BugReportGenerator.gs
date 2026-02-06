@@ -487,6 +487,17 @@ function generateBugReport(criteria) {
   report.push('```');
   report.push('');
 
+  // Section 8: Project Triggers
+  report.push('## 8. PROJECT TRIGGERS');
+  report.push('');
+  const triggerSummary = getProjectTriggerSummary();
+  if (triggerSummary.length > 0) {
+    triggerSummary.forEach(line => report.push(line));
+  } else {
+    report.push('No triggers found for this project.');
+  }
+  report.push('');
+
   report.push('---');
   report.push('');
   report.push('**END OF BUG REPORT**');
@@ -1353,6 +1364,30 @@ function getRecentEmailsFromLabel(labelName, startTime, endTime) {
   } catch (e) {
     Logger.log(`Error fetching emails: ${e.message}`);
     return [];
+  }
+}
+
+/**
+ * Builds a summary of project triggers for diagnostics.
+ * @returns {Array<string>} Lines describing triggers
+ */
+function getProjectTriggerSummary() {
+  try {
+    const triggers = ScriptApp.getProjectTriggers();
+    if (!triggers || triggers.length === 0) return [];
+
+    const lines = [];
+    lines.push('```');
+    triggers.forEach(trigger => {
+      const handler = trigger.getHandlerFunction();
+      const source = trigger.getEventType ? trigger.getEventType() : 'UNKNOWN';
+      const type = trigger.getTriggerSource ? trigger.getTriggerSource() : 'UNKNOWN';
+      lines.push(`${handler} | source=${type} | event=${source}`);
+    });
+    lines.push('```');
+    return lines;
+  } catch (e) {
+    return [`Error fetching triggers: ${e.message}`];
   }
 }
 
