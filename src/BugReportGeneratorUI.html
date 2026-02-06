@@ -108,6 +108,12 @@
       margin-top: 6px;
     }
 
+    .status-text {
+      font-size: 12px;
+      color: #202124;
+      margin-top: 6px;
+    }
+
     .loading {
       display: none;
       text-align: center;
@@ -175,6 +181,24 @@
       <div class="help-text" id="clientHelp">
         Applies to client-specific reports (agenda, meeting notes, etc). Daily/Weekly Briefing reports ignore this.
       </div>
+    </div>
+
+    <div class="section">
+      <label>Agenda Test (optional)</label>
+      <input type="text" id="agendaEventId" placeholder="Calendar event ID">
+      <div class="help-text">Run agenda generation for a specific event ID or eid from a calendar URL.</div>
+      <div style="margin-top: 8px;">
+        <button class="button-secondary" type="button" onclick="loadAgendaEvents()">Load Events</button>
+      </div>
+      <div style="margin-top: 8px;">
+        <select id="agendaEventSelect" onchange="applySelectedAgendaEvent()">
+          <option value="">Select an event from the current time range</option>
+        </select>
+      </div>
+      <div style="margin-top: 8px;">
+        <button class="button-secondary" type="button" onclick="runAgendaTest()">Run Agenda Test</button>
+      </div>
+      <div class="status-text" id="agendaTestStatus"></div>
     </div>
 
     <div class="section">
@@ -265,39 +289,11 @@
     }
 
     function generateReport() {
-      // Get time range
-      const timeRangeValue = document.querySelector('input[name="timeRange"]:checked').value;
-      let startTime, endTime;
-
-      if (timeRangeValue === 'custom') {
-        const startInput = document.getElementById('startTime').value;
-        const endInput = document.getElementById('endTime').value;
-
-        if (!startInput || !endInput) {
-          alert('Please select both start and end times for custom range');
-          return;
-        }
-
-        startTime = new Date(startInput);
-        endTime = new Date(endInput);
-      } else {
-        endTime = new Date();
-        startTime = new Date(endTime.getTime() - (parseInt(timeRangeValue) * 60 * 60 * 1000));
+      const criteria = buildCriteriaFromForm();
+      if (!criteria) {
+        alert('Please select both start and end times for custom range');
+        return;
       }
-
-      // Get client and report type
-      const reportType = document.getElementById('reportType').value;
-      const clientName = isClientFilterApplicable(reportType)
-        ? document.getElementById('clientSelect').value
-        : '';
-
-      // Build criteria
-      const criteria = {
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        clientName: clientName || null,
-        reportType: reportType
-      };
 
       // Show loading
       document.getElementById('formSection').style.display = 'none';
@@ -308,6 +304,83 @@
         .withSuccessHandler(displayReport)
         .withFailureHandler(handleError)
         .generateBugReport(criteria);
+    }
+
+    function loadAgendaEvents() {
+      const status = document.getElementById('agendaTestStatus');
+      status.textContent = 'Loading events...';
+
+      const criteria = buildCriteriaFromForm();
+      if (!criteria) {
+        status.textContent = 'Select a valid time range to load events.';
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(events => {
+          populateAgendaEvents(events);
+          status.textContent = events.length
+            ? `Loaded ${events.length} event(s).`
+            : 'No events found for this time range.';
+        })
+        .withFailureHandler(error => {
+          status.textContent = 'Error: ' + error.message;
+        })
+        .getCalendarEventsForBugReportUI(criteria);
+    }
+
+    function populateAgendaEvents(events) {
+      const select = document.getElementById('agendaEventSelect');
+      select.innerHTML = '<option value="">Select an event from the current time range</option>';
+
+      events.forEach(event => {
+        const option = document.createElement('option');
+        option.value = event.id || '';
+        const title = event.title || '(No Title)';
+        const start = event.start || '';
+        option.textContent = `${title} (${start})`;
+        select.appendChild(option);
+      });
+    }
+
+    function applySelectedAgendaEvent() {
+      const select = document.getElementById('agendaEventSelect');
+      const eventId = select.value;
+      if (eventId) {
+        document.getElementById('agendaEventId').value = eventId;
+      }
+    }
+
+    function buildCriteriaFromForm() {
+      const timeRangeValue = document.querySelector('input[name="timeRange"]:checked').value;
+      let startTime, endTime;
+
+      if (timeRangeValue === 'custom') {
+        const startInput = document.getElementById('startTime').value;
+        const endInput = document.getElementById('endTime').value;
+
+        if (!startInput || !endInput) {
+          return null;
+        }
+
+        startTime = new Date(startInput);
+        endTime = new Date(endInput);
+      } else {
+        endTime = new Date();
+        startTime = new Date(endTime.getTime() - (parseInt(timeRangeValue) * 60 * 60 * 1000));
+      }
+
+      const reportType = document.getElementById('reportType').value;
+      const clientName = isClientFilterApplicable(reportType)
+        ? document.getElementById('clientSelect').value
+        : '';
+
+      return {
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        clientName: clientName || null,
+        reportType: reportType
+      };
     }
 
     function displayReport(result) {
@@ -321,6 +394,27 @@
       document.getElementById('loading').style.display = 'none';
       document.getElementById('formSection').style.display = 'block';
       alert('Error generating report: ' + error.message);
+    }
+
+    function runAgendaTest() {
+      const eventId = document.getElementById('agendaEventId').value.trim();
+      const status = document.getElementById('agendaTestStatus');
+
+      if (!eventId) {
+        status.textContent = 'Please enter a calendar event ID.';
+        return;
+      }
+
+      status.textContent = 'Running agenda test...';
+
+      google.script.run
+        .withSuccessHandler(message => {
+          status.textContent = message;
+        })
+        .withFailureHandler(error => {
+          status.textContent = 'Error: ' + error.message;
+        })
+        .runAgendaTestForEventId(eventId);
     }
 
     function copyIssues() {
