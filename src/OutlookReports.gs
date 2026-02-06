@@ -101,10 +101,31 @@ function generateDailyOutlookWithClaude(data, date) {
       muteHttpExceptions: true
     };
 
+    const requestId = logAPIRequest(
+      'Claude API',
+      url,
+      'POST',
+      options.headers,
+      payload,
+      { clientId: '', eventId: '', flow: 'daily_briefing' }
+    );
+    const startTime = Date.now();
     const response = UrlFetchApp.fetch(url, options);
     const responseCode = response.getResponseCode();
+    const durationMs = Date.now() - startTime;
 
     if (responseCode !== 200) {
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        response.getContentText(),
+        false,
+        null,
+        `HTTP ${responseCode}`,
+        durationMs
+      );
       Logger.log(`Claude API error for daily outlook: ${responseCode} - ${response.getContentText()}`);
       return null;
     }
@@ -113,10 +134,38 @@ function generateDailyOutlookWithClaude(data, date) {
     // Get raw bytes and convert to string properly to preserve emoji
     const responseBytes = response.getContent();
     const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
-    const result = JSON.parse(responseText);
+    let result = null;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        responseText,
+        false,
+        null,
+        `Parse error: ${parseError.message}`,
+        durationMs
+      );
+      return null;
+    }
 
     if (result.content && result.content.length > 0) {
       let content = result.content[0].text;
+      content = sanitizeClaudeHtml(content);
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        responseText,
+        true,
+        { content_length: content.length },
+        '',
+        durationMs
+      );
 
       // Ensure content is treated as UTF-8
       // If Claude returns full HTML with charset, preserve it
@@ -124,6 +173,17 @@ function generateDailyOutlookWithClaude(data, date) {
       return content;
     }
 
+    logAPIResponse(
+      requestId,
+      'Claude API',
+      responseCode,
+      response.getAllHeaders(),
+      responseText,
+      true,
+      { content_length: 0 },
+      'No content returned',
+      durationMs
+    );
     return null;
 
   } catch (error) {
@@ -582,10 +642,31 @@ function generateWeeklyOutlookWithClaude(data, startDate) {
       muteHttpExceptions: true
     };
 
+    const requestId = logAPIRequest(
+      'Claude API',
+      url,
+      'POST',
+      options.headers,
+      payload,
+      { clientId: '', eventId: '', flow: 'weekly_briefing' }
+    );
+    const startTime = Date.now();
     const response = UrlFetchApp.fetch(url, options);
     const responseCode = response.getResponseCode();
+    const durationMs = Date.now() - startTime;
 
     if (responseCode !== 200) {
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        response.getContentText(),
+        false,
+        null,
+        `HTTP ${responseCode}`,
+        durationMs
+      );
       Logger.log(`Claude API error for weekly outlook: ${responseCode} - ${response.getContentText()}`);
       return null;
     }
@@ -594,21 +675,80 @@ function generateWeeklyOutlookWithClaude(data, startDate) {
     // Get raw bytes and convert to string properly to preserve emoji
     const responseBytes = response.getContent();
     const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
-    const result = JSON.parse(responseText);
+    let result = null;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        responseText,
+        false,
+        null,
+        `Parse error: ${parseError.message}`,
+        durationMs
+      );
+      return null;
+    }
 
     if (result.content && result.content.length > 0) {
       let content = result.content[0].text;
+      content = sanitizeClaudeHtml(content);
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        responseText,
+        true,
+        { content_length: content.length },
+        '',
+        durationMs
+      );
 
       // Ensure content is treated as UTF-8
       return content;
     }
 
+    logAPIResponse(
+      requestId,
+      'Claude API',
+      responseCode,
+      response.getAllHeaders(),
+      responseText,
+      true,
+      { content_length: 0 },
+      'No content returned',
+      durationMs
+    );
     return null;
 
   } catch (error) {
     Logger.log(`Failed to generate weekly outlook with Claude: ${error.message}`);
     return null;
   }
+}
+
+/**
+ * Strips markdown code fences from Claude HTML output.
+ *
+ * @param {string} content - Claude response content
+ * @returns {string} Clean HTML
+ */
+function sanitizeClaudeHtml(content) {
+  if (!content) {
+    return content;
+  }
+
+  let cleaned = content.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```[a-z]*\n?/i, '');
+    cleaned = cleaned.replace(/```$/, '').trim();
+  }
+
+  return cleaned;
 }
 
 /**

@@ -348,10 +348,12 @@ function generateBugReport(criteria) {
         labelDescription = 'Meeting Summaries';
       }
     } else if (reportType === 'daily_briefing') {
-      labelToCheck = 'Daily Briefing';
+      const props = PropertiesService.getScriptProperties();
+      labelToCheck = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
       labelDescription = 'Daily Briefing';
     } else if (reportType === 'weekly_briefing') {
-      labelToCheck = 'Weekly Briefing';
+      const props = PropertiesService.getScriptProperties();
+      labelToCheck = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
       labelDescription = 'Weekly Briefing';
     } else if (reportType === 'all' && criteria.clientName) {
       const client = getClientByName(criteria.clientName);
@@ -375,6 +377,10 @@ function generateBugReport(criteria) {
             report.push(`To: ${email.to}`);
             report.push(`Snippet: ${email.snippet || '(empty)'}`);
             report.push(`Body Length: ${email.bodyLength} characters`);
+            if ((reportType === 'daily_briefing' || reportType === 'weekly_briefing') && email.htmlSnippet) {
+              report.push('HTML Preview:');
+              report.push(truncateForReport(email.htmlSnippet, 1000));
+            }
             report.push('```');
             report.push('');
           });
@@ -987,7 +993,8 @@ function getRecentEmailsFromLabel(labelName, startTime, endTime) {
             from: msg.getFrom(),
             to: msg.getTo(),
             snippet: msg.getPlainBody().substring(0, 150),
-            bodyLength: msg.getPlainBody().length
+            bodyLength: msg.getPlainBody().length,
+            htmlSnippet: msg.getBody().substring(0, 2000)
           });
         }
       });
