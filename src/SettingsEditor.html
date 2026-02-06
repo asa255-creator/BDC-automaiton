@@ -720,6 +720,14 @@ Thanks,
         }
       }
 
+      function formatErrorDetails(prefix, error) {
+        if (!error) {
+          return prefix;
+        }
+        const message = error.message || error.toString();
+        return `${prefix} ${message}`;
+      }
+
       function advanceLoading() {
         completedSteps += 1;
         if (loadingProgress) {
@@ -772,7 +780,7 @@ Thanks,
           if (!weatherTimedOut) {
             clearTimeout(weatherTimeoutId);
             advanceLoading();
-            updateLoadingStatus('Loading Gmail labels (weather failed)...');
+            updateLoadingStatus(formatErrorDetails('Weather load failed:', error));
           }
         })
         .getWeatherLocationOptions();
@@ -792,7 +800,7 @@ Thanks,
           allLabels = [];
           populateLabelDropdowns();
           advanceLoading();
-          updateLoadingStatus('Fetching settings (labels failed)...');
+          updateLoadingStatus(formatErrorDetails('Label load failed:', error));
         })
         .getAllGmailLabelsForSettings();
 
@@ -804,6 +812,9 @@ Thanks,
               loadingTitle.textContent = 'Error loading settings';
             }
             updateLoadingStatus(result && result.error ? result.error : 'Unknown error. Check Apps Script logs for details.');
+            if (result && result.stack && loadingDetail) {
+              loadingDetail.textContent = `${loadingDetail.textContent}\n${result.stack}`;
+            }
             return;
           }
 
@@ -891,13 +902,16 @@ Thanks,
               loadingTitle.textContent = 'Error applying settings';
             }
             updateLoadingStatus(applyError.message || 'Unknown error while applying settings.');
+            if (applyError && applyError.stack && loadingDetail) {
+              loadingDetail.textContent = `${loadingDetail.textContent}\n${applyError.stack}`;
+            }
           }
         })
         .withFailureHandler(function(error) {
           if (loadingTitle) {
             loadingTitle.textContent = 'Error loading settings';
           }
-          updateLoadingStatus(error.message || 'Unknown error. Check Apps Script logs for details.');
+          updateLoadingStatus(formatErrorDetails('Settings load failed:', error));
         })
         .getSettingsForEditorWithDiagnostics();
     }
