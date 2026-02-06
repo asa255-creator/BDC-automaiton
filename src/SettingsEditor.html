@@ -801,7 +801,7 @@ Thanks,
 
         setTimeout(function() {
           if (document.getElementById('content').style.display === 'none') {
-            updateLoadingStatus('Still loading... check authorization prompts. Any failures will show details below.');
+            updateLoadingStatus('Still loading... if anything fails, details will appear below.');
           }
         }, 10000);
 
@@ -945,7 +945,7 @@ Thanks,
               advanceLoading();
               if (result && Array.isArray(result.warnings) && result.warnings.length > 0) {
                 const msgEl = document.getElementById('statusMessage');
-                msgEl.textContent = `Settings loaded with warnings: ${result.warnings.join(', ')}.`;
+                msgEl.textContent = `Settings loaded, but optional helpers are missing (${result.warnings.join(', ')}). Defaults will be used where available.`;
                 msgEl.className = 'status-message warning';
               }
             } catch (applyError) {
