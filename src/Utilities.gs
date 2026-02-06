@@ -363,6 +363,23 @@ function stripHtml(html) {
 }
 
 /**
+ * Encodes non-BMP characters (e.g., many emoji) as numeric HTML entities.
+ *
+ * @param {string} text - Text to encode
+ * @returns {string} Text with non-BMP characters encoded
+ */
+function encodeNonBmpCharacters(text) {
+  if (!text) return text || '';
+  return text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(match) {
+    const codePoint = match.codePointAt(0);
+    if (!codePoint) {
+      return match;
+    }
+    return `&#x${codePoint.toString(16).toUpperCase()};`;
+  });
+}
+
+/**
  * Ensures HTML email bodies include UTF-8 charset metadata.
  *
  * @param {string} htmlBody - HTML email body
@@ -371,7 +388,7 @@ function stripHtml(html) {
  */
 function ensureHtmlEmailBody(htmlBody, options) {
   let body = htmlBody || '';
-  const title = options && options.title ? escapeHtml(options.title) : '';
+  const title = options && options.title ? escapeHtml(encodeNonBmpCharacters(options.title)) : '';
   const hasCharset = body.match(/<meta[^>]+charset/i);
 
   if (!hasCharset) {
@@ -415,7 +432,9 @@ function ensureHtmlEmailBody(htmlBody, options) {
  * @param {Object} [options] - Options (plainText, cc, bcc, title)
  */
 function sendHtmlEmail(to, subject, htmlBody, options) {
-  const body = ensureHtmlEmailBody(htmlBody, { title: options && options.title ? options.title : subject });
+  const normalizedBody = encodeNonBmpCharacters(htmlBody);
+  const title = options && options.title ? options.title : subject;
+  const body = ensureHtmlEmailBody(normalizedBody, { title: title });
   const sendOptions = {
     htmlBody: body,
     charset: 'UTF-8'
@@ -442,7 +461,9 @@ function sendHtmlEmail(to, subject, htmlBody, options) {
  * @returns {GoogleAppsScript.Gmail.GmailDraft} Draft instance
  */
 function createHtmlDraft(to, subject, htmlBody, options) {
-  const body = ensureHtmlEmailBody(htmlBody, { title: options && options.title ? options.title : subject });
+  const normalizedBody = encodeNonBmpCharacters(htmlBody);
+  const title = options && options.title ? options.title : subject;
+  const body = ensureHtmlEmailBody(normalizedBody, { title: title });
   return GmailApp.createDraft(to, subject, options && options.plainText ? options.plainText : '', {
     htmlBody: body
   });
