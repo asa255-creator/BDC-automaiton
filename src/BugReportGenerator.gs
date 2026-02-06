@@ -159,6 +159,26 @@ function generateBugReport(criteria) {
     report.push('');
   }
 
+  // Section 2a: Agenda Scan Logs (include global scan entries)
+  if (reportType === 'all' || reportType === 'pre_meeting_agenda') {
+    const agendaScanLogs = getAgendaProcessingLogs(startTime, endTime);
+    report.push('### Agenda Scan Logs (All Clients)');
+    report.push('');
+    if (agendaScanLogs.length > 0) {
+      agendaScanLogs.forEach(log => {
+        report.push(`**${log.timestamp}** - ${log.action_type} [${log.status}]`);
+        report.push('```');
+        report.push(`Client ID: ${log.client_id || 'N/A'}`);
+        report.push(`Details: ${log.details || 'N/A'}`);
+        report.push('```');
+        report.push('');
+      });
+    } else {
+      report.push('No agenda scan logs found in time range.');
+      report.push('');
+    }
+  }
+
   // Section 3: Calendar Events Snapshot
   report.push('## 3. CALENDAR EVENTS');
   report.push('');
@@ -173,6 +193,7 @@ function generateBugReport(criteria) {
       report.push(`Start: ${event.start}`);
       report.push(`End: ${event.end}`);
       report.push(`Matched Client: ${event.matchedClient || 'N/A'}`);
+      report.push(`Agenda Generated: ${event.agendaGenerated ? 'Yes' : 'No'}`);
       report.push(`Organizer: ${event.organizer || 'N/A'}`);
       report.push(`Location: ${event.location || 'N/A'}`);
       report.push(`Attendees: ${event.attendees.length ? event.attendees.join(', ') : '(none)'}`);
@@ -181,6 +202,19 @@ function generateBugReport(criteria) {
     });
   } else {
     report.push('No calendar events found in time range.');
+    report.push('');
+  }
+
+  // Section 3a: Agenda Diagnostics (pre_meeting_agenda only)
+  if (reportType === 'all' || reportType === 'pre_meeting_agenda') {
+    report.push('### Agenda Diagnostics');
+    report.push('');
+    const agendaDiagnostics = buildAgendaDiagnostics(calendarEvents);
+    if (agendaDiagnostics.length > 0) {
+      agendaDiagnostics.forEach(line => report.push(line));
+    } else {
+      report.push('No agenda diagnostics available for this time range.');
+    }
     report.push('');
   }
 
@@ -759,6 +793,7 @@ function getCalendarEventsForBugReport(startTime, endTime, clientName) {
       start: formatDateTime(event.getStartTime()),
       end: formatDateTime(event.getEndTime()),
       matchedClient: matchedClient,
+      agendaGenerated: isAgendaGenerated(event.getId()),
       organizer: event.getCreators ? event.getCreators().join(', ') : null,
       location: event.getLocation(),
       attendees: event.getGuestList().map(guest => guest.getEmail())
@@ -1130,6 +1165,47 @@ function getProcessingLogEntries(startTime, endTime, clientName) {
   }
 
   return entries;
+}
+
+/**
+ * Gets agenda-related processing log entries without client filtering.
+ * @param {Date} startTime - Start time
+ * @param {Date} endTime - End time
+ * @returns {Array} Log entries
+ */
+function getAgendaProcessingLogs(startTime, endTime) {
+  let logs = getProcessingLogEntries(startTime, endTime, null);
+  const actionTypeFilters = ['AGENDA_GEN', 'AGENDA_GENERATED', 'AGENDA_ERROR', 'AGENDA_CONTEXT', 'AGENDA_DOC'];
+  logs = logs.filter(log => actionTypeFilters.includes(log.action_type));
+  return logs;
+}
+
+/**
+ * Builds agenda diagnostics lines for the bug report.
+ * @param {Array} calendarEvents - Calendar event summaries
+ * @returns {Array<string>} Formatted lines
+ */
+function buildAgendaDiagnostics(calendarEvents) {
+  const lines = [];
+  calendarEvents.forEach(event => {
+    lines.push(`**${event.title || '(No Title)'}**`);
+    lines.push('```');
+    lines.push(`Event ID: ${event.id || 'N/A'}`);
+    lines.push(`Start: ${event.start}`);
+    lines.push(`End: ${event.end}`);
+    lines.push(`Matched Client: ${event.matchedClient || 'N/A'}`);
+    lines.push(`Agenda Generated: ${event.agendaGenerated ? 'Yes' : 'No'}`);
+    if (!event.agendaGenerated) {
+      if (!event.matchedClient) {
+        lines.push('Likely Reason: No client match at scan time');
+      } else {
+        lines.push('Likely Reason: Not generated in scan window or skipped as already generated');
+      }
+    }
+    lines.push('```');
+    lines.push('');
+  });
+  return lines;
 }
 
 /**
