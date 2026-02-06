@@ -908,19 +908,19 @@ function runInteractiveSetup(ui, ss, props) {
     }
 
     const city = cityResponse.getResponseText().trim();
-    const locationEntry = findWeatherLocationEntry(state, city);
+    const geocodeResult = geocodeCityState(state, city);
 
-    if (locationEntry) {
-      props.setProperty('NWS_WEATHER_STATE', state);
-      props.setProperty('NWS_WEATHER_CITY', locationEntry.city);
-      props.setProperty('NWS_WEATHER_LAT', locationEntry.latitude.toString());
-      props.setProperty('NWS_WEATHER_LON', locationEntry.longitude.toString());
-      props.setProperty('USER_LOCATION', `${locationEntry.city}, ${state}`);
-      Logger.log(`Set NWS location: ${locationEntry.city}, ${state}`);
+    if (geocodeResult && geocodeResult.latitude && geocodeResult.longitude) {
+      props.setProperty('NWS_WEATHER_STATE', normalizeStateInput(state));
+      props.setProperty('NWS_WEATHER_CITY', geocodeResult.city || city);
+      props.setProperty('NWS_WEATHER_LAT', geocodeResult.latitude.toString());
+      props.setProperty('NWS_WEATHER_LON', geocodeResult.longitude.toString());
+      props.setProperty('USER_LOCATION', `${geocodeResult.city || city}, ${normalizeStateInput(state)}`);
+      Logger.log(`Set NWS location: ${geocodeResult.city || city}, ${normalizeStateInput(state)}`);
     } else {
       ui.alert(
         'Location Not Found',
-        'The state/city combination was not found in the predefined list.\n\nYou can set it later in Settings > General.',
+        'The state/city combination could not be geocoded.\n\nYou can set it later in Settings > General.',
         ui.ButtonSet.OK
       );
     }

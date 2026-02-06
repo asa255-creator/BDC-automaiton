@@ -68,84 +68,204 @@ function isNationalWeatherServiceEnabled() {
 function getWeatherLocationOptions() {
   return [
     {
+      state: 'AL',
+      cities: ['Birmingham', 'Montgomery', 'Mobile', 'Huntsville', 'Tuscaloosa']
+    },
+    {
+      state: 'AK',
+      cities: ['Anchorage', 'Juneau', 'Fairbanks', 'Sitka', 'Ketchikan']
+    },
+    {
+      state: 'AZ',
+      cities: ['Phoenix', 'Tucson', 'Mesa', 'Chandler', 'Scottsdale']
+    },
+    {
+      state: 'AR',
+      cities: ['Little Rock', 'Fort Smith', 'Fayetteville', 'Springdale', 'Jonesboro']
+    },
+    {
       state: 'CA',
-      cities: [
-        { city: 'Los Angeles', latitude: 34.0522, longitude: -118.2437 },
-        { city: 'Sacramento', latitude: 38.5816, longitude: -121.4944 },
-        { city: 'San Diego', latitude: 32.7157, longitude: -117.1611 },
-        { city: 'San Francisco', latitude: 37.7749, longitude: -122.4194 }
-      ]
+      cities: ['Los Angeles', 'San Diego', 'San Jose', 'San Francisco', 'Sacramento']
     },
     {
       state: 'CO',
-      cities: [
-        { city: 'Boulder', latitude: 40.01499, longitude: -105.2705 },
-        { city: 'Colorado Springs', latitude: 38.8339, longitude: -104.8214 },
-        { city: 'Denver', latitude: 39.7392, longitude: -104.9903 }
-      ]
+      cities: ['Denver', 'Colorado Springs', 'Aurora', 'Fort Collins', 'Boulder']
+    },
+    {
+      state: 'CT',
+      cities: ['Bridgeport', 'New Haven', 'Stamford', 'Hartford', 'Waterbury']
+    },
+    {
+      state: 'DE',
+      cities: ['Wilmington', 'Dover', 'Newark', 'Middletown', 'Smyrna']
     },
     {
       state: 'FL',
-      cities: [
-        { city: 'Jacksonville', latitude: 30.3322, longitude: -81.6557 },
-        { city: 'Miami', latitude: 25.7617, longitude: -80.1918 },
-        { city: 'Orlando', latitude: 28.5383, longitude: -81.3792 },
-        { city: 'Tallahassee', latitude: 30.4383, longitude: -84.2807 },
-        { city: 'Tampa', latitude: 27.9506, longitude: -82.4572 }
-      ]
+      cities: ['Jacksonville', 'Miami', 'Tampa', 'Orlando', 'Tallahassee']
+    },
+    {
+      state: 'GA',
+      cities: ['Atlanta', 'Augusta', 'Columbus', 'Macon', 'Savannah']
+    },
+    {
+      state: 'HI',
+      cities: ['Honolulu', 'Hilo', 'Kailua', 'Kaneohe', 'Waipahu']
+    },
+    {
+      state: 'ID',
+      cities: ['Boise', 'Meridian', 'Nampa', 'Idaho Falls', 'Pocatello']
     },
     {
       state: 'IL',
-      cities: [
-        { city: 'Chicago', latitude: 41.8781, longitude: -87.6298 },
-        { city: 'Naperville', latitude: 41.7508, longitude: -88.1535 },
-        { city: 'Peoria', latitude: 40.6936, longitude: -89.5889 },
-        { city: 'Springfield', latitude: 39.7817, longitude: -89.6501 }
-      ]
+      cities: ['Chicago', 'Aurora', 'Naperville', 'Joliet', 'Springfield']
     },
     {
-      state: 'MA',
-      cities: [
-        { city: 'Boston', latitude: 42.3601, longitude: -71.0589 },
-        { city: 'Cambridge', latitude: 42.3736, longitude: -71.1097 },
-        { city: 'Worcester', latitude: 42.2626, longitude: -71.8023 }
-      ]
+      state: 'IN',
+      cities: ['Indianapolis', 'Fort Wayne', 'Evansville', 'South Bend', 'Carmel']
     },
     {
-      state: 'NY',
-      cities: [
-        { city: 'Albany', latitude: 42.6526, longitude: -73.7562 },
-        { city: 'Buffalo', latitude: 42.8864, longitude: -78.8784 },
-        { city: 'New York', latitude: 40.7128, longitude: -74.006 }
-      ]
+      state: 'IA',
+      cities: ['Des Moines', 'Cedar Rapids', 'Davenport', 'Sioux City', 'Iowa City']
+    },
+    {
+      state: 'KS',
+      cities: ['Wichita', 'Overland Park', 'Kansas City', 'Topeka', 'Olathe']
     },
     {
       state: 'KY',
-      cities: [
-        { city: 'Bowling Green', latitude: 36.9685, longitude: -86.4808 },
-        { city: 'Covington', latitude: 39.0837, longitude: -84.5086 },
-        { city: 'Frankfort', latitude: 38.2009, longitude: -84.8733 },
-        { city: 'Lexington', latitude: 38.0406, longitude: -84.5037 },
-        { city: 'Louisville', latitude: 38.2527, longitude: -85.7585 },
-        { city: 'Owensboro', latitude: 37.7719, longitude: -87.1112 }
-      ]
+      cities: ['Louisville', 'Lexington', 'Bowling Green', 'Owensboro', 'Frankfort']
+    },
+    {
+      state: 'LA',
+      cities: ['New Orleans', 'Baton Rouge', 'Shreveport', 'Lafayette', 'Lake Charles']
+    },
+    {
+      state: 'ME',
+      cities: ['Portland', 'Lewiston', 'Bangor', 'South Portland', 'Augusta']
+    },
+    {
+      state: 'MD',
+      cities: ['Baltimore', 'Frederick', 'Rockville', 'Gaithersburg', 'Annapolis']
+    },
+    {
+      state: 'MA',
+      cities: ['Boston', 'Worcester', 'Springfield', 'Cambridge', 'Lowell']
+    },
+    {
+      state: 'MI',
+      cities: ['Detroit', 'Grand Rapids', 'Warren', 'Sterling Heights', 'Lansing']
+    },
+    {
+      state: 'MN',
+      cities: ['Minneapolis', 'Saint Paul', 'Rochester', 'Duluth', 'Bloomington']
+    },
+    {
+      state: 'MS',
+      cities: ['Jackson', 'Gulfport', 'Southaven', 'Hattiesburg', 'Biloxi']
+    },
+    {
+      state: 'MO',
+      cities: ['Kansas City', 'St. Louis', 'Springfield', 'Columbia', 'Jefferson City']
+    },
+    {
+      state: 'MT',
+      cities: ['Billings', 'Missoula', 'Great Falls', 'Bozeman', 'Helena']
+    },
+    {
+      state: 'NE',
+      cities: ['Omaha', 'Lincoln', 'Bellevue', 'Grand Island', 'Kearney']
+    },
+    {
+      state: 'NV',
+      cities: ['Las Vegas', 'Henderson', 'Reno', 'North Las Vegas', 'Carson City']
+    },
+    {
+      state: 'NH',
+      cities: ['Manchester', 'Nashua', 'Concord', 'Derry', 'Dover']
+    },
+    {
+      state: 'NJ',
+      cities: ['Newark', 'Jersey City', 'Paterson', 'Elizabeth', 'Trenton']
+    },
+    {
+      state: 'NM',
+      cities: ['Albuquerque', 'Las Cruces', 'Rio Rancho', 'Santa Fe', 'Roswell']
+    },
+    {
+      state: 'NY',
+      cities: ['New York', 'Buffalo', 'Rochester', 'Yonkers', 'Albany']
+    },
+    {
+      state: 'NC',
+      cities: ['Charlotte', 'Raleigh', 'Greensboro', 'Durham', 'Winston-Salem']
+    },
+    {
+      state: 'ND',
+      cities: ['Fargo', 'Bismarck', 'Grand Forks', 'Minot', 'West Fargo']
+    },
+    {
+      state: 'OH',
+      cities: ['Columbus', 'Cleveland', 'Cincinnati', 'Toledo', 'Akron']
+    },
+    {
+      state: 'OK',
+      cities: ['Oklahoma City', 'Tulsa', 'Norman', 'Broken Arrow', 'Edmond']
+    },
+    {
+      state: 'OR',
+      cities: ['Portland', 'Salem', 'Eugene', 'Gresham', 'Hillsboro']
+    },
+    {
+      state: 'PA',
+      cities: ['Philadelphia', 'Pittsburgh', 'Allentown', 'Erie', 'Harrisburg']
+    },
+    {
+      state: 'RI',
+      cities: ['Providence', 'Warwick', 'Cranston', 'Pawtucket', 'East Providence']
+    },
+    {
+      state: 'SC',
+      cities: ['Charleston', 'Columbia', 'North Charleston', 'Mount Pleasant', 'Rock Hill']
+    },
+    {
+      state: 'SD',
+      cities: ['Sioux Falls', 'Rapid City', 'Aberdeen', 'Brookings', 'Pierre']
+    },
+    {
+      state: 'TN',
+      cities: ['Nashville', 'Memphis', 'Knoxville', 'Chattanooga', 'Clarksville']
     },
     {
       state: 'TX',
-      cities: [
-        { city: 'Austin', latitude: 30.2672, longitude: -97.7431 },
-        { city: 'Dallas', latitude: 32.7767, longitude: -96.797 },
-        { city: 'Houston', latitude: 29.7604, longitude: -95.3698 }
-      ]
+      cities: ['Houston', 'San Antonio', 'Dallas', 'Austin', 'Fort Worth']
+    },
+    {
+      state: 'UT',
+      cities: ['Salt Lake City', 'West Valley City', 'Provo', 'West Jordan', 'Orem']
+    },
+    {
+      state: 'VT',
+      cities: ['Burlington', 'South Burlington', 'Rutland', 'Barre', 'Montpelier']
+    },
+    {
+      state: 'VA',
+      cities: ['Virginia Beach', 'Norfolk', 'Chesapeake', 'Richmond', 'Newport News']
     },
     {
       state: 'WA',
-      cities: [
-        { city: 'Bellevue', latitude: 47.6101, longitude: -122.2015 },
-        { city: 'Olympia', latitude: 47.0379, longitude: -122.9007 },
-        { city: 'Seattle', latitude: 47.6062, longitude: -122.3321 },
-        { city: 'Spokane', latitude: 47.6588, longitude: -117.426 }
-      ]
+      cities: ['Seattle', 'Spokane', 'Tacoma', 'Vancouver', 'Olympia']
+    },
+    {
+      state: 'WV',
+      cities: ['Charleston', 'Huntington', 'Morgantown', 'Parkersburg', 'Wheeling']
+    },
+    {
+      state: 'WI',
+      cities: ['Milwaukee', 'Madison', 'Green Bay', 'Kenosha', 'Racine']
+    },
+    {
+      state: 'WY',
+      cities: ['Cheyenne', 'Casper', 'Laramie', 'Gillette', 'Rock Springs']
     }
   ];
 }
@@ -174,13 +294,13 @@ function findWeatherLocationEntry(state, city) {
     return null;
   }
 
-  const exactMatch = stateEntry.cities.find(entry => normalizeCityName(entry.city) === normalizedCity);
+  const exactMatch = stateEntry.cities.find(entry => normalizeCityName(entry.city || entry) === normalizedCity);
   if (exactMatch) {
     return exactMatch;
   }
 
   return stateEntry.cities.find(entry => {
-    const entryCity = normalizeCityName(entry.city);
+    const entryCity = normalizeCityName(entry.city || entry);
     return entryCity.startsWith(normalizedCity) || normalizedCity.startsWith(entryCity);
   }) || null;
 }
@@ -202,15 +322,56 @@ function normalizeStateInput(stateInput) {
   }
 
   const stateMap = {
+    alabama: 'AL',
+    alaska: 'AK',
+    arizona: 'AZ',
+    arkansas: 'AR',
     california: 'CA',
     colorado: 'CO',
+    connecticut: 'CT',
+    delaware: 'DE',
     florida: 'FL',
+    georgia: 'GA',
+    hawaii: 'HI',
+    idaho: 'ID',
     illinois: 'IL',
+    indiana: 'IN',
+    iowa: 'IA',
+    kansas: 'KS',
     kentucky: 'KY',
+    louisiana: 'LA',
+    maine: 'ME',
+    maryland: 'MD',
     massachusetts: 'MA',
+    michigan: 'MI',
+    minnesota: 'MN',
+    mississippi: 'MS',
+    missouri: 'MO',
+    montana: 'MT',
+    nebraska: 'NE',
+    nevada: 'NV',
+    newhampshire: 'NH',
+    newjersey: 'NJ',
+    newmexico: 'NM',
     newyork: 'NY',
+    northcarolina: 'NC',
+    northdakota: 'ND',
+    ohio: 'OH',
+    oklahoma: 'OK',
+    oregon: 'OR',
+    pennsylvania: 'PA',
+    rhodeisland: 'RI',
+    southcarolina: 'SC',
+    southdakota: 'SD',
+    tennessee: 'TN',
     texas: 'TX',
-    washington: 'WA'
+    utah: 'UT',
+    vermont: 'VT',
+    virginia: 'VA',
+    washington: 'WA',
+    westvirginia: 'WV',
+    wisconsin: 'WI',
+    wyoming: 'WY'
   };
 
   const compact = normalized.replace(/\s+/g, '');
@@ -233,4 +394,46 @@ function normalizeCityName(cityInput) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Geocodes a city/state to latitude/longitude using the US Census geocoder.
+ *
+ * @param {string} state - State abbreviation or name
+ * @param {string} city - City name
+ * @returns {Object|null} Geocode result with latitude/longitude
+ */
+function geocodeCityState(state, city) {
+  if (!state || !city) {
+    return null;
+  }
+
+  try {
+    const normalizedState = normalizeStateInput(state) || state;
+    const address = encodeURIComponent(`${city}, ${normalizedState}`);
+    const url = `https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=${address}&benchmark=2020&format=json`;
+    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (response.getResponseCode() !== 200) {
+      Logger.log(`Census geocoder error (${response.getResponseCode()}): ${response.getContentText()}`);
+      return null;
+    }
+
+    const payload = JSON.parse(response.getContentText());
+    const matches = payload && payload.result ? payload.result.addressMatches : null;
+    if (!matches || matches.length === 0) {
+      return null;
+    }
+
+    const match = matches[0];
+    const coordinates = match.coordinates || {};
+    return {
+      city: match.addressComponents ? match.addressComponents.city : city,
+      state: match.addressComponents ? match.addressComponents.state : normalizedState,
+      latitude: coordinates.y,
+      longitude: coordinates.x
+    };
+  } catch (error) {
+    Logger.log(`Census geocoder failed: ${error.message}`);
+    return null;
+  }
 }
