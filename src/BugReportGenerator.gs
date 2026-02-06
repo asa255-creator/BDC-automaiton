@@ -159,6 +159,26 @@ function generateBugReport(criteria) {
     report.push('');
   }
 
+  // Section 2a: Agenda Scan Logs (include global scan entries)
+  if (reportType === 'all' || reportType === 'pre_meeting_agenda') {
+    const agendaScanLogs = getAgendaProcessingLogs(startTime, endTime);
+    report.push('### Agenda Scan Logs (All Clients)');
+    report.push('');
+    if (agendaScanLogs.length > 0) {
+      agendaScanLogs.forEach(log => {
+        report.push(`**${log.timestamp}** - ${log.action_type} [${log.status}]`);
+        report.push('```');
+        report.push(`Client ID: ${log.client_id || 'N/A'}`);
+        report.push(`Details: ${log.details || 'N/A'}`);
+        report.push('```');
+        report.push('');
+      });
+    } else {
+      report.push('No agenda scan logs found in time range.');
+      report.push('');
+    }
+  }
+
   // Section 3: Calendar Events Snapshot
   report.push('## 3. CALENDAR EVENTS');
   report.push('');
@@ -173,6 +193,7 @@ function generateBugReport(criteria) {
       report.push(`Start: ${event.start}`);
       report.push(`End: ${event.end}`);
       report.push(`Matched Client: ${event.matchedClient || 'N/A'}`);
+      report.push(`Agenda Generated: ${event.agendaGenerated ? 'Yes' : 'No'}`);
       report.push(`Organizer: ${event.organizer || 'N/A'}`);
       report.push(`Location: ${event.location || 'N/A'}`);
       report.push(`Attendees: ${event.attendees.length ? event.attendees.join(', ') : '(none)'}`);
@@ -181,6 +202,19 @@ function generateBugReport(criteria) {
     });
   } else {
     report.push('No calendar events found in time range.');
+    report.push('');
+  }
+
+  // Section 3a: Agenda Diagnostics (pre_meeting_agenda only)
+  if (reportType === 'all' || reportType === 'pre_meeting_agenda') {
+    report.push('### Agenda Diagnostics');
+    report.push('');
+    const agendaDiagnostics = buildAgendaDiagnostics(calendarEvents);
+    if (agendaDiagnostics.length > 0) {
+      agendaDiagnostics.forEach(line => report.push(line));
+    } else {
+      report.push('No agenda diagnostics available for this time range.');
+    }
     report.push('');
   }
 
@@ -198,27 +232,9 @@ function generateBugReport(criteria) {
     report.push('## 5. DIAGNOSTIC LOGS');
     report.push('');
 
-    // Define API name filters based on report type
-    const apiNameFilters = {
-      daily_briefing: ['Claude API', 'claude-daily-briefing'],
-      weekly_briefing: ['Claude API', 'claude-weekly-briefing'],
-      pre_meeting_agenda: ['Claude API', 'claude-agenda', 'Google Calendar API'],
-      fathom_drafts: ['Fathom API', 'Claude API', 'claude-summary'],
-      meeting_notes: ['Claude API', 'Todoist API', 'Google Docs API']
-    };
-
     // API Request Log
     let apiRequests = getDiagnosticLogEntries('API_Request_Log', startTime, endTime, clientName);
-
-    // Filter by API name if specific report type
-    if (reportType !== 'all' && apiNameFilters[reportType]) {
-      apiRequests = apiRequests.filter(log =>
-        apiNameFilters[reportType].some(filter =>
-          log.api_name && log.api_name.includes(filter)
-        )
-      );
-    }
-
+    apiRequests = filterApiRequestsByReportType(apiRequests, reportType);
     if (apiRequests.length > 0) {
       report.push('### API Requests');
       report.push('');
@@ -235,15 +251,7 @@ function generateBugReport(criteria) {
 
     // API Response Log
     let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, clientName);
-
-    // Filter by API name if specific report type
-    if (reportType !== 'all' && apiNameFilters[reportType]) {
-      apiResponses = apiResponses.filter(log =>
-        apiNameFilters[reportType].some(filter =>
-          log.api_name && log.api_name.includes(filter)
-        )
-      );
-    }
+    apiResponses = filterApiResponsesByReportType(apiRequests, apiResponses, reportType);
     if (apiResponses.length > 0) {
       report.push('### API Responses');
       report.push('');
@@ -341,8 +349,9 @@ function generateBugReport(criteria) {
     }
 
     // Agenda Generation Trace (only for pre_meeting_agenda or all)
+    let agendaTraces = [];
     if (reportType === 'all' || reportType === 'pre_meeting_agenda') {
-      const agendaTraces = getDiagnosticLogEntries('Agenda_Generation_Trace', startTime, endTime, clientName);
+      agendaTraces = getDiagnosticLogEntries('Agenda_Generation_Trace', startTime, endTime, clientName);
       if (agendaTraces.length > 0) {
         report.push('### Agenda Generation Trace');
         report.push('');
@@ -359,6 +368,39 @@ function generateBugReport(criteria) {
           report.push('');
         });
       }
+    }
+
+    // Notes Append Trace (only for meeting_notes or all)
+    let notesAppendTraces = [];
+    if (reportType === 'all' || reportType === 'meeting_notes') {
+      notesAppendTraces = getDiagnosticLogEntries('Notes_Append_Trace', startTime, endTime, clientName);
+      if (notesAppendTraces.length > 0) {
+        report.push('### Notes Append Trace');
+        report.push('');
+        notesAppendTraces.forEach(log => {
+          report.push(`**${log.timestamp}** - Step ${log.step_number}: ${log.step_name} [${log.step_status}]`);
+          report.push('```');
+          report.push(`Client ID: ${log.client_id || 'N/A'}`);
+          report.push(`Message ID: ${log.message_id || 'N/A'}`);
+          report.push(`Doc ID: ${log.doc_id || 'N/A'}`);
+          report.push(`Details: ${truncateForReport(log.step_details, 300)}`);
+          report.push(`Content Length: ${log.content_length || 0}`);
+          report.push(`Duration: ${log.duration_ms || 0}ms`);
+          report.push('```');
+          report.push('');
+        });
+      }
+    }
+
+    // Timer summary (all diagnostic timers in range)
+    const timerEntries = buildTimerEntries(apiResponses, agendaTraces, notesAppendTraces);
+    if (timerEntries.length > 0) {
+      report.push('### Timers');
+      report.push('');
+      timerEntries.forEach(entry => {
+        report.push(`- ${entry.timestamp} | ${entry.source} | ${entry.label} | ${entry.durationMs}ms`);
+      });
+      report.push('');
     }
   } else {
     report.push('## 5. DIAGNOSTIC LOGS');
@@ -479,6 +521,17 @@ function generateBugReport(criteria) {
   report.push('```');
   report.push('');
 
+  // Section 8: Project Triggers
+  report.push('## 8. PROJECT TRIGGERS');
+  report.push('');
+  const triggerSummary = getProjectTriggerSummary();
+  if (triggerSummary.length > 0) {
+    triggerSummary.forEach(line => report.push(line));
+  } else {
+    report.push('No triggers found for this project.');
+  }
+  report.push('');
+
   report.push('---');
   report.push('');
   report.push('**END OF BUG REPORT**');
@@ -551,24 +604,10 @@ function generateIssuesSummary(startTime, endTime, clientName, reportType) {
 
   // Check for truncated API responses
   if (isDiagnosticModeEnabled()) {
+    let apiRequests = getDiagnosticLogEntries('API_Request_Log', startTime, endTime, normalizedClientName);
+    apiRequests = filterApiRequestsByReportType(apiRequests, reportType);
     let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, normalizedClientName);
-
-    // Filter by API name based on report type
-    const apiNameFilters = {
-      daily_briefing: ['Claude API', 'claude-daily-briefing'],
-      weekly_briefing: ['Claude API', 'claude-weekly-briefing'],
-      pre_meeting_agenda: ['Claude API', 'claude-agenda', 'Google Calendar API'],
-      fathom_drafts: ['Fathom API', 'Claude API', 'claude-summary'],
-      meeting_notes: ['Claude API', 'Todoist API', 'Google Docs API']
-    };
-
-    if (reportType !== 'all' && apiNameFilters[reportType]) {
-      apiResponses = apiResponses.filter(log =>
-        apiNameFilters[reportType].some(filter =>
-          log.api_name && log.api_name.includes(filter)
-        )
-      );
-    }
+    apiResponses = filterApiResponsesByReportType(apiRequests, apiResponses, reportType);
 
     const truncatedResponses = [];
     const errorResponses = [];
@@ -754,6 +793,7 @@ function getCalendarEventsForBugReport(startTime, endTime, clientName) {
       start: formatDateTime(event.getStartTime()),
       end: formatDateTime(event.getEndTime()),
       matchedClient: matchedClient,
+      agendaGenerated: isAgendaGenerated(event.getId()),
       organizer: event.getCreators ? event.getCreators().join(', ') : null,
       location: event.getLocation(),
       attendees: event.getGuestList().map(guest => guest.getEmail())
@@ -1128,6 +1168,47 @@ function getProcessingLogEntries(startTime, endTime, clientName) {
 }
 
 /**
+ * Gets agenda-related processing log entries without client filtering.
+ * @param {Date} startTime - Start time
+ * @param {Date} endTime - End time
+ * @returns {Array} Log entries
+ */
+function getAgendaProcessingLogs(startTime, endTime) {
+  let logs = getProcessingLogEntries(startTime, endTime, null);
+  const actionTypeFilters = ['AGENDA_GEN', 'AGENDA_GENERATED', 'AGENDA_ERROR', 'AGENDA_CONTEXT', 'AGENDA_DOC'];
+  logs = logs.filter(log => actionTypeFilters.includes(log.action_type));
+  return logs;
+}
+
+/**
+ * Builds agenda diagnostics lines for the bug report.
+ * @param {Array} calendarEvents - Calendar event summaries
+ * @returns {Array<string>} Formatted lines
+ */
+function buildAgendaDiagnostics(calendarEvents) {
+  const lines = [];
+  calendarEvents.forEach(event => {
+    lines.push(`**${event.title || '(No Title)'}**`);
+    lines.push('```');
+    lines.push(`Event ID: ${event.id || 'N/A'}`);
+    lines.push(`Start: ${event.start}`);
+    lines.push(`End: ${event.end}`);
+    lines.push(`Matched Client: ${event.matchedClient || 'N/A'}`);
+    lines.push(`Agenda Generated: ${event.agendaGenerated ? 'Yes' : 'No'}`);
+    if (!event.agendaGenerated) {
+      if (!event.matchedClient) {
+        lines.push('Likely Reason: No client match at scan time');
+      } else {
+        lines.push('Likely Reason: Not generated in scan window or skipped as already generated');
+      }
+    }
+    lines.push('```');
+    lines.push('');
+  });
+  return lines;
+}
+
+/**
  * Parses Processing_Log timestamps (Date objects or formatted strings).
  *
  * @param {Date|string} value - Timestamp value
@@ -1191,6 +1272,136 @@ function getDiagnosticLogEntries(sheetName, startTime, endTime, clientName) {
 }
 
 /**
+ * Gets API name filters used to scope diagnostics by report type.
+ * @returns {Object} Report type -> API name filters
+ */
+function getApiNameFilters() {
+  return {
+    daily_briefing: ['Claude API', 'claude-daily-briefing'],
+    weekly_briefing: ['Claude API', 'claude-weekly-briefing'],
+    pre_meeting_agenda: ['claude-agenda', 'Google Calendar API'],
+    fathom_drafts: ['Fathom API', 'Claude API', 'claude-summary'],
+    meeting_notes: ['Claude API', 'Todoist API', 'Google Docs API']
+  };
+}
+
+/**
+ * Gets diagnostic flow filters used to scope API requests by report type.
+ * @returns {Object} Report type -> array of flow filters
+ */
+function getApiFlowFilters() {
+  return {
+    daily_briefing: ['daily_briefing'],
+    weekly_briefing: ['weekly_briefing'],
+    pre_meeting_agenda: ['agenda generation']
+  };
+}
+
+/**
+ * Filters API request logs to match the report type context.
+ *
+ * @param {Array} apiRequests - API request logs
+ * @param {string} reportType - Report type
+ * @returns {Array} Filtered request logs
+ */
+function filterApiRequestsByReportType(apiRequests, reportType) {
+  if (reportType === 'all') return apiRequests;
+
+  const flowFilters = getApiFlowFilters();
+  if (flowFilters[reportType]) {
+    return apiRequests.filter(log => {
+      const context = String(log.context || '').toLowerCase();
+      return flowFilters[reportType].some(filter => context.includes(filter));
+    });
+  }
+
+  const apiNameFilters = getApiNameFilters();
+  if (apiNameFilters[reportType]) {
+    return apiRequests.filter(log => {
+      const apiName = String(log.api_name || '');
+      return apiNameFilters[reportType].some(filter => apiName.includes(filter));
+    });
+  }
+
+  return apiRequests;
+}
+
+/**
+ * Filters API response logs based on request context or API name.
+ *
+ * @param {Array} apiRequests - Filtered API request logs
+ * @param {Array} apiResponses - API response logs
+ * @param {string} reportType - Report type
+ * @returns {Array} Filtered API response logs
+ */
+function filterApiResponsesByReportType(apiRequests, apiResponses, reportType) {
+  if (reportType === 'all') return apiResponses;
+
+  const requestIds = new Set(
+    apiRequests.map(log => log.request_id).filter(Boolean)
+  );
+
+  if (requestIds.size > 0) {
+    return apiResponses.filter(log => requestIds.has(log.request_id));
+  }
+
+  const apiNameFilters = getApiNameFilters();
+  if (apiNameFilters[reportType]) {
+    return apiResponses.filter(log => {
+      const apiName = String(log.api_name || '');
+      return apiNameFilters[reportType].some(filter => apiName.includes(filter));
+    });
+  }
+
+  return apiResponses;
+}
+
+/**
+ * Builds a combined list of timer entries from diagnostic logs.
+ *
+ * @param {Array} apiResponses - API response logs
+ * @param {Array} agendaTraces - Agenda generation trace logs
+ * @param {Array} notesAppendTraces - Notes append trace logs
+ * @returns {Array<{timestamp: string, source: string, label: string, durationMs: number}>}
+ */
+function buildTimerEntries(apiResponses, agendaTraces, notesAppendTraces) {
+  const timers = [];
+
+  apiResponses.forEach(log => {
+    timers.push({
+      timestamp: log.timestamp,
+      source: 'API Response',
+      label: `${log.api_name || 'Unknown API'} ${log.status_code || ''}`.trim(),
+      durationMs: Number(log.duration_ms || 0)
+    });
+  });
+
+  agendaTraces.forEach(log => {
+    timers.push({
+      timestamp: log.timestamp,
+      source: 'Agenda Trace',
+      label: `Step ${log.step_number}: ${log.step_name}`,
+      durationMs: Number(log.duration_ms || 0)
+    });
+  });
+
+  notesAppendTraces.forEach(log => {
+    timers.push({
+      timestamp: log.timestamp,
+      source: 'Notes Append Trace',
+      label: `Step ${log.step_number}: ${log.step_name}`,
+      durationMs: Number(log.duration_ms || 0)
+    });
+  });
+
+  return timers.sort((a, b) => {
+    const timeA = Date.parse(a.timestamp || '') || 0;
+    const timeB = Date.parse(b.timestamp || '') || 0;
+    return timeA - timeB;
+  });
+}
+
+/**
  * Gets recent emails from a label in time range.
  * @param {string} labelName - Gmail label name
  * @param {Date} startTime - Start time
@@ -1229,6 +1440,30 @@ function getRecentEmailsFromLabel(labelName, startTime, endTime) {
   } catch (e) {
     Logger.log(`Error fetching emails: ${e.message}`);
     return [];
+  }
+}
+
+/**
+ * Builds a summary of project triggers for diagnostics.
+ * @returns {Array<string>} Lines describing triggers
+ */
+function getProjectTriggerSummary() {
+  try {
+    const triggers = ScriptApp.getProjectTriggers();
+    if (!triggers || triggers.length === 0) return [];
+
+    const lines = [];
+    lines.push('```');
+    triggers.forEach(trigger => {
+      const handler = trigger.getHandlerFunction();
+      const source = trigger.getEventType ? trigger.getEventType() : 'UNKNOWN';
+      const type = trigger.getTriggerSource ? trigger.getTriggerSource() : 'UNKNOWN';
+      lines.push(`${handler} | source=${type} | event=${source}`);
+    });
+    lines.push('```');
+    return lines;
+  } catch (e) {
+    return [`Error fetching triggers: ${e.message}`];
   }
 }
 

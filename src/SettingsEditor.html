@@ -192,6 +192,11 @@
       background: #fce8e6;
       color: #c5221f;
     }
+    .status-message.warning {
+      display: block;
+      background: #fef7e0;
+      color: #b06000;
+    }
     .loading-progress {
       width: 240px;
       height: 6px;
@@ -796,7 +801,7 @@ Thanks,
 
         setTimeout(function() {
           if (document.getElementById('content').style.display === 'none') {
-            updateLoadingStatus('Still loading... check authorization prompts. Any failures will show details below.');
+            updateLoadingStatus('Still loading... if anything fails, details will appear below.');
           }
         }, 10000);
 
@@ -938,6 +943,11 @@ Thanks,
               document.getElementById('loading').style.display = 'none';
               document.getElementById('content').style.display = 'block';
               advanceLoading();
+              if (result && Array.isArray(result.warnings) && result.warnings.length > 0) {
+                const msgEl = document.getElementById('statusMessage');
+                msgEl.textContent = `Settings loaded, but optional helpers are missing: ${result.warnings.join(', ')}. Defaults will be used where available.`;
+                msgEl.className = 'status-message warning';
+              }
             } catch (applyError) {
               reportLoadingFailure('Settings apply', applyError, { title: 'Error applying settings' });
             }

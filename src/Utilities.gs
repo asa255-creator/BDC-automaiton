@@ -2288,8 +2288,12 @@ function getSettingsForEditor() {
     AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0',
     DAILY_BRIEFING_LABEL: props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily',
     WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly',
-    DAILY_OUTLOOK_DAY: getDailyOutlookSchedule(),
-    DAILY_OUTLOOK_TIME: getDailyOutlookTime(),
+    DAILY_OUTLOOK_DAY: typeof getDailyOutlookSchedule === 'function'
+      ? getDailyOutlookSchedule()
+      : (props.getProperty('DAILY_OUTLOOK_DAY') || 'day_of'),
+    DAILY_OUTLOOK_TIME: typeof getDailyOutlookTime === 'function'
+      ? getDailyOutlookTime()
+      : (props.getProperty('DAILY_OUTLOOK_TIME') || '07:00'),
     USER_LOCATION: props.getProperty('USER_LOCATION') || props.getProperty('DAILY_OUTLOOK_LOCATION') || '',
     USER_TIMEZONE: props.getProperty('USER_TIMEZONE') || Session.getScriptTimeZone(),
     WEATHER_API_KEY: props.getProperty('WEATHER_API_KEY') || '',
@@ -2317,10 +2321,20 @@ function getSettingsForEditor() {
  * @returns {Object} Result with settings or error info
  */
 function getSettingsForEditorWithDiagnostics() {
+  const missing = [];
+  if (typeof getDailyOutlookSchedule !== 'function') missing.push('getDailyOutlookSchedule');
+  if (typeof getDailyOutlookTime !== 'function') missing.push('getDailyOutlookTime');
+  const warningDetails = missing.map(name => {
+    if (name === 'getDailyOutlookSchedule' || name === 'getDailyOutlookTime') {
+      return `${name} (expected in DailyOutlookScheduleService.gs)`;
+    }
+    return name;
+  });
   try {
     return {
       settings: getSettingsForEditor(),
-      error: null
+      error: null,
+      warnings: warningDetails
     };
   } catch (error) {
     return {
