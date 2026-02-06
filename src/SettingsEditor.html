@@ -616,11 +616,20 @@ Thanks,
 
         <div class="setting-group">
           <div class="setting-label">Daily Outlook Delivery Time</div>
-          <div class="setting-description">Send the daily outlook on the day of, or at 8 PM the night before</div>
-          <select id="daily_outlook_schedule" style="width: 100%;">
-            <option value="day_of">Day of (morning)</option>
-            <option value="night_before">Night before (8 PM)</option>
-          </select>
+          <div class="setting-description">Choose whether to send the daily outlook the day before or the day of, and select the time.</div>
+          <div class="input-row">
+            <div class="input-col">
+              <div class="setting-description">Day</div>
+              <select id="daily_outlook_day" style="width: 100%;">
+                <option value="day_of">Day of</option>
+                <option value="day_before">Day before</option>
+              </select>
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Time</div>
+              <input type="time" id="daily_outlook_time" step="900">
+            </div>
+          </div>
         </div>
 
         
@@ -908,7 +917,8 @@ Thanks,
               // Schedule tab
               document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
               document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
-              document.getElementById('daily_outlook_schedule').value = settings.DAILY_OUTLOOK_SCHEDULE || 'day_of';
+              document.getElementById('daily_outlook_day').value = settings.DAILY_OUTLOOK_DAY || 'day_of';
+              document.getElementById('daily_outlook_time').value = settings.DAILY_OUTLOOK_TIME || '07:00';
 
               // Set label dropdowns after they're populated
               setTimeout(function() {
@@ -1179,7 +1189,8 @@ Thanks,
         BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
         DAILY_BRIEFING_LABEL: document.getElementById('daily_label').value.trim(),
         WEEKLY_BRIEFING_LABEL: document.getElementById('weekly_label').value.trim(),
-        DAILY_OUTLOOK_SCHEDULE: document.getElementById('daily_outlook_schedule').value
+        DAILY_OUTLOOK_DAY: document.getElementById('daily_outlook_day').value,
+        DAILY_OUTLOOK_TIME: document.getElementById('daily_outlook_time').value || '07:00'
       };
 
       google.script.run
