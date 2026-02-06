@@ -2355,6 +2355,34 @@ function getAllGmailLabelsForSettings() {
 }
 
 /**
+ * Checks for required Settings Editor functions and returns diagnostics.
+ *
+ * @returns {Object} Diagnostics with missing functions and status message
+ */
+function getSettingsEditorDiagnostics() {
+  const requiredFunctions = [
+    'getWeatherLocationOptions',
+    'getAllGmailLabelsForSettings',
+    'getSettingsForEditorWithDiagnostics'
+  ];
+  const missingFunctions = [];
+
+  requiredFunctions.forEach(function(functionName) {
+    if (typeof globalThis[functionName] !== 'function') {
+      missingFunctions.push(functionName);
+    }
+  });
+
+  return {
+    ok: missingFunctions.length === 0,
+    missingFunctions: missingFunctions,
+    message: missingFunctions.length
+      ? `Missing Apps Script functions: ${missingFunctions.join(', ')}`
+      : 'All required settings editor functions are available.'
+  };
+}
+
+/**
  * Saves settings from the editor.
  * Only updates non-empty values.
  *
