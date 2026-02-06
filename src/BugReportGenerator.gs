@@ -756,7 +756,7 @@ function runAgendaTestForEventId(eventId) {
     throw new Error('Event ID is required.');
   }
 
-  const event = CalendarApp.getEventById(eventId);
+  const event = getEventByAnyId(eventId);
   if (!event) {
     throw new Error(`No calendar event found for ID: ${eventId}`);
   }
@@ -768,6 +768,86 @@ function runAgendaTestForEventId(eventId) {
 
   generateAgendaForEvent(event, client);
   return `Agenda generation triggered for: ${event.getTitle()}`;
+}
+
+/**
+ * Attempts to resolve a calendar event from common ID formats.
+ *
+ * @param {string} rawEventId - Event ID input (may be URL eid)
+ * @returns {CalendarEvent|null} Calendar event or null if not found
+ */
+function getEventByAnyId(rawEventId) {
+  const candidates = buildEventIdCandidates(rawEventId);
+  for (const candidate of candidates) {
+    try {
+      const event = CalendarApp.getEventById(candidate);
+      if (event) {
+        return event;
+      }
+    } catch (error) {
+      // Ignore and try next candidate
+    }
+  }
+  return null;
+}
+
+/**
+ * Builds possible Calendar event IDs from raw input or eid URL param.
+ *
+ * @param {string} rawEventId - Raw input string
+ * @returns {string[]} Candidate event IDs
+ */
+function buildEventIdCandidates(rawEventId) {
+  const candidates = [];
+  if (!rawEventId || typeof rawEventId !== 'string') {
+    return candidates;
+  }
+
+  const normalized = rawEventId.trim();
+  if (!normalized) {
+    return candidates;
+  }
+
+  candidates.push(normalized);
+  if (!normalized.includes('@')) {
+    candidates.push(`${normalized}@google.com`);
+  }
+
+  const decoded = decodeCalendarEventId(normalized);
+  if (decoded) {
+    candidates.push(decoded);
+    if (!decoded.includes('@')) {
+      candidates.push(`${decoded}@google.com`);
+    }
+  }
+
+  return [...new Set(candidates)];
+}
+
+/**
+ * Decodes base64/websafe calendar event IDs (eid parameter).
+ *
+ * @param {string} rawEventId - Raw input string
+ * @returns {string|null} Decoded event ID or null
+ */
+function decodeCalendarEventId(rawEventId) {
+  try {
+    const decodedBytes = Utilities.base64DecodeWebSafe(rawEventId);
+    const decoded = Utilities.newBlob(decodedBytes).getDataAsString();
+    if (!decoded) {
+      return null;
+    }
+
+    const trimmed = decoded.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const firstToken = trimmed.split(/\s+/)[0];
+    return firstToken || null;
+  } catch (error) {
+    return null;
+  }
 }
 
 /**
