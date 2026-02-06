@@ -30,8 +30,8 @@ function getRecentProcessingLogForBugReport() {
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
 
-  // Get last 50 entries
-  const recent = data.slice(-50).reverse();
+  // Get most recent entries (newest first, starting from row 2)
+  const recent = data.slice(1, 51);
 
   return recent.map(row => {
     const entry = {};

@@ -1190,7 +1190,7 @@ function recordGeneratedAgenda(event, client) {
     return;
   }
 
-  sheet.appendRow([
+  insertLogRow(sheet, CONFIG.SHEETS.GENERATED_AGENDAS, [
     event.getId(),
     event.getTitle(),
     client.client_name,

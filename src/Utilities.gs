@@ -181,6 +181,108 @@ function getHumanReadableTimestamp() {
 }
 
 /**
+ * Returns log retention configuration by sheet name.
+ *
+ * @returns {Object<string, {propertyKey: string, defaultMax: number}>} Config map
+ */
+function getLogRetentionConfig() {
+  return {
+    [CONFIG.SHEETS.PROCESSING_LOG]: { propertyKey: 'LOG_MAX_PROCESSING', defaultMax: 1000 },
+    [CONFIG.SHEETS.UNMATCHED]: { propertyKey: 'LOG_MAX_UNMATCHED', defaultMax: 1000 },
+    [CONFIG.SHEETS.PROCESSED_FATHOM]: { propertyKey: 'LOG_MAX_PROCESSED_FATHOM', defaultMax: 1000 },
+    [CONFIG.SHEETS.GENERATED_AGENDAS]: { propertyKey: 'LOG_MAX_GENERATED_AGENDAS', defaultMax: 1000 },
+    [CONFIG.SHEETS.API_REQUEST_LOG]: { propertyKey: 'LOG_MAX_API_REQUEST', defaultMax: 1000 },
+    [CONFIG.SHEETS.API_RESPONSE_LOG]: { propertyKey: 'LOG_MAX_API_RESPONSE', defaultMax: 1000 },
+    [CONFIG.SHEETS.DATA_COLLECTION_LOG]: { propertyKey: 'LOG_MAX_DATA_COLLECTION', defaultMax: 1000 },
+    [CONFIG.SHEETS.AGENDA_GENERATION_TRACE]: { propertyKey: 'LOG_MAX_AGENDA_TRACE', defaultMax: 1000 },
+    [CONFIG.SHEETS.NOTES_APPEND_TRACE]: { propertyKey: 'LOG_MAX_NOTES_TRACE', defaultMax: 1000 },
+    [CONFIG.SHEETS.DOC_APPEND_LOG]: { propertyKey: 'LOG_MAX_DOC_APPEND', defaultMax: 1000 }
+  };
+}
+
+/**
+ * Gets the max number of data rows to retain for a log sheet.
+ * Returns null when no limit should be enforced.
+ *
+ * @param {string} sheetName - Name of the sheet
+ * @returns {number|null} Max rows to retain (excluding header) or null for no limit
+ */
+function getLogMaxRows(sheetName) {
+  const config = getLogRetentionConfig()[sheetName];
+  if (!config) {
+    return null;
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const rawValue = props.getProperty(config.propertyKey);
+  const parsed = parseInt(rawValue, 10);
+
+  if (!isNaN(parsed) && parsed >= 0) {
+    return parsed === 0 ? null : parsed;
+  }
+
+  return config.defaultMax;
+}
+
+/**
+ * Inserts a log row after the header and trims excess rows.
+ *
+ * @param {Sheet} sheet - Sheet to write to
+ * @param {string} sheetName - Name of the sheet for retention lookup
+ * @param {Array} rowValues - Row values to insert
+ */
+function insertLogRow(sheet, sheetName, rowValues) {
+  sheet.insertRowAfter(1);
+  sheet.getRange(2, 1, 1, rowValues.length).setValues([rowValues]);
+  trimLogSheet(sheet, sheetName);
+}
+
+/**
+ * Trims a log sheet to its max row limit.
+ *
+ * @param {Sheet} sheet - Sheet to trim
+ * @param {string} sheetName - Name of the sheet for retention lookup
+ * @returns {number} Number of rows removed
+ */
+function trimLogSheet(sheet, sheetName) {
+  const maxRows = getLogMaxRows(sheetName);
+  if (!maxRows || maxRows <= 0) {
+    return 0;
+  }
+
+  const dataRows = sheet.getLastRow() - 1;
+  if (dataRows <= maxRows) {
+    return 0;
+  }
+
+  const extraRows = dataRows - maxRows;
+  const deleteStart = maxRows + 2;
+  sheet.deleteRows(deleteStart, extraRows);
+  return extraRows;
+}
+
+/**
+ * Trims all log sheets based on configured max rows.
+ *
+ * @returns {number} Total number of rows removed across log sheets
+ */
+function trimAllLogSheets() {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const config = getLogRetentionConfig();
+  let totalDeleted = 0;
+
+  Object.keys(config).forEach(sheetName => {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      return;
+    }
+    totalDeleted += trimLogSheet(sheet, sheetName);
+  });
+
+  return totalDeleted;
+}
+
+/**
  * Logs a processing action to the Processing_Log sheet.
  *
  * @param {string} actionType - Type of action (e.g., 'WEBHOOK_PROCESS', 'AGENDA_GEN')
@@ -198,7 +300,7 @@ function logProcessing(actionType, clientId, details, status) {
       return;
     }
 
-    sheet.appendRow([
+    insertLogRow(sheet, CONFIG.SHEETS.PROCESSING_LOG, [
       getHumanReadableTimestamp(),
       actionType,
       clientId || '',
@@ -230,7 +332,7 @@ function getRecentLogs(limit = 50, actionType = null) {
   const headers = data[0];
   const logs = [];
 
-  for (let i = data.length - 1; i >= 1 && logs.length < limit; i--) {
+  for (let i = 1; i < data.length && logs.length < limit; i++) {
     const row = data[i];
     const log = {};
 
@@ -244,76 +346,6 @@ function getRecentLogs(limit = 50, actionType = null) {
   }
 
   return logs;
-}
-
-/**
- * Clears old processing logs (older than specified days).
- * Handles both ISO format (2026-01-20T21:29:45.003Z) and human-readable format (Jan 20, 2026 4:29 PM EST).
- *
- * @param {number} daysToKeep - Number of days of logs to retain
- * @returns {number} Number of rows deleted
- */
-function clearOldLogs(daysToKeep = 30) {
-  try {
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(CONFIG.SHEETS.PROCESSING_LOG);
-
-    if (!sheet) {
-      Logger.log('Processing_Log sheet not found');
-      return 0;
-    }
-
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) {
-      // Only header row or empty
-      return 0;
-    }
-
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-    const rowsToDelete = [];
-
-    for (let i = 1; i < data.length; i++) {
-      try {
-        // Parse timestamp - works with both ISO and human-readable formats
-        const timestamp = new Date(data[i][0]);
-
-        // Check if valid date and older than cutoff
-        if (!isNaN(timestamp.getTime()) && timestamp < cutoffDate) {
-          rowsToDelete.push(i + 1); // 1-based row index
-        }
-      } catch (e) {
-        Logger.log(`Could not parse timestamp: ${data[i][0]}`);
-      }
-    }
-
-    // Delete rows from bottom to top to preserve indices
-    rowsToDelete.reverse().forEach(rowIndex => {
-      sheet.deleteRow(rowIndex);
-    });
-
-    if (rowsToDelete.length > 0) {
-      logProcessing('LOG_CLEANUP', null, `Deleted ${rowsToDelete.length} log entries older than ${daysToKeep} days`, 'info');
-    }
-
-    Logger.log(`Cleared ${rowsToDelete.length} old log entries`);
-    return rowsToDelete.length;
-
-  } catch (error) {
-    Logger.log(`Error clearing old logs: ${error.message}`);
-    return 0;
-  }
-}
-
-/**
- * Daily cleanup job - deletes Processing_Log entries older than 3 days.
- * Called by daily trigger.
- */
-function dailyLogCleanup() {
-  Logger.log('Running daily log cleanup...');
-  const deleted = clearOldLogs(3);
-  Logger.log(`Daily cleanup complete: ${deleted} entries removed`);
 }
 
 // ============================================================================
@@ -2234,8 +2266,7 @@ function showSettingsEditor() {
  */
 function getSettingsForEditor() {
   const props = PropertiesService.getScriptProperties();
-
-  return {
+  const settings = {
     FATHOM_API_KEY: props.getProperty('FATHOM_API_KEY') || '',
     FATHOM_WEBHOOK_SECRET: props.getProperty('FATHOM_WEBHOOK_SECRET') || '',
     FATHOM_KEEP_LINKS: props.getProperty('FATHOM_KEEP_LINKS') || 'false',
@@ -2269,6 +2300,34 @@ function getSettingsForEditor() {
     TRAVEL_WEATHER_ENABLED: props.getProperty('TRAVEL_WEATHER_ENABLED') || 'false',
     DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false'
   };
+
+  const logConfig = getLogRetentionConfig();
+  Object.keys(logConfig).forEach(sheetName => {
+    const config = logConfig[sheetName];
+    settings[config.propertyKey] = props.getProperty(config.propertyKey) || String(config.defaultMax);
+  });
+
+  return settings;
+}
+
+/**
+ * Gets current settings with error details instead of throwing.
+ *
+ * @returns {Object} Result with settings or error info
+ */
+function getSettingsForEditorWithDiagnostics() {
+  try {
+    return {
+      settings: getSettingsForEditor(),
+      error: null
+    };
+  } catch (error) {
+    return {
+      settings: null,
+      error: error.message || 'Unknown error',
+      stack: error.stack || ''
+    };
+  }
 }
 
 /**
@@ -2293,6 +2352,34 @@ function getAllGmailLabelsForSettings() {
     Logger.log(`Error getting labels for settings: ${error.message}`);
     return [];
   }
+}
+
+/**
+ * Checks for required Settings Editor functions and returns diagnostics.
+ *
+ * @returns {Object} Diagnostics with missing functions and status message
+ */
+function getSettingsEditorDiagnostics() {
+  const requiredFunctions = [
+    'getWeatherLocationOptions',
+    'getAllGmailLabelsForSettings',
+    'getSettingsForEditorWithDiagnostics'
+  ];
+  const missingFunctions = [];
+
+  requiredFunctions.forEach(function(functionName) {
+    if (typeof globalThis[functionName] !== 'function') {
+      missingFunctions.push(functionName);
+    }
+  });
+
+  return {
+    ok: missingFunctions.length === 0,
+    missingFunctions: missingFunctions,
+    message: missingFunctions.length
+      ? `Missing Apps Script functions: ${missingFunctions.join(', ')}`
+      : 'All required settings editor functions are available.'
+  };
 }
 
 /**
@@ -2450,6 +2537,15 @@ function saveSettingsFromEditor(settings) {
   if (settings.DIAGNOSTIC_MODE !== undefined) {
     props.setProperty('DIAGNOSTIC_MODE', settings.DIAGNOSTIC_MODE);
   }
+
+  const logConfig = getLogRetentionConfig();
+  Object.keys(logConfig).forEach(sheetName => {
+    const config = logConfig[sheetName];
+    const value = settings[config.propertyKey];
+    if (value !== undefined && value !== '') {
+      props.setProperty(config.propertyKey, value.toString());
+    }
+  });
 
   logProcessing('SETTINGS', null, 'Settings updated via editor', 'info');
 

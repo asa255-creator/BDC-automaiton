@@ -610,7 +610,7 @@ function recordFathomMeetingProcessed(meetingId, meetingTitle, meetingDate, clie
     sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
   }
 
-  sheet.appendRow([
+  insertLogRow(sheet, CONFIG.SHEETS.PROCESSED_FATHOM, [
     normalizeFathomMeetingId(meetingId),
     meetingTitle,
     meetingDate,

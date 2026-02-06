@@ -192,6 +192,25 @@
       background: #fce8e6;
       color: #c5221f;
     }
+    .loading-progress {
+      width: 240px;
+      height: 6px;
+      background: #e8eaed;
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 12px auto 0;
+    }
+    .loading-progress-bar {
+      width: 0%;
+      height: 100%;
+      background: #1a73e8;
+      transition: width 0.3s ease;
+    }
+    .loading-detail {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #5f6368;
+    }
     .section-title {
       font-size: 13px;
       font-weight: 500;
@@ -207,7 +226,13 @@
   </style>
 </head>
 <body>
-  <div id="loading" class="loading">Loading settings...</div>
+  <div id="loading" class="loading">
+    <div id="loadingTitle">Loading settings...</div>
+    <div class="loading-progress">
+      <div id="loadingProgress" class="loading-progress-bar"></div>
+    </div>
+    <div id="loadingDetail" class="loading-detail">Starting up…</div>
+  </div>
 
   <div id="content" style="display: none;">
     <div id="statusMessage" class="status-message"></div>
@@ -293,6 +318,63 @@
           </label>
           <div class="placeholder-hint" style="margin-top: 8px;">
             ⚠️ Diagnostic sheets will be created automatically when first used. They are hidden by default. Disable when not actively debugging to reduce overhead.
+          </div>
+        </div>
+
+        <div class="section-title">Log Retention</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Log Row Limits</div>
+          <div class="setting-description">New log entries are inserted at the top (row 2). Set max rows to keep per log sheet (0 = unlimited).</div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">Processing Log</div>
+              <input type="number" id="log_max_processing" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Unmatched Log</div>
+              <input type="number" id="log_max_unmatched" min="0" placeholder="1000">
+            </div>
+          </div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">Processed Fathom Meetings</div>
+              <input type="number" id="log_max_processed_fathom" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Generated Agendas</div>
+              <input type="number" id="log_max_generated_agendas" min="0" placeholder="1000">
+            </div>
+          </div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">API Request Log</div>
+              <input type="number" id="log_max_api_request" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">API Response Log</div>
+              <input type="number" id="log_max_api_response" min="0" placeholder="1000">
+            </div>
+          </div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">Data Collection Log</div>
+              <input type="number" id="log_max_data_collection" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Agenda Generation Trace</div>
+              <input type="number" id="log_max_agenda_trace" min="0" placeholder="1000">
+            </div>
+          </div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">Notes Append Trace</div>
+              <input type="number" id="log_max_notes_trace" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Doc Append Log</div>
+              <input type="number" id="log_max_doc_append" min="0" placeholder="1000">
+            </div>
           </div>
         </div>
 
@@ -626,103 +708,254 @@ Thanks,
     };
 
     function loadSettings() {
+      const loadingTitle = document.getElementById('loadingTitle');
+      const loadingDetail = document.getElementById('loadingDetail');
+      const loadingProgress = document.getElementById('loadingProgress');
+      let completedSteps = 0;
+      const totalSteps = 3;
+
+      function updateLoadingStatus(message) {
+        if (loadingDetail) {
+          loadingDetail.textContent = message;
+        }
+      }
+
+      function formatErrorDetails(prefix, error) {
+        if (!error) {
+          return prefix;
+        }
+        const message = error.message || error.toString();
+        return `${prefix} ${message}`;
+      }
+
+      function reportLoadingFailure(step, error, options) {
+        const settings = options || {};
+        const title = settings.title || 'Loading warning';
+        if (loadingTitle) {
+          loadingTitle.textContent = title;
+        }
+        updateLoadingStatus(formatErrorDetails(`${step} failed:`, error));
+        if (loadingDetail) {
+          const stack = error && error.stack ? error.stack : 'No stack trace available.';
+          const raw = error ? JSON.stringify(error, Object.getOwnPropertyNames(error)) : 'No error object returned.';
+          loadingDetail.textContent = `${loadingDetail.textContent}\n${stack}\n${raw}`;
+        }
+      }
+
+      function advanceLoading() {
+        completedSteps += 1;
+        if (loadingProgress) {
+          const percent = Math.min(100, Math.round((completedSteps / totalSteps) * 100));
+          loadingProgress.style.width = `${percent}%`;
+        }
+      }
+
+      function startLoadingSteps() {
+        if (loadingTitle) {
+          loadingTitle.textContent = 'Loading settings...';
+        }
+        updateLoadingStatus('Fetching weather locations...');
+        let weatherTimedOut = false;
+        let weatherErrorDetail = '';
+        const weatherTimeoutId = setTimeout(function() {
+          if (!weatherLocationsLoaded) {
+            weatherTimedOut = true;
+            if (loadingDetail) {
+              const detail = weatherErrorDetail ? ` Weather error: ${weatherErrorDetail}` : ' No error details returned.';
+              loadingDetail.textContent = `Weather loading is still running after 30 seconds.${detail} You can skip weather loading to continue.`;
+            }
+            const loadingEl = document.getElementById('loading');
+            if (loadingEl && !document.getElementById('skipWeatherBtn')) {
+              const skipBtn = document.createElement('button');
+              skipBtn.id = 'skipWeatherBtn';
+              skipBtn.className = 'btn btn-secondary';
+              skipBtn.style.marginTop = '12px';
+              skipBtn.textContent = 'Skip Weather Loading';
+              skipBtn.onclick = function() {
+                weatherLocationsLoaded = true;
+                weatherLocationOptions = [];
+                populateWeatherStateDropdown();
+                applyWeatherLocationSettings();
+                advanceLoading();
+                updateLoadingStatus('Weather skipped. Continuing to labels...');
+                skipBtn.remove();
+              };
+              loadingEl.appendChild(skipBtn);
+            }
+          }
+        }, 30000);
+
+        setTimeout(function() {
+          if (document.getElementById('content').style.display === 'none') {
+            updateLoadingStatus('Still loading... check authorization prompts. Any failures will show details below.');
+          }
+        }, 10000);
+
+        google.script.run
+          .withSuccessHandler(function(options) {
+            weatherLocationOptions = options || [];
+            populateWeatherStateDropdown();
+            weatherLocationsLoaded = true;
+            applyWeatherLocationSettings();
+            if (!weatherTimedOut) {
+              clearTimeout(weatherTimeoutId);
+              advanceLoading();
+              updateLoadingStatus('Loading Gmail labels...');
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('Failed to load weather location options:', error);
+            weatherErrorDetail = error && error.message ? error.message : String(error);
+            weatherLocationOptions = [];
+            populateWeatherStateDropdown();
+            weatherLocationsLoaded = true;
+            applyWeatherLocationSettings();
+            if (!weatherTimedOut) {
+              clearTimeout(weatherTimeoutId);
+              advanceLoading();
+              reportLoadingFailure('Weather load', error, { title: 'Weather load issue' });
+            }
+          })
+          .getWeatherLocationOptions();
+
+        initializeWeatherLocationHandlers();
+
+        // Load labels first
+        google.script.run
+          .withSuccessHandler(function(labels) {
+            allLabels = labels || [];
+            populateLabelDropdowns();
+            advanceLoading();
+            updateLoadingStatus('Fetching settings...');
+          })
+          .withFailureHandler(function(error) {
+            console.error('Failed to load labels:', error);
+            allLabels = [];
+            populateLabelDropdowns();
+            advanceLoading();
+            reportLoadingFailure('Label load', error, { title: 'Label load issue' });
+          })
+          .getAllGmailLabelsForSettings();
+
+        // Load settings
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (!result || result.error) {
+              const errorPayload = {
+                message: result && result.error ? result.error : 'Unknown error. Details should appear below.',
+                stack: result && result.stack ? result.stack : ''
+              };
+              reportLoadingFailure('Settings load', errorPayload, { title: 'Error loading settings' });
+              return;
+            }
+
+            const settings = result.settings || {};
+            updateLoadingStatus('Applying settings...');
+            try {
+              function setValueIfPresent(id, value) {
+                const el = document.getElementById(id);
+                if (el) {
+                  el.value = value;
+                }
+              }
+
+              // General tab
+              document.getElementById('user_name').value = settings.USER_NAME || '';
+              document.getElementById('user_location').value = settings.USER_LOCATION || '';
+              document.getElementById('user_timezone').value = settings.USER_TIMEZONE || '';
+              document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
+              document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
+              document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
+              document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
+              setValueIfPresent('log_max_processing', settings.LOG_MAX_PROCESSING || '1000');
+              setValueIfPresent('log_max_unmatched', settings.LOG_MAX_UNMATCHED || '1000');
+              setValueIfPresent('log_max_processed_fathom', settings.LOG_MAX_PROCESSED_FATHOM || '1000');
+              setValueIfPresent('log_max_generated_agendas', settings.LOG_MAX_GENERATED_AGENDAS || '1000');
+              setValueIfPresent('log_max_api_request', settings.LOG_MAX_API_REQUEST || '1000');
+              setValueIfPresent('log_max_api_response', settings.LOG_MAX_API_RESPONSE || '1000');
+              setValueIfPresent('log_max_data_collection', settings.LOG_MAX_DATA_COLLECTION || '1000');
+              setValueIfPresent('log_max_agenda_trace', settings.LOG_MAX_AGENDA_TRACE || '1000');
+              setValueIfPresent('log_max_notes_trace', settings.LOG_MAX_NOTES_TRACE || '1000');
+              setValueIfPresent('log_max_doc_append', settings.LOG_MAX_DOC_APPEND || '1000');
+
+              // Email Templates tab
+              document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+              document.getElementById('meeting_signature').value = settings.MEETING_SIGNATURE || 'Did I miss anything?\n\nThanks,\n{user_name}';
+              document.getElementById('agenda_subject_template').value = settings.AGENDA_SUBJECT_TEMPLATE || 'Agenda: {client_name} - {meeting_title} ({date})';
+
+              // Integrations tab
+              document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
+              document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
+              document.getElementById('fathom_keep_links').checked = settings.FATHOM_KEEP_LINKS === 'true';
+              document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
+              document.getElementById('weather_api_key').value = settings.WEATHER_API_KEY || '';
+              document.getElementById('nws_enabled').checked = settings.NWS_WEATHER_ENABLED === 'true';
+              document.getElementById('travel_weather_enabled').checked = settings.TRAVEL_WEATHER_ENABLED === 'true';
+              weatherLocationSettings = {
+                state: settings.NWS_WEATHER_STATE || '',
+                city: settings.NWS_WEATHER_CITY || '',
+                latitude: settings.NWS_WEATHER_LAT || '',
+                longitude: settings.NWS_WEATHER_LON || ''
+              };
+              applyWeatherLocationSettings();
+              document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
+              document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
+              document.getElementById('claude_agenda_max_tokens').value = settings.CLAUDE_AGENDA_MAX_TOKENS || '4000';
+              document.getElementById('claude_daily_brief_max_tokens').value = settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS || '4000';
+              document.getElementById('claude_weekly_brief_max_tokens').value = settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS || '8000';
+              document.getElementById('claude_summary_max_tokens').value = settings.CLAUDE_SUMMARY_MAX_TOKENS || '2000';
+
+              // Schedule tab
+              document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
+              document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
+              document.getElementById('daily_outlook_schedule').value = settings.DAILY_OUTLOOK_SCHEDULE || 'day_of';
+
+              // Set label dropdowns after they're populated
+              setTimeout(function() {
+                setLabelDropdown('daily_label', settings.DAILY_BRIEFING_LABEL || 'Brief: Daily');
+                setLabelDropdown('weekly_label', settings.WEEKLY_BRIEFING_LABEL || 'Brief: Weekly');
+              }, 500);
+
+              // Update status badges
+              updateBadge('fathomStatus', settings.FATHOM_API_KEY);
+              updateBadge('fathomWebhookStatus', settings.FATHOM_WEBHOOK_SECRET);
+              updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
+              updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
+              updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
+              updateBadge('nwsStatus', settings.NWS_WEATHER_ENABLED === 'true');
+
+              // Show content
+              document.getElementById('loading').style.display = 'none';
+              document.getElementById('content').style.display = 'block';
+              advanceLoading();
+            } catch (applyError) {
+              reportLoadingFailure('Settings apply', applyError, { title: 'Error applying settings' });
+            }
+          })
+          .withFailureHandler(function(error) {
+            reportLoadingFailure('Settings load', error, { title: 'Error loading settings' });
+          })
+          .getSettingsForEditorWithDiagnostics();
+      }
+
+      if (loadingTitle) {
+        loadingTitle.textContent = 'Checking settings editor...';
+      }
+      updateLoadingStatus('Running diagnostics...');
       google.script.run
-        .withSuccessHandler(function(options) {
-          weatherLocationOptions = options || [];
-          populateWeatherStateDropdown();
-          weatherLocationsLoaded = true;
-          applyWeatherLocationSettings();
+        .withSuccessHandler(function(result) {
+          if (result && !result.ok) {
+            reportLoadingFailure('Settings editor diagnostics', { message: result.message }, {
+              title: 'Missing Apps Script functions'
+            });
+            return;
+          }
+          startLoadingSteps();
         })
         .withFailureHandler(function(error) {
-          console.error('Failed to load weather location options:', error);
-          weatherLocationOptions = [];
-          populateWeatherStateDropdown();
-          weatherLocationsLoaded = true;
-          applyWeatherLocationSettings();
+          reportLoadingFailure('Settings editor diagnostics', error, { title: 'Diagnostics failed' });
         })
-        .getWeatherLocationOptions();
-
-      initializeWeatherLocationHandlers();
-
-      // Load labels first
-      google.script.run
-        .withSuccessHandler(function(labels) {
-          allLabels = labels || [];
-          populateLabelDropdowns();
-        })
-        .withFailureHandler(function(error) {
-          console.error('Failed to load labels:', error);
-          allLabels = [];
-          populateLabelDropdowns();
-        })
-        .getAllGmailLabelsForSettings();
-
-      // Load settings
-      google.script.run
-        .withSuccessHandler(function(settings) {
-          // General tab
-          document.getElementById('user_name').value = settings.USER_NAME || '';
-          document.getElementById('user_location').value = settings.USER_LOCATION || '';
-          document.getElementById('user_timezone').value = settings.USER_TIMEZONE || '';
-          document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
-          document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
-          document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
-          document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
-
-          // Email Templates tab
-          document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
-          document.getElementById('meeting_signature').value = settings.MEETING_SIGNATURE || 'Did I miss anything?\n\nThanks,\n{user_name}';
-          document.getElementById('agenda_subject_template').value = settings.AGENDA_SUBJECT_TEMPLATE || 'Agenda: {client_name} - {meeting_title} ({date})';
-
-          // Integrations tab
-          document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
-          document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
-          document.getElementById('fathom_keep_links').checked = settings.FATHOM_KEEP_LINKS === 'true';
-          document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
-          document.getElementById('weather_api_key').value = settings.WEATHER_API_KEY || '';
-          document.getElementById('nws_enabled').checked = settings.NWS_WEATHER_ENABLED === 'true';
-          document.getElementById('travel_weather_enabled').checked = settings.TRAVEL_WEATHER_ENABLED === 'true';
-          weatherLocationSettings = {
-            state: settings.NWS_WEATHER_STATE || '',
-            city: settings.NWS_WEATHER_CITY || '',
-            latitude: settings.NWS_WEATHER_LAT || '',
-            longitude: settings.NWS_WEATHER_LON || ''
-          };
-          applyWeatherLocationSettings();
-          document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
-          document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
-          document.getElementById('claude_agenda_max_tokens').value = settings.CLAUDE_AGENDA_MAX_TOKENS || '4000';
-          document.getElementById('claude_daily_brief_max_tokens').value = settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS || '4000';
-          document.getElementById('claude_weekly_brief_max_tokens').value = settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS || '8000';
-          document.getElementById('claude_summary_max_tokens').value = settings.CLAUDE_SUMMARY_MAX_TOKENS || '2000';
-
-          // Schedule tab
-          document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
-          document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
-          document.getElementById('daily_outlook_schedule').value = settings.DAILY_OUTLOOK_SCHEDULE || 'day_of';
-
-          // Set label dropdowns after they're populated
-          setTimeout(function() {
-            setLabelDropdown('daily_label', settings.DAILY_BRIEFING_LABEL || 'Brief: Daily');
-            setLabelDropdown('weekly_label', settings.WEEKLY_BRIEFING_LABEL || 'Brief: Weekly');
-          }, 500);
-
-          // Update status badges
-          updateBadge('fathomStatus', settings.FATHOM_API_KEY);
-          updateBadge('fathomWebhookStatus', settings.FATHOM_WEBHOOK_SECRET);
-          updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
-          updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
-          updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
-          updateBadge('nwsStatus', settings.NWS_WEATHER_ENABLED === 'true');
-
-          // Show content
-          document.getElementById('loading').style.display = 'none';
-          document.getElementById('content').style.display = 'block';
-        })
-        .withFailureHandler(function(error) {
-          document.getElementById('loading').innerHTML = 'Error loading settings: ' + error.message;
-        })
-        .getSettingsForEditor();
+        .getSettingsEditorDiagnostics();
     }
 
     function populateLabelDropdowns() {
@@ -892,6 +1125,14 @@ Thanks,
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
 
+        function getValueIfPresent(id, fallback) {
+          const el = document.getElementById(id);
+          if (!el) {
+            return fallback;
+          }
+          return el.value.trim() || fallback;
+        }
+
         const settings = {
         // General
         USER_NAME: document.getElementById('user_name').value.trim(),
@@ -901,6 +1142,16 @@ Thanks,
         DIAGNOSTIC_MODE: document.getElementById('diagnostic_mode').checked ? 'true' : 'false',
         INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
         AUTO_MARK_READ_AFTER_DAYS: document.getElementById('auto_mark_read_days').value.trim() || '0',
+        LOG_MAX_PROCESSING: getValueIfPresent('log_max_processing', '1000'),
+        LOG_MAX_UNMATCHED: getValueIfPresent('log_max_unmatched', '1000'),
+        LOG_MAX_PROCESSED_FATHOM: getValueIfPresent('log_max_processed_fathom', '1000'),
+        LOG_MAX_GENERATED_AGENDAS: getValueIfPresent('log_max_generated_agendas', '1000'),
+        LOG_MAX_API_REQUEST: getValueIfPresent('log_max_api_request', '1000'),
+        LOG_MAX_API_RESPONSE: getValueIfPresent('log_max_api_response', '1000'),
+        LOG_MAX_DATA_COLLECTION: getValueIfPresent('log_max_data_collection', '1000'),
+        LOG_MAX_AGENDA_TRACE: getValueIfPresent('log_max_agenda_trace', '1000'),
+        LOG_MAX_NOTES_TRACE: getValueIfPresent('log_max_notes_trace', '1000'),
+        LOG_MAX_DOC_APPEND: getValueIfPresent('log_max_doc_append', '1000'),
         // Email Templates
         MEETING_SUBJECT_TEMPLATE: document.getElementById('meeting_subject_template').value.trim(),
         MEETING_SIGNATURE: document.getElementById('meeting_signature').value,
