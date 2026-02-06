@@ -159,18 +159,43 @@ function generateBugReport(criteria) {
     report.push('');
   }
 
-  // Section 3: Fathom Drafts Status (only for fathom_drafts or all)
+  // Section 3: Calendar Events Snapshot
+  report.push('## 3. CALENDAR EVENTS');
+  report.push('');
+  const calendarEvents = getCalendarEventsForBugReport(startTime, endTime, clientName);
+  if (calendarEvents.length > 0) {
+    report.push(`Found ${calendarEvents.length} event(s) on the default calendar:`);
+    report.push('');
+    calendarEvents.forEach(event => {
+      report.push(`### ${event.title || '(No Title)'}`);
+      report.push('```');
+      report.push(`Event ID: ${event.id || 'N/A'}`);
+      report.push(`Start: ${event.start}`);
+      report.push(`End: ${event.end}`);
+      report.push(`Matched Client: ${event.matchedClient || 'N/A'}`);
+      report.push(`Organizer: ${event.organizer || 'N/A'}`);
+      report.push(`Location: ${event.location || 'N/A'}`);
+      report.push(`Attendees: ${event.attendees.length ? event.attendees.join(', ') : '(none)'}`);
+      report.push('```');
+      report.push('');
+    });
+  } else {
+    report.push('No calendar events found in time range.');
+    report.push('');
+  }
+
+  // Section 4: Fathom Drafts Status (only for fathom_drafts or all)
   if (reportType === 'all' || reportType === 'fathom_drafts') {
-    report.push('## 3. FATHOM DRAFTS STATUS');
+    report.push('## 4. FATHOM DRAFTS STATUS');
     report.push('');
     const fathomDiagnostics = diagnoseFathomDrafts(startTime, endTime);
     report.push(fathomDiagnostics);
     report.push('');
   }
 
-  // Section 4: Diagnostic Logs (if available)
+  // Section 5: Diagnostic Logs (if available)
   if (isDiagnosticModeEnabled()) {
-    report.push('## 4. DIAGNOSTIC LOGS');
+    report.push('## 5. DIAGNOSTIC LOGS');
     report.push('');
 
     // Define API name filters based on report type
@@ -336,15 +361,15 @@ function generateBugReport(criteria) {
       }
     }
   } else {
-    report.push('## 4. DIAGNOSTIC LOGS');
+    report.push('## 5. DIAGNOSTIC LOGS');
     report.push('');
     report.push('*Diagnostic mode is not enabled. Enable it to capture detailed traces.*');
     report.push('');
   }
 
-  // Section 5: Recent Emails (if Gmail API available)
+  // Section 6: Recent Emails (if Gmail API available)
   if (typeof Gmail !== 'undefined') {
-    report.push('## 5. RECENT EMAILS');
+    report.push('## 6. RECENT EMAILS');
     report.push('');
 
     // Determine which label to check based on report type
@@ -440,8 +465,8 @@ function generateBugReport(criteria) {
     }
   }
 
-  // Section 6: System Configuration
-  report.push('## 6. SYSTEM CONFIGURATION');
+  // Section 7: System Configuration
+  report.push('## 7. SYSTEM CONFIGURATION');
   report.push('');
   report.push('```');
   const props = PropertiesService.getScriptProperties().getProperties();
@@ -675,6 +700,74 @@ function generateIssuesSummary(startTime, endTime, clientName, reportType) {
   summary.push('**Note:** This summary scans for common issues. Check the full bug report for complete details.');
 
   return summary.join('\n');
+}
+
+/**
+ * Gets calendar events within a range for the bug report.
+ * Optionally filters by matched client name.
+ *
+ * @param {Date} startTime - Start time
+ * @param {Date} endTime - End time
+ * @param {string} clientName - Optional client name filter
+ * @returns {Array} Calendar event summaries
+ */
+function getCalendarEventsForBugReport(startTime, endTime, clientName) {
+  const calendar = CalendarApp.getDefaultCalendar();
+  const events = calendar.getEvents(startTime, endTime);
+  const summaries = [];
+
+  events.forEach(event => {
+    let matchedClient = null;
+    try {
+      const client = identifyClientFromCalendarEvent(event);
+      matchedClient = client ? client.client_name : null;
+    } catch (error) {
+      matchedClient = null;
+    }
+
+    if (clientName && matchedClient !== clientName) {
+      return;
+    }
+
+    summaries.push({
+      id: event.getId(),
+      title: event.getTitle(),
+      start: formatDateTime(event.getStartTime()),
+      end: formatDateTime(event.getEndTime()),
+      matchedClient: matchedClient,
+      organizer: event.getCreators ? event.getCreators().join(', ') : null,
+      location: event.getLocation(),
+      attendees: event.getGuestList().map(guest => guest.getEmail())
+    });
+  });
+
+  return summaries;
+}
+
+/**
+ * Test helper to generate an agenda for a specific event ID.
+ * Intended for rapid testing from the bug report generator.
+ *
+ * @param {string} eventId - Calendar event ID
+ * @returns {string} Status message
+ */
+function runAgendaTestForEventId(eventId) {
+  if (!eventId) {
+    throw new Error('Event ID is required.');
+  }
+
+  const event = CalendarApp.getEventById(eventId);
+  if (!event) {
+    throw new Error(`No calendar event found for ID: ${eventId}`);
+  }
+
+  const client = identifyClientFromCalendarEvent(event);
+  if (!client) {
+    throw new Error('No client match found for this event.');
+  }
+
+  generateAgendaForEvent(event, client);
+  return `Agenda generation triggered for: ${event.getTitle()}`;
 }
 
 /**
