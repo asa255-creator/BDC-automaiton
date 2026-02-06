@@ -198,27 +198,9 @@ function generateBugReport(criteria) {
     report.push('## 5. DIAGNOSTIC LOGS');
     report.push('');
 
-    // Define API name filters based on report type
-    const apiNameFilters = {
-      daily_briefing: ['Claude API', 'claude-daily-briefing'],
-      weekly_briefing: ['Claude API', 'claude-weekly-briefing'],
-      pre_meeting_agenda: ['Claude API', 'claude-agenda', 'Google Calendar API'],
-      fathom_drafts: ['Fathom API', 'Claude API', 'claude-summary'],
-      meeting_notes: ['Claude API', 'Todoist API', 'Google Docs API']
-    };
-
     // API Request Log
     let apiRequests = getDiagnosticLogEntries('API_Request_Log', startTime, endTime, clientName);
-
-    // Filter by API name if specific report type
-    if (reportType !== 'all' && apiNameFilters[reportType]) {
-      apiRequests = apiRequests.filter(log =>
-        apiNameFilters[reportType].some(filter =>
-          log.api_name && log.api_name.includes(filter)
-        )
-      );
-    }
-
+    apiRequests = filterApiRequestsByReportType(apiRequests, reportType);
     if (apiRequests.length > 0) {
       report.push('### API Requests');
       report.push('');
@@ -235,15 +217,7 @@ function generateBugReport(criteria) {
 
     // API Response Log
     let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, clientName);
-
-    // Filter by API name if specific report type
-    if (reportType !== 'all' && apiNameFilters[reportType]) {
-      apiResponses = apiResponses.filter(log =>
-        apiNameFilters[reportType].some(filter =>
-          log.api_name && log.api_name.includes(filter)
-        )
-      );
-    }
+    apiResponses = filterApiResponsesByReportType(apiRequests, apiResponses, reportType);
     if (apiResponses.length > 0) {
       report.push('### API Responses');
       report.push('');
@@ -341,8 +315,9 @@ function generateBugReport(criteria) {
     }
 
     // Agenda Generation Trace (only for pre_meeting_agenda or all)
+    let agendaTraces = [];
     if (reportType === 'all' || reportType === 'pre_meeting_agenda') {
-      const agendaTraces = getDiagnosticLogEntries('Agenda_Generation_Trace', startTime, endTime, clientName);
+      agendaTraces = getDiagnosticLogEntries('Agenda_Generation_Trace', startTime, endTime, clientName);
       if (agendaTraces.length > 0) {
         report.push('### Agenda Generation Trace');
         report.push('');
@@ -359,6 +334,39 @@ function generateBugReport(criteria) {
           report.push('');
         });
       }
+    }
+
+    // Notes Append Trace (only for meeting_notes or all)
+    let notesAppendTraces = [];
+    if (reportType === 'all' || reportType === 'meeting_notes') {
+      notesAppendTraces = getDiagnosticLogEntries('Notes_Append_Trace', startTime, endTime, clientName);
+      if (notesAppendTraces.length > 0) {
+        report.push('### Notes Append Trace');
+        report.push('');
+        notesAppendTraces.forEach(log => {
+          report.push(`**${log.timestamp}** - Step ${log.step_number}: ${log.step_name} [${log.step_status}]`);
+          report.push('```');
+          report.push(`Client ID: ${log.client_id || 'N/A'}`);
+          report.push(`Message ID: ${log.message_id || 'N/A'}`);
+          report.push(`Doc ID: ${log.doc_id || 'N/A'}`);
+          report.push(`Details: ${truncateForReport(log.step_details, 300)}`);
+          report.push(`Content Length: ${log.content_length || 0}`);
+          report.push(`Duration: ${log.duration_ms || 0}ms`);
+          report.push('```');
+          report.push('');
+        });
+      }
+    }
+
+    // Timer summary (all diagnostic timers in range)
+    const timerEntries = buildTimerEntries(apiResponses, agendaTraces, notesAppendTraces);
+    if (timerEntries.length > 0) {
+      report.push('### Timers');
+      report.push('');
+      timerEntries.forEach(entry => {
+        report.push(`- ${entry.timestamp} | ${entry.source} | ${entry.label} | ${entry.durationMs}ms`);
+      });
+      report.push('');
     }
   } else {
     report.push('## 5. DIAGNOSTIC LOGS');
@@ -551,24 +559,10 @@ function generateIssuesSummary(startTime, endTime, clientName, reportType) {
 
   // Check for truncated API responses
   if (isDiagnosticModeEnabled()) {
+    let apiRequests = getDiagnosticLogEntries('API_Request_Log', startTime, endTime, normalizedClientName);
+    apiRequests = filterApiRequestsByReportType(apiRequests, reportType);
     let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, normalizedClientName);
-
-    // Filter by API name based on report type
-    const apiNameFilters = {
-      daily_briefing: ['Claude API', 'claude-daily-briefing'],
-      weekly_briefing: ['Claude API', 'claude-weekly-briefing'],
-      pre_meeting_agenda: ['Claude API', 'claude-agenda', 'Google Calendar API'],
-      fathom_drafts: ['Fathom API', 'Claude API', 'claude-summary'],
-      meeting_notes: ['Claude API', 'Todoist API', 'Google Docs API']
-    };
-
-    if (reportType !== 'all' && apiNameFilters[reportType]) {
-      apiResponses = apiResponses.filter(log =>
-        apiNameFilters[reportType].some(filter =>
-          log.api_name && log.api_name.includes(filter)
-        )
-      );
-    }
+    apiResponses = filterApiResponsesByReportType(apiRequests, apiResponses, reportType);
 
     const truncatedResponses = [];
     const errorResponses = [];
@@ -1188,6 +1182,136 @@ function getDiagnosticLogEntries(sheetName, startTime, endTime, clientName) {
   }
 
   return entries;
+}
+
+/**
+ * Gets API name filters used to scope diagnostics by report type.
+ * @returns {Object} Report type -> API name filters
+ */
+function getApiNameFilters() {
+  return {
+    daily_briefing: ['Claude API', 'claude-daily-briefing'],
+    weekly_briefing: ['Claude API', 'claude-weekly-briefing'],
+    pre_meeting_agenda: ['claude-agenda', 'Google Calendar API'],
+    fathom_drafts: ['Fathom API', 'Claude API', 'claude-summary'],
+    meeting_notes: ['Claude API', 'Todoist API', 'Google Docs API']
+  };
+}
+
+/**
+ * Gets diagnostic flow filters used to scope API requests by report type.
+ * @returns {Object} Report type -> array of flow filters
+ */
+function getApiFlowFilters() {
+  return {
+    daily_briefing: ['daily_briefing'],
+    weekly_briefing: ['weekly_briefing'],
+    pre_meeting_agenda: ['agenda generation']
+  };
+}
+
+/**
+ * Filters API request logs to match the report type context.
+ *
+ * @param {Array} apiRequests - API request logs
+ * @param {string} reportType - Report type
+ * @returns {Array} Filtered request logs
+ */
+function filterApiRequestsByReportType(apiRequests, reportType) {
+  if (reportType === 'all') return apiRequests;
+
+  const flowFilters = getApiFlowFilters();
+  if (flowFilters[reportType]) {
+    return apiRequests.filter(log => {
+      const context = String(log.context || '').toLowerCase();
+      return flowFilters[reportType].some(filter => context.includes(filter));
+    });
+  }
+
+  const apiNameFilters = getApiNameFilters();
+  if (apiNameFilters[reportType]) {
+    return apiRequests.filter(log => {
+      const apiName = String(log.api_name || '');
+      return apiNameFilters[reportType].some(filter => apiName.includes(filter));
+    });
+  }
+
+  return apiRequests;
+}
+
+/**
+ * Filters API response logs based on request context or API name.
+ *
+ * @param {Array} apiRequests - Filtered API request logs
+ * @param {Array} apiResponses - API response logs
+ * @param {string} reportType - Report type
+ * @returns {Array} Filtered API response logs
+ */
+function filterApiResponsesByReportType(apiRequests, apiResponses, reportType) {
+  if (reportType === 'all') return apiResponses;
+
+  const requestIds = new Set(
+    apiRequests.map(log => log.request_id).filter(Boolean)
+  );
+
+  if (requestIds.size > 0) {
+    return apiResponses.filter(log => requestIds.has(log.request_id));
+  }
+
+  const apiNameFilters = getApiNameFilters();
+  if (apiNameFilters[reportType]) {
+    return apiResponses.filter(log => {
+      const apiName = String(log.api_name || '');
+      return apiNameFilters[reportType].some(filter => apiName.includes(filter));
+    });
+  }
+
+  return apiResponses;
+}
+
+/**
+ * Builds a combined list of timer entries from diagnostic logs.
+ *
+ * @param {Array} apiResponses - API response logs
+ * @param {Array} agendaTraces - Agenda generation trace logs
+ * @param {Array} notesAppendTraces - Notes append trace logs
+ * @returns {Array<{timestamp: string, source: string, label: string, durationMs: number}>}
+ */
+function buildTimerEntries(apiResponses, agendaTraces, notesAppendTraces) {
+  const timers = [];
+
+  apiResponses.forEach(log => {
+    timers.push({
+      timestamp: log.timestamp,
+      source: 'API Response',
+      label: `${log.api_name || 'Unknown API'} ${log.status_code || ''}`.trim(),
+      durationMs: Number(log.duration_ms || 0)
+    });
+  });
+
+  agendaTraces.forEach(log => {
+    timers.push({
+      timestamp: log.timestamp,
+      source: 'Agenda Trace',
+      label: `Step ${log.step_number}: ${log.step_name}`,
+      durationMs: Number(log.duration_ms || 0)
+    });
+  });
+
+  notesAppendTraces.forEach(log => {
+    timers.push({
+      timestamp: log.timestamp,
+      source: 'Notes Append Trace',
+      label: `Step ${log.step_number}: ${log.step_name}`,
+      durationMs: Number(log.duration_ms || 0)
+    });
+  });
+
+  return timers.sort((a, b) => {
+    const timeA = Date.parse(a.timestamp || '') || 0;
+    const timeB = Date.parse(b.timestamp || '') || 0;
+    return timeA - timeB;
+  });
 }
 
 /**
