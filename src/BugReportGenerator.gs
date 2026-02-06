@@ -493,6 +493,25 @@ function generateBugReport(criteria) {
 }
 
 /**
+ * Gets calendar events for the UI based on the report criteria.
+ *
+ * @param {Object} criteria - Report criteria
+ * @returns {Array} Calendar event summaries
+ */
+function getCalendarEventsForBugReportUI(criteria) {
+  if (!criteria || !criteria.startTime || !criteria.endTime) {
+    throw new Error('Start and end time are required.');
+  }
+
+  const startTime = new Date(criteria.startTime);
+  const endTime = new Date(criteria.endTime);
+  const reportType = criteria.reportType || 'all';
+  const clientName = isClientFilterApplicable(reportType) ? criteria.clientName : null;
+
+  return getCalendarEventsForBugReport(startTime, endTime, clientName);
+}
+
+/**
  * Generates an issues summary by scanning logs for common problems.
  * @param {Date} startTime - Start time
  * @param {Date} endTime - End time
