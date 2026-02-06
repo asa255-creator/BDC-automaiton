@@ -728,6 +728,20 @@ Thanks,
         return `${prefix} ${message}`;
       }
 
+      function reportLoadingFailure(step, error, options) {
+        const settings = options || {};
+        const title = settings.title || 'Loading warning';
+        if (loadingTitle) {
+          loadingTitle.textContent = title;
+        }
+        updateLoadingStatus(formatErrorDetails(`${step} failed:`, error));
+        if (loadingDetail) {
+          const stack = error && error.stack ? error.stack : 'No stack trace available.';
+          const raw = error ? JSON.stringify(error, Object.getOwnPropertyNames(error)) : 'No error object returned.';
+          loadingDetail.textContent = `${loadingDetail.textContent}\n${stack}\n${raw}`;
+        }
+      }
+
       function advanceLoading() {
         completedSteps += 1;
         if (loadingProgress) {
@@ -798,7 +812,7 @@ Thanks,
           if (!weatherTimedOut) {
             clearTimeout(weatherTimeoutId);
             advanceLoading();
-            updateLoadingStatus(formatErrorDetails('Weather load failed:', error));
+            reportLoadingFailure('Weather load', error, { title: 'Weather load issue' });
           }
         })
         .getWeatherLocationOptions();
@@ -818,7 +832,7 @@ Thanks,
           allLabels = [];
           populateLabelDropdowns();
           advanceLoading();
-          updateLoadingStatus(formatErrorDetails('Label load failed:', error));
+          reportLoadingFailure('Label load', error, { title: 'Label load issue' });
         })
         .getAllGmailLabelsForSettings();
 
@@ -916,20 +930,11 @@ Thanks,
             document.getElementById('content').style.display = 'block';
             advanceLoading();
           } catch (applyError) {
-            if (loadingTitle) {
-              loadingTitle.textContent = 'Error applying settings';
-            }
-            updateLoadingStatus(applyError.message || 'Unknown error while applying settings.');
-            if (applyError && applyError.stack && loadingDetail) {
-              loadingDetail.textContent = `${loadingDetail.textContent}\n${applyError.stack}`;
-            }
+            reportLoadingFailure('Settings apply', applyError, { title: 'Error applying settings' });
           }
         })
         .withFailureHandler(function(error) {
-          if (loadingTitle) {
-            loadingTitle.textContent = 'Error loading settings';
-          }
-          updateLoadingStatus(formatErrorDetails('Settings load failed:', error));
+          reportLoadingFailure('Settings load', error, { title: 'Error loading settings' });
         })
         .getSettingsForEditorWithDiagnostics();
     }
