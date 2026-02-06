@@ -2324,17 +2324,17 @@ function getSettingsForEditorWithDiagnostics() {
   const missing = [];
   if (typeof getDailyOutlookSchedule !== 'function') missing.push('getDailyOutlookSchedule');
   if (typeof getDailyOutlookTime !== 'function') missing.push('getDailyOutlookTime');
-  if (missing.length > 0) {
-    return {
-      settings: null,
-      error: `Missing helper function(s): ${missing.join(', ')}`,
-      stack: ''
-    };
-  }
+  const warningDetails = missing.map(name => {
+    if (name === 'getDailyOutlookSchedule' || name === 'getDailyOutlookTime') {
+      return `${name} (expected in DailyOutlookScheduleService.gs)`;
+    }
+    return name;
+  });
   try {
     return {
       settings: getSettingsForEditor(),
-      error: null
+      error: null,
+      warnings: warningDetails
     };
   } catch (error) {
     return {
