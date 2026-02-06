@@ -2321,6 +2321,16 @@ function getSettingsForEditor() {
  * @returns {Object} Result with settings or error info
  */
 function getSettingsForEditorWithDiagnostics() {
+  const missing = [];
+  if (typeof getDailyOutlookSchedule !== 'function') missing.push('getDailyOutlookSchedule');
+  if (typeof getDailyOutlookTime !== 'function') missing.push('getDailyOutlookTime');
+  if (missing.length > 0) {
+    return {
+      settings: null,
+      error: `Missing helper function(s): ${missing.join(', ')}`,
+      stack: ''
+    };
+  }
   try {
     return {
       settings: getSettingsForEditor(),
