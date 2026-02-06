@@ -741,17 +741,34 @@ Thanks,
       }
       updateLoadingStatus('Fetching weather locations...');
       let weatherTimedOut = false;
+      let weatherErrorDetail = '';
       const weatherTimeoutId = setTimeout(function() {
         if (!weatherLocationsLoaded) {
           weatherTimedOut = true;
-          weatherLocationsLoaded = true;
-          weatherLocationOptions = [];
-          populateWeatherStateDropdown();
-          applyWeatherLocationSettings();
-          advanceLoading();
-          updateLoadingStatus('Weather locations timed out. Continuing without weather options.');
+          if (loadingDetail) {
+            const detail = weatherErrorDetail ? ` Weather error: ${weatherErrorDetail}` : ' No error details returned.';
+            loadingDetail.textContent = `Weather loading is still running after 30 seconds.${detail} You can skip weather loading to continue.`;
+          }
+          const loadingEl = document.getElementById('loading');
+          if (loadingEl && !document.getElementById('skipWeatherBtn')) {
+            const skipBtn = document.createElement('button');
+            skipBtn.id = 'skipWeatherBtn';
+            skipBtn.className = 'btn btn-secondary';
+            skipBtn.style.marginTop = '12px';
+            skipBtn.textContent = 'Skip Weather Loading';
+            skipBtn.onclick = function() {
+              weatherLocationsLoaded = true;
+              weatherLocationOptions = [];
+              populateWeatherStateDropdown();
+              applyWeatherLocationSettings();
+              advanceLoading();
+              updateLoadingStatus('Weather skipped. Continuing to labels...');
+              skipBtn.remove();
+            };
+            loadingEl.appendChild(skipBtn);
+          }
         }
-      }, 8000);
+      }, 30000);
 
       setTimeout(function() {
         if (document.getElementById('content').style.display === 'none') {
@@ -773,6 +790,7 @@ Thanks,
         })
         .withFailureHandler(function(error) {
           console.error('Failed to load weather location options:', error);
+          weatherErrorDetail = error && error.message ? error.message : String(error);
           weatherLocationOptions = [];
           populateWeatherStateDropdown();
           weatherLocationsLoaded = true;
