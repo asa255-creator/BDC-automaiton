@@ -2311,6 +2311,26 @@ function getSettingsForEditor() {
 }
 
 /**
+ * Gets current settings with error details instead of throwing.
+ *
+ * @returns {Object} Result with settings or error info
+ */
+function getSettingsForEditorWithDiagnostics() {
+  try {
+    return {
+      settings: getSettingsForEditor(),
+      error: null
+    };
+  } catch (error) {
+    return {
+      settings: null,
+      error: error.message || 'Unknown error',
+      stack: error.stack || ''
+    };
+  }
+}
+
+/**
  * Gets all Gmail labels for the settings editor dropdowns.
  *
  * @returns {string[]} Array of label names sorted alphabetically

@@ -780,7 +780,16 @@ Thanks,
 
       // Load settings
       google.script.run
-        .withSuccessHandler(function(settings) {
+        .withSuccessHandler(function(result) {
+          if (!result || result.error) {
+            if (loadingTitle) {
+              loadingTitle.textContent = 'Error loading settings';
+            }
+            updateLoadingStatus(result && result.error ? result.error : 'Unknown error. Check Apps Script logs for details.');
+            return;
+          }
+
+          const settings = result.settings || {};
           updateLoadingStatus('Applying settings...');
           function setValueIfPresent(id, value) {
             const el = document.getElementById(id);
@@ -865,7 +874,7 @@ Thanks,
           }
           updateLoadingStatus(error.message || 'Unknown error. Check Apps Script logs for details.');
         })
-        .getSettingsForEditor();
+        .getSettingsForEditorWithDiagnostics();
     }
 
     function populateLabelDropdowns() {
