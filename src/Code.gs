@@ -244,12 +244,8 @@ function setupTriggers() {
     .everyHours(1)
     .create();
 
-  // Daily outlook - daily at 7:00 AM
-  ScriptApp.newTrigger('runDailyOutlook')
-    .timeBased()
-    .atHour(7)
-    .everyDays(1)
-    .create();
+  // Daily outlook - schedule based on settings
+  createDailyOutlookTrigger();
 
   // Weekly outlook - Monday at 7:00 AM
   ScriptApp.newTrigger('runWeeklyOutlook')
@@ -269,6 +265,52 @@ function removeAllTriggers() {
   const triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
   Logger.log(`Removed ${triggers.length} existing triggers.`);
+}
+
+/**
+ * Creates the daily outlook trigger based on settings.
+ */
+function createDailyOutlookTrigger() {
+  removeDailyOutlookTrigger();
+
+  const schedule = getDailyOutlookSchedule();
+  const trigger = ScriptApp.newTrigger('runDailyOutlook')
+    .timeBased()
+    .everyDays(1);
+
+  if (schedule === DAILY_OUTLOOK_SCHEDULES.NIGHT_BEFORE) {
+    trigger.atHour(20);
+  } else {
+    trigger.atHour(7);
+  }
+
+  trigger.create();
+}
+
+/**
+ * Removes the daily outlook trigger.
+ */
+function removeDailyOutlookTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  let removed = 0;
+
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'runDailyOutlook') {
+      ScriptApp.deleteTrigger(trigger);
+      removed++;
+    }
+  });
+
+  if (removed > 0) {
+    Logger.log(`Removed ${removed} daily outlook trigger(s)`);
+  }
+}
+
+/**
+ * Updates the daily outlook trigger to match settings.
+ */
+function updateDailyOutlookTrigger() {
+  createDailyOutlookTrigger();
 }
 
 /**
@@ -398,9 +440,10 @@ function runAgendaGeneration() {
  */
 function runDailyOutlook() {
   try {
-    logProcessing('DAILY_OUTLOOK', null, 'Generating daily outlook', 'processing');
+    const context = getDailyOutlookLogContext(new Date());
+    logProcessing('DAILY_OUTLOOK', null, `Generating daily outlook (${context})`, 'processing');
     generateDailyOutlook();
-    logProcessing('DAILY_OUTLOOK', null, 'Daily outlook generated', 'success');
+    logProcessing('DAILY_OUTLOOK', null, `Daily outlook generated (${context})`, 'success');
   } catch (error) {
     logProcessing('DAILY_OUTLOOK', null, `Error: ${error.message}`, 'error');
   }

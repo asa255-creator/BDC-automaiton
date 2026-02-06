@@ -28,26 +28,27 @@ function generateDailyOutlook() {
   // Run auto-mark-read before generating report (if enabled)
   autoMarkOldEmailsAsRead();
 
-  const today = new Date();
-  const reportData = compileDailyData(today);
+  const triggerDate = new Date();
+  const reportDate = getDailyOutlookReportDate(triggerDate);
+  const reportData = compileDailyData(reportDate);
 
   // Generate HTML report using AI
   let htmlReport;
-  const aiGenerated = generateDailyOutlookWithClaude(reportData, today);
+  const aiGenerated = generateDailyOutlookWithClaude(reportData, reportDate);
 
   if (aiGenerated) {
     htmlReport = aiGenerated;
     Logger.log('Daily outlook generated with AI');
   } else {
     // Fallback to template-based if AI fails
-    htmlReport = formatDailyOutlookHtml(reportData, today);
+    htmlReport = formatDailyOutlookHtml(reportData, reportDate);
     Logger.log('Daily outlook generated with fallback template (AI unavailable)');
   }
 
   // Send email
   const props = PropertiesService.getScriptProperties();
   const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
-  const subject = `Daily Outlook - ${formatDate(today)}`;
+  const subject = `Daily Outlook - ${formatDate(reportDate)}`;
   sendOutlookEmail(subject, htmlReport, dailyLabel);
 
   Logger.log('Daily outlook sent');
@@ -100,10 +101,31 @@ function generateDailyOutlookWithClaude(data, date) {
       muteHttpExceptions: true
     };
 
+    const requestId = logAPIRequest(
+      'Claude API',
+      url,
+      'POST',
+      options.headers,
+      payload,
+      { clientId: '', eventId: '', flow: 'daily_briefing' }
+    );
+    const startTime = Date.now();
     const response = UrlFetchApp.fetch(url, options);
     const responseCode = response.getResponseCode();
+    const durationMs = Date.now() - startTime;
 
     if (responseCode !== 200) {
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        response.getContentText(),
+        false,
+        null,
+        `HTTP ${responseCode}`,
+        durationMs
+      );
       Logger.log(`Claude API error for daily outlook: ${responseCode} - ${response.getContentText()}`);
       return null;
     }
@@ -112,10 +134,38 @@ function generateDailyOutlookWithClaude(data, date) {
     // Get raw bytes and convert to string properly to preserve emoji
     const responseBytes = response.getContent();
     const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
-    const result = JSON.parse(responseText);
+    let result = null;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        responseText,
+        false,
+        null,
+        `Parse error: ${parseError.message}`,
+        durationMs
+      );
+      return null;
+    }
 
     if (result.content && result.content.length > 0) {
       let content = result.content[0].text;
+      content = sanitizeClaudeHtml(content);
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        responseText,
+        true,
+        { content_length: content.length },
+        '',
+        durationMs
+      );
 
       // Ensure content is treated as UTF-8
       // If Claude returns full HTML with charset, preserve it
@@ -123,6 +173,17 @@ function generateDailyOutlookWithClaude(data, date) {
       return content;
     }
 
+    logAPIResponse(
+      requestId,
+      'Claude API',
+      responseCode,
+      response.getAllHeaders(),
+      responseText,
+      true,
+      { content_length: 0 },
+      'No content returned',
+      durationMs
+    );
     return null;
 
   } catch (error) {
@@ -199,6 +260,23 @@ function buildDailyOutlookPrompt(data, date) {
     }
   }
 
+  let weatherSection = '';
+  if (data.weather) {
+    weatherSection = `Weather (${data.weather.location}): ${data.weather.condition}, ` +
+      `${data.weather.minTemp}°-${data.weather.maxTemp}°F. ` +
+      `Rain chance: ${data.weather.rainChance}. ` +
+      `Clothing: ${data.weather.clothingRecommendation}\n`;
+  } else {
+    weatherSection = 'Weather: Not available.\n';
+  }
+
+  if (data.secondaryWeather) {
+    weatherSection += `Secondary Weather (${data.secondaryWeather.location}): ${data.secondaryWeather.condition}, ` +
+      `${data.secondaryWeather.minTemp}°-${data.secondaryWeather.maxTemp}°F. ` +
+      `Rain chance: ${data.secondaryWeather.rainChance}. ` +
+      `Clothing: ${data.secondaryWeather.clothingRecommendation}\n`;
+  }
+
   // Get the prompt template
   const template = getPrompt('DAILY_BRIEFING_CLAUDE_PROMPT');
 
@@ -207,7 +285,8 @@ function buildDailyOutlookPrompt(data, date) {
     current_date: formatDate(date),
     todays_calendar: calendarSection + conflictsSection,
     todays_tasks: tasksSection,
-    urgent_emails: unreadSection || 'No unread emails to report.'
+    urgent_emails: unreadSection || 'No unread emails to report.',
+    weather_summary: weatherSection
   });
 }
 
@@ -226,7 +305,10 @@ function compileDailyData(date) {
     missingAgendas: [],
     overdueTasks: [],
     unreadEmails: { recentUnread: [], olderBacklog: [], totalUnread: 0 },
-    includeUnreadEmails: false
+    includeUnreadEmails: false,
+    weather: null,
+    secondaryWeather: null,
+    secondaryWeatherLocation: null
   };
 
   // Check if unread emails should be included (controlled by settings)
@@ -239,6 +321,9 @@ function compileDailyData(date) {
     data.unreadEmails = fetchUnreadEmails(1);
   }
 
+  const primaryLocation = getPrimaryWeatherLocationDetails();
+  data.weather = getDailyOutlookWeather(date, primaryLocation);
+
   // Get today's events
   const calendar = CalendarApp.getDefaultCalendar();
   const startOfDay = new Date(date);
@@ -247,6 +332,14 @@ function compileDailyData(date) {
   endOfDay.setHours(23, 59, 59, 999);
 
   const events = calendar.getEvents(startOfDay, endOfDay);
+  const travelWeatherEnabled = props.getProperty('TRAVEL_WEATHER_ENABLED') === 'true';
+  if (travelWeatherEnabled) {
+    const secondaryLocation = getSecondaryWeatherLocationFromCalendar(events);
+    if (secondaryLocation) {
+      data.secondaryWeatherLocation = secondaryLocation;
+      data.secondaryWeather = getDailyOutlookWeather(date, secondaryLocation);
+    }
+  }
 
   // Process each event
   for (const event of events) {
@@ -295,7 +388,7 @@ function compileDailyData(date) {
   const clients = getClientRegistry();
   for (const client of clients) {
     if (client.todoist_project_id) {
-      const tasks = fetchTodoistTasksDueToday(client.todoist_project_id);
+      const tasks = fetchTodoistTasksDueToday(client.todoist_project_id, date);
 
       for (const task of tasks) {
         const taskInfo = {
@@ -371,6 +464,20 @@ function formatDailyOutlookHtml(data, date) {
     }
 
     html += applyTemplate(alertsTemplate, { alerts_content: alertsContent });
+  }
+
+  if (data.weather) {
+    html += `<h2>Weather & Clothing</h2>`;
+    html += `<p><strong>${data.weather.location}</strong>: ${data.weather.condition}, ` +
+      `${data.weather.minTemp}°-${data.weather.maxTemp}°F</p>`;
+    html += `<p>Rain chance: ${data.weather.rainChance}</p>`;
+    html += `<p>Clothing recommendation: ${data.weather.clothingRecommendation}</p>`;
+    if (data.secondaryWeather) {
+      html += `<hr><p><strong>${data.secondaryWeather.location}</strong>: ${data.secondaryWeather.condition}, ` +
+        `${data.secondaryWeather.minTemp}°-${data.secondaryWeather.maxTemp}°F</p>`;
+      html += `<p>Rain chance: ${data.secondaryWeather.rainChance}</p>`;
+      html += `<p>Clothing recommendation: ${data.secondaryWeather.clothingRecommendation}</p>`;
+    }
   }
 
   // Today's Schedule
@@ -535,10 +642,31 @@ function generateWeeklyOutlookWithClaude(data, startDate) {
       muteHttpExceptions: true
     };
 
+    const requestId = logAPIRequest(
+      'Claude API',
+      url,
+      'POST',
+      options.headers,
+      payload,
+      { clientId: '', eventId: '', flow: 'weekly_briefing' }
+    );
+    const startTime = Date.now();
     const response = UrlFetchApp.fetch(url, options);
     const responseCode = response.getResponseCode();
+    const durationMs = Date.now() - startTime;
 
     if (responseCode !== 200) {
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        response.getContentText(),
+        false,
+        null,
+        `HTTP ${responseCode}`,
+        durationMs
+      );
       Logger.log(`Claude API error for weekly outlook: ${responseCode} - ${response.getContentText()}`);
       return null;
     }
@@ -547,21 +675,80 @@ function generateWeeklyOutlookWithClaude(data, startDate) {
     // Get raw bytes and convert to string properly to preserve emoji
     const responseBytes = response.getContent();
     const responseText = Utilities.newBlob(responseBytes).getDataAsString('UTF-8');
-    const result = JSON.parse(responseText);
+    let result = null;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        responseText,
+        false,
+        null,
+        `Parse error: ${parseError.message}`,
+        durationMs
+      );
+      return null;
+    }
 
     if (result.content && result.content.length > 0) {
       let content = result.content[0].text;
+      content = sanitizeClaudeHtml(content);
+      logAPIResponse(
+        requestId,
+        'Claude API',
+        responseCode,
+        response.getAllHeaders(),
+        responseText,
+        true,
+        { content_length: content.length },
+        '',
+        durationMs
+      );
 
       // Ensure content is treated as UTF-8
       return content;
     }
 
+    logAPIResponse(
+      requestId,
+      'Claude API',
+      responseCode,
+      response.getAllHeaders(),
+      responseText,
+      true,
+      { content_length: 0 },
+      'No content returned',
+      durationMs
+    );
     return null;
 
   } catch (error) {
     Logger.log(`Failed to generate weekly outlook with Claude: ${error.message}`);
     return null;
   }
+}
+
+/**
+ * Strips markdown code fences from Claude HTML output.
+ *
+ * @param {string} content - Claude response content
+ * @returns {string} Clean HTML
+ */
+function sanitizeClaudeHtml(content) {
+  if (!content) {
+    return content;
+  }
+
+  let cleaned = content.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```[a-z]*\n?/i, '');
+    cleaned = cleaned.replace(/```$/, '').trim();
+  }
+
+  return cleaned;
 }
 
 /**
@@ -1088,36 +1275,7 @@ function isTaskOverdue(task, referenceDate) {
  */
 function sendOutlookEmail(subject, htmlBody, labelName) {
   const userEmail = getCurrentUserEmail();
-
-  // Ensure proper UTF-8 encoding by adding meta tag if not present
-  let body = htmlBody;
-  if (!body.match(/<meta[^>]+charset/i)) {
-    // If body doesn't have HTML structure, wrap it
-    // Use string concatenation instead of template literals to preserve UTF-8
-    if (!body.match(/<html/i)) {
-      body = '<!DOCTYPE html>\n' +
-             '<html>\n' +
-             '<head>\n' +
-             '<meta charset="UTF-8">\n' +
-             '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n' +
-             '</head>\n' +
-             '<body>\n' +
-             body +
-             '\n</body>\n' +
-             '</html>';
-    } else {
-      // Insert meta tag in existing HTML
-      body = body.replace(/<head[^>]*>/i, function(match) {
-        return match + '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">';
-      });
-    }
-  }
-
-  // Send email with explicit UTF-8 encoding and plain text fallback
-  GmailApp.sendEmail(userEmail, subject, 'This email requires HTML support.', {
-    htmlBody: body,
-    charset: 'utf-8'
-  });
+  sendHtmlEmail(userEmail, subject, htmlBody);
 
   // Apply label to the sent email
   Utilities.sleep(2000); // Wait for email to be sent

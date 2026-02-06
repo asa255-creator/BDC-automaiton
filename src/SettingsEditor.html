@@ -83,6 +83,14 @@
       border-radius: 4px;
       font-size: 14px;
     }
+    select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+      background: white;
+    }
     input:focus, textarea:focus {
       outline: none;
       border-color: #1a73e8;
@@ -221,6 +229,48 @@
           <div class="setting-label">Your Name</div>
           <div class="setting-description">Used in email signatures (e.g., "TC", "John")</div>
           <input type="text" id="user_name" placeholder="Enter your name">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Primary Weather Location (US)</div>
+          <div class="setting-description">Select a state and city to set the central latitude/longitude for National Weather Service forecasts</div>
+          <div class="input-row">
+            <div class="input-col">
+              <div class="setting-description">State</div>
+              <select id="nws_state">
+                <option value="">Select a state</option>
+              </select>
+            </div>
+            <div class="input-col">
+              <div class="setting-description">City</div>
+              <select id="nws_city">
+                <option value="">Select a city</option>
+              </select>
+            </div>
+          </div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">Latitude</div>
+              <input type="text" id="nws_latitude" placeholder="e.g., 40.7128" readonly>
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Longitude</div>
+              <input type="text" id="nws_longitude" placeholder="e.g., -74.0060" readonly>
+            </div>
+          </div>
+          <div class="placeholder-hint">The location label below will update automatically when you select a city.</div>
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Location Label</div>
+          <div class="setting-description">Used for time-based outputs and weather recommendations</div>
+          <input type="text" id="user_location" placeholder="City, State or Zip">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Timezone</div>
+          <div class="setting-description">IANA timezone (e.g., America/New_York)</div>
+          <input type="text" id="user_timezone" placeholder="America/New_York">
         </div>
 
         <div class="section-title">Document Settings</div>
@@ -409,6 +459,36 @@ Thanks,
           <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testHubSpotConnection()">Test Connection</button>
           <div id="hubspotTestStatus" class="setting-description" style="margin-top: 4px;"></div>
         </div>
+
+        <div class="section-title">Weather (Daily Outlook)</div>
+
+        <div class="setting-group">
+          <div class="setting-label">
+            National Weather Service (US)
+            <span id="nwsStatus" class="status-badge"></span>
+          </div>
+          <div class="setting-description">Public API (no key required). Toggle to use the National Weather Service forecast for US locations.</div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <input type="checkbox" id="nws_enabled" style="width: auto;">
+            <span>Enable NWS public API</span>
+          </label>
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">OpenWeather API Key (Optional)</div>
+          <div class="setting-description">Used as a fallback when NWS is disabled or not available</div>
+          <input type="password" id="weather_api_key" placeholder="Enter weather API key">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Travel-Based Secondary Weather (Coming Soon)</div>
+          <div class="setting-description">Will use calendar travel hints to add a secondary forecast</div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <input type="checkbox" id="travel_weather_enabled" style="width: auto;">
+            <span>Enable secondary travel weather</span>
+          </label>
+          <div class="placeholder-hint">Structure is in place, but detection is not enabled yet.</div>
+        </div>
       </div>
     </div>
 
@@ -449,6 +529,19 @@ Thanks,
             <option value="">Loading labels...</option>
           </select>
         </div>
+
+        <div class="section-title">Daily Outlook Timing</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Daily Outlook Delivery Time</div>
+          <div class="setting-description">Send the daily outlook on the day of, or at 8 PM the night before</div>
+          <select id="daily_outlook_schedule" style="width: 100%;">
+            <option value="day_of">Day of (morning)</option>
+            <option value="night_before">Night before (8 PM)</option>
+          </select>
+        </div>
+
+        
       </div>
     </div>
 
@@ -476,8 +569,81 @@ Thanks,
     }
 
     let allLabels = [];
+    let weatherLocationOptions = [];
+    let weatherLocationSettings = null;
+    let weatherLocationsLoaded = false;
+    const stateTimezones = {
+      AL: 'America/Chicago',
+      AK: 'America/Anchorage',
+      AZ: 'America/Phoenix',
+      AR: 'America/Chicago',
+      CA: 'America/Los_Angeles',
+      CO: 'America/Denver',
+      CT: 'America/New_York',
+      DE: 'America/New_York',
+      FL: 'America/New_York',
+      GA: 'America/New_York',
+      HI: 'Pacific/Honolulu',
+      ID: 'America/Boise',
+      IL: 'America/Chicago',
+      IN: 'America/Indiana/Indianapolis',
+      IA: 'America/Chicago',
+      KS: 'America/Chicago',
+      KY: 'America/New_York',
+      LA: 'America/Chicago',
+      ME: 'America/New_York',
+      MD: 'America/New_York',
+      MA: 'America/New_York',
+      MI: 'America/Detroit',
+      MN: 'America/Chicago',
+      MS: 'America/Chicago',
+      MO: 'America/Chicago',
+      MT: 'America/Denver',
+      NE: 'America/Chicago',
+      NV: 'America/Los_Angeles',
+      NH: 'America/New_York',
+      NJ: 'America/New_York',
+      NM: 'America/Denver',
+      NY: 'America/New_York',
+      NC: 'America/New_York',
+      ND: 'America/Chicago',
+      OH: 'America/New_York',
+      OK: 'America/Chicago',
+      OR: 'America/Los_Angeles',
+      PA: 'America/New_York',
+      RI: 'America/New_York',
+      SC: 'America/New_York',
+      SD: 'America/Chicago',
+      TN: 'America/Chicago',
+      TX: 'America/Chicago',
+      UT: 'America/Denver',
+      VT: 'America/New_York',
+      VA: 'America/New_York',
+      WA: 'America/Los_Angeles',
+      WV: 'America/New_York',
+      WI: 'America/Chicago',
+      WY: 'America/Denver'
+    };
 
     function loadSettings() {
+      google.script.run
+        .withSuccessHandler(function(options) {
+          weatherLocationOptions = options || [];
+          populateWeatherStateDropdown();
+          weatherLocationsLoaded = true;
+          applyWeatherLocationSettings();
+        })
+        .withFailureHandler(function(error) {
+          console.error('Failed to load weather location options:', error);
+          weatherLocationOptions = [];
+          populateWeatherStateDropdown();
+          weatherLocationsLoaded = true;
+          applyWeatherLocationSettings();
+        })
+        .getWeatherLocationOptions();
+
+      initializeWeatherLocationHandlers();
+
       // Load labels first
       google.script.run
         .withSuccessHandler(function(labels) {
@@ -496,6 +662,8 @@ Thanks,
         .withSuccessHandler(function(settings) {
           // General tab
           document.getElementById('user_name').value = settings.USER_NAME || '';
+          document.getElementById('user_location').value = settings.USER_LOCATION || '';
+          document.getElementById('user_timezone').value = settings.USER_TIMEZONE || '';
           document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
           document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
           document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
@@ -511,6 +679,16 @@ Thanks,
           document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
           document.getElementById('fathom_keep_links').checked = settings.FATHOM_KEEP_LINKS === 'true';
           document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
+          document.getElementById('weather_api_key').value = settings.WEATHER_API_KEY || '';
+          document.getElementById('nws_enabled').checked = settings.NWS_WEATHER_ENABLED === 'true';
+          document.getElementById('travel_weather_enabled').checked = settings.TRAVEL_WEATHER_ENABLED === 'true';
+          weatherLocationSettings = {
+            state: settings.NWS_WEATHER_STATE || '',
+            city: settings.NWS_WEATHER_CITY || '',
+            latitude: settings.NWS_WEATHER_LAT || '',
+            longitude: settings.NWS_WEATHER_LON || ''
+          };
+          applyWeatherLocationSettings();
           document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
           document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
           document.getElementById('claude_agenda_max_tokens').value = settings.CLAUDE_AGENDA_MAX_TOKENS || '4000';
@@ -521,6 +699,7 @@ Thanks,
           // Schedule tab
           document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
           document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
+          document.getElementById('daily_outlook_schedule').value = settings.DAILY_OUTLOOK_SCHEDULE || 'day_of';
 
           // Set label dropdowns after they're populated
           setTimeout(function() {
@@ -534,6 +713,7 @@ Thanks,
           updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
           updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
           updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
+          updateBadge('nwsStatus', settings.NWS_WEATHER_ENABLED === 'true');
 
           // Show content
           document.getElementById('loading').style.display = 'none';
@@ -594,14 +774,129 @@ Thanks,
       }
     }
 
+    function populateWeatherStateDropdown() {
+      const stateSelect = document.getElementById('nws_state');
+      stateSelect.innerHTML = '<option value="">Select a state</option>';
+
+      weatherLocationOptions.forEach(function(entry) {
+        const option = document.createElement('option');
+        option.value = entry.state;
+        option.textContent = entry.state;
+        stateSelect.appendChild(option);
+      });
+    }
+
+    function populateWeatherCityDropdown(state) {
+      const citySelect = document.getElementById('nws_city');
+      citySelect.innerHTML = '<option value="">Select a city</option>';
+
+      const stateEntry = weatherLocationOptions.find(function(entry) {
+        return entry.state === state;
+      });
+
+      if (!stateEntry) {
+        return;
+      }
+
+      stateEntry.cities.forEach(function(cityEntry) {
+        const cityName = cityEntry.city || cityEntry;
+        const option = document.createElement('option');
+        option.value = cityName;
+        option.textContent = cityName;
+        citySelect.appendChild(option);
+      });
+    }
+
+    function initializeWeatherLocationHandlers() {
+      const stateSelect = document.getElementById('nws_state');
+      const citySelect = document.getElementById('nws_city');
+
+      stateSelect.addEventListener('change', function() {
+        populateWeatherCityDropdown(stateSelect.value);
+        citySelect.value = '';
+        updateWeatherLocationDetails();
+      });
+
+      citySelect.addEventListener('change', function() {
+        updateWeatherLocationDetails();
+      });
+    }
+
+    function applyWeatherLocationSettings() {
+      if (!weatherLocationsLoaded || !weatherLocationSettings) {
+        return;
+      }
+
+      const stateSelect = document.getElementById('nws_state');
+      const citySelect = document.getElementById('nws_city');
+
+      if (weatherLocationSettings.state) {
+        stateSelect.value = weatherLocationSettings.state;
+        populateWeatherCityDropdown(weatherLocationSettings.state);
+      }
+
+      if (weatherLocationSettings.city) {
+        citySelect.value = weatherLocationSettings.city;
+      }
+
+      if (weatherLocationSettings.latitude) {
+        document.getElementById('nws_latitude').value = weatherLocationSettings.latitude;
+      }
+
+      if (weatherLocationSettings.longitude) {
+        document.getElementById('nws_longitude').value = weatherLocationSettings.longitude;
+      }
+
+      if (weatherLocationSettings.state && weatherLocationSettings.city) {
+        updateWeatherLocationDetails();
+      }
+    }
+
+    function updateWeatherLocationDetails() {
+      const state = document.getElementById('nws_state').value;
+      const city = document.getElementById('nws_city').value;
+      const latitudeInput = document.getElementById('nws_latitude');
+      const longitudeInput = document.getElementById('nws_longitude');
+
+      if (!state || !city) {
+        latitudeInput.value = '';
+        longitudeInput.value = '';
+        return;
+      }
+
+      document.getElementById('user_location').value = `${city}, ${state}`;
+      const timezoneInput = document.getElementById('user_timezone');
+      if (timezoneInput && !timezoneInput.value.trim() && stateTimezones[state]) {
+        timezoneInput.value = stateTimezones[state];
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.latitude && result.longitude) {
+            latitudeInput.value = result.latitude;
+            longitudeInput.value = result.longitude;
+          } else {
+            latitudeInput.value = '';
+            longitudeInput.value = '';
+          }
+        })
+        .withFailureHandler(function() {
+          latitudeInput.value = '';
+          longitudeInput.value = '';
+        })
+        .geocodeCityState(state, city);
+    }
+
     function saveSettings() {
       const saveBtn = document.getElementById('saveBtn');
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
 
-      const settings = {
+        const settings = {
         // General
         USER_NAME: document.getElementById('user_name').value.trim(),
+        USER_LOCATION: document.getElementById('user_location').value.trim(),
+        USER_TIMEZONE: document.getElementById('user_timezone').value.trim(),
         DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
         DIAGNOSTIC_MODE: document.getElementById('diagnostic_mode').checked ? 'true' : 'false',
         INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
@@ -615,6 +910,13 @@ Thanks,
         FATHOM_WEBHOOK_SECRET: document.getElementById('fathom_webhook_secret').value.trim(),
         FATHOM_KEEP_LINKS: document.getElementById('fathom_keep_links').checked ? 'true' : 'false',
         HUBSPOT_API_KEY: document.getElementById('hubspot_key').value.trim(),
+        WEATHER_API_KEY: document.getElementById('weather_api_key').value.trim(),
+        NWS_WEATHER_ENABLED: document.getElementById('nws_enabled').checked ? 'true' : 'false',
+        NWS_WEATHER_STATE: document.getElementById('nws_state').value.trim(),
+        NWS_WEATHER_CITY: document.getElementById('nws_city').value.trim(),
+        NWS_WEATHER_LAT: document.getElementById('nws_latitude').value.trim(),
+        NWS_WEATHER_LON: document.getElementById('nws_longitude').value.trim(),
+        TRAVEL_WEATHER_ENABLED: document.getElementById('travel_weather_enabled').checked ? 'true' : 'false',
         TODOIST_API_TOKEN: document.getElementById('todoist_token').value.trim(),
         CLAUDE_API_KEY: document.getElementById('claude_key').value.trim(),
         CLAUDE_AGENDA_MAX_TOKENS: document.getElementById('claude_agenda_max_tokens').value.trim() || '4000',
@@ -625,7 +927,8 @@ Thanks,
         BUSINESS_HOURS_START: document.getElementById('hours_start').value.trim(),
         BUSINESS_HOURS_END: document.getElementById('hours_end').value.trim(),
         DAILY_BRIEFING_LABEL: document.getElementById('daily_label').value.trim(),
-        WEEKLY_BRIEFING_LABEL: document.getElementById('weekly_label').value.trim()
+        WEEKLY_BRIEFING_LABEL: document.getElementById('weekly_label').value.trim(),
+        DAILY_OUTLOOK_SCHEDULE: document.getElementById('daily_outlook_schedule').value
       };
 
       google.script.run
@@ -640,6 +943,7 @@ Thanks,
           updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
           updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
           updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
+          updateBadge('nwsStatus', settings.NWS_WEATHER_ENABLED === 'true');
 
           saveBtn.disabled = false;
           saveBtn.textContent = 'Save Changes';

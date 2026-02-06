@@ -52,6 +52,15 @@ function getClientsForBugReport() {
 }
 
 /**
+ * Determines whether a report type supports a client filter.
+ * @param {string} reportType - Report type
+ * @returns {boolean} True if client filter is applicable
+ */
+function isClientFilterApplicable(reportType) {
+  return reportType !== 'daily_briefing' && reportType !== 'weekly_briefing';
+}
+
+/**
  * Generates a comprehensive bug report based on search criteria.
  * @param {Object} criteria - Search criteria
  * @returns {Object} Object with 'report' and 'issuesSummary' strings
@@ -63,6 +72,8 @@ function generateBugReport(criteria) {
   const startTime = new Date(criteria.startTime);
   const endTime = new Date(criteria.endTime);
   const reportType = criteria.reportType || 'all';
+  const clientName = isClientFilterApplicable(reportType) ? criteria.clientName : null;
+  const clientFilterIgnored = Boolean(criteria.clientName) && !clientName;
 
   const reportTypeNames = {
     all: 'All Automations',
@@ -78,18 +89,20 @@ function generateBugReport(criteria) {
   report.push(`**Generated:** ${new Date().toISOString()}`);
   report.push(`**Report Type:** ${reportTypeNames[reportType] || 'All Automations'}`);
   report.push(`**Time Range:** ${startTime.toISOString()} to ${endTime.toISOString()}`);
-  if (criteria.clientName) {
-    report.push(`**Client:** ${criteria.clientName}`);
+  if (clientName) {
+    report.push(`**Client:** ${clientName}`);
+  } else if (clientFilterIgnored) {
+    report.push('**Client:** N/A (Daily/Weekly Briefing reports are not client-specific)');
   }
   report.push('');
   report.push('---');
   report.push('');
 
   // Section 1: Client Details (if specified)
-  if (criteria.clientName && (reportType === 'all' || reportType === 'pre_meeting_agenda' || reportType === 'meeting_notes')) {
+  if (clientName && (reportType === 'all' || reportType === 'pre_meeting_agenda' || reportType === 'meeting_notes')) {
     report.push('## 1. CLIENT DETAILS');
     report.push('');
-    const client = getClientByName(criteria.clientName);
+    const client = getClientByName(clientName);
     if (client) {
       report.push('```');
       report.push(`Client Name: ${client.client_name}`);
@@ -115,7 +128,7 @@ function generateBugReport(criteria) {
   // Section 2: Processing Log Entries
   report.push('## 2. PROCESSING LOG');
   report.push('');
-  let processingLogs = getProcessingLogEntries(startTime, endTime, criteria.clientName);
+  let processingLogs = getProcessingLogEntries(startTime, endTime, clientName);
 
   // Filter by action_type based on reportType
   const actionTypeFilters = {
@@ -170,7 +183,7 @@ function generateBugReport(criteria) {
     };
 
     // API Request Log
-    let apiRequests = getDiagnosticLogEntries('API_Request_Log', startTime, endTime, criteria.clientName);
+    let apiRequests = getDiagnosticLogEntries('API_Request_Log', startTime, endTime, clientName);
 
     // Filter by API name if specific report type
     if (reportType !== 'all' && apiNameFilters[reportType]) {
@@ -196,7 +209,7 @@ function generateBugReport(criteria) {
     }
 
     // API Response Log
-    let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, criteria.clientName);
+    let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, clientName);
 
     // Filter by API name if specific report type
     if (reportType !== 'all' && apiNameFilters[reportType]) {
@@ -261,6 +274,15 @@ function generateBugReport(criteria) {
               report.push('');
               report.push('Content Preview:');
               report.push(truncateForReport(parsedResponse.content[0].text, 300));
+              const replacementInfo = analyzeReplacementCharacters(parsedResponse.content[0].text);
+              if (replacementInfo.hasReplacement) {
+                report.push('');
+                report.push(`⚠️ Replacement Characters Detected: ${replacementInfo.count}`);
+                report.push(`First Occurrence Offset: ${replacementInfo.firstIndex}`);
+              } else {
+                report.push('');
+                report.push('✅ No replacement characters detected in preview.');
+              }
             }
           }
 
@@ -295,7 +317,7 @@ function generateBugReport(criteria) {
 
     // Agenda Generation Trace (only for pre_meeting_agenda or all)
     if (reportType === 'all' || reportType === 'pre_meeting_agenda') {
-      const agendaTraces = getDiagnosticLogEntries('Agenda_Generation_Trace', startTime, endTime, criteria.clientName);
+      const agendaTraces = getDiagnosticLogEntries('Agenda_Generation_Trace', startTime, endTime, clientName);
       if (agendaTraces.length > 0) {
         report.push('### Agenda Generation Trace');
         report.push('');
@@ -329,32 +351,34 @@ function generateBugReport(criteria) {
     let labelToCheck = null;
     let labelDescription = '';
 
-    if (reportType === 'pre_meeting_agenda' && criteria.clientName) {
-      const client = getClientByName(criteria.clientName);
+    if (reportType === 'pre_meeting_agenda' && clientName) {
+      const client = getClientByName(clientName);
       if (client && client.meeting_agendas_label) {
         labelToCheck = client.meeting_agendas_label;
         labelDescription = 'Meeting Agendas';
       }
-    } else if (reportType === 'fathom_drafts' && criteria.clientName) {
-      const client = getClientByName(criteria.clientName);
+    } else if (reportType === 'fathom_drafts' && clientName) {
+      const client = getClientByName(clientName);
       if (client && client.meeting_summaries_label) {
         labelToCheck = client.meeting_summaries_label;
         labelDescription = 'Meeting Summaries';
       }
-    } else if (reportType === 'meeting_notes' && criteria.clientName) {
-      const client = getClientByName(criteria.clientName);
+    } else if (reportType === 'meeting_notes' && clientName) {
+      const client = getClientByName(clientName);
       if (client && client.meeting_summaries_label) {
         labelToCheck = client.meeting_summaries_label;
         labelDescription = 'Meeting Summaries';
       }
     } else if (reportType === 'daily_briefing') {
-      labelToCheck = 'Daily Briefing';
+      const props = PropertiesService.getScriptProperties();
+      labelToCheck = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
       labelDescription = 'Daily Briefing';
     } else if (reportType === 'weekly_briefing') {
-      labelToCheck = 'Weekly Briefing';
+      const props = PropertiesService.getScriptProperties();
+      labelToCheck = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
       labelDescription = 'Weekly Briefing';
-    } else if (reportType === 'all' && criteria.clientName) {
-      const client = getClientByName(criteria.clientName);
+    } else if (reportType === 'all' && clientName) {
+      const client = getClientByName(clientName);
       if (client && client.gmail_label) {
         labelToCheck = client.gmail_label;
         labelDescription = 'Client Emails';
@@ -375,6 +399,17 @@ function generateBugReport(criteria) {
             report.push(`To: ${email.to}`);
             report.push(`Snippet: ${email.snippet || '(empty)'}`);
             report.push(`Body Length: ${email.bodyLength} characters`);
+            if ((reportType === 'daily_briefing' || reportType === 'weekly_briefing') && email.htmlSnippet) {
+              report.push('HTML Preview:');
+              report.push(truncateForReport(email.htmlSnippet, 1000));
+              const emailReplacementInfo = analyzeReplacementCharacters(email.htmlSnippet);
+              if (emailReplacementInfo.hasReplacement) {
+                report.push(`⚠️ Replacement Characters Detected: ${emailReplacementInfo.count}`);
+                report.push(`First Occurrence Offset: ${emailReplacementInfo.firstIndex}`);
+              } else {
+                report.push('✅ No replacement characters detected in HTML preview.');
+              }
+            }
             report.push('```');
             report.push('');
           });
@@ -424,7 +459,7 @@ function generateBugReport(criteria) {
   report.push('**END OF BUG REPORT**');
 
   // Generate issues summary separately
-  const issuesSummary = generateIssuesSummary(startTime, endTime, criteria.clientName, reportType);
+  const issuesSummary = generateIssuesSummary(startTime, endTime, clientName, reportType);
 
   return {
     report: report.join('\n'),
@@ -444,6 +479,8 @@ function generateIssuesSummary(startTime, endTime, clientName, reportType) {
   const summary = [];
   const issues = [];
   reportType = reportType || 'all';
+  const normalizedClientName = isClientFilterApplicable(reportType) ? clientName : null;
+  const clientFilterIgnored = Boolean(clientName) && !normalizedClientName;
 
   const reportTypeNames = {
     all: 'All Automations',
@@ -459,8 +496,10 @@ function generateIssuesSummary(startTime, endTime, clientName, reportType) {
   summary.push(`**Scanned:** ${new Date().toISOString()}`);
   summary.push(`**Report Type:** ${reportTypeNames[reportType] || 'All Automations'}`);
   summary.push(`**Time Range:** ${startTime.toISOString()} to ${endTime.toISOString()}`);
-  if (clientName) {
-    summary.push(`**Client:** ${clientName}`);
+  if (normalizedClientName) {
+    summary.push(`**Client:** ${normalizedClientName}`);
+  } else if (clientFilterIgnored) {
+    summary.push('**Client:** N/A (Daily/Weekly Briefing reports are not client-specific)');
   }
   summary.push('');
   summary.push('---');
@@ -468,7 +507,7 @@ function generateIssuesSummary(startTime, endTime, clientName, reportType) {
 
   // Check for truncated API responses
   if (isDiagnosticModeEnabled()) {
-    let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, clientName);
+    let apiResponses = getDiagnosticLogEntries('API_Response_Log', startTime, endTime, normalizedClientName);
 
     // Filter by API name based on report type
     const apiNameFilters = {
@@ -534,7 +573,7 @@ function generateIssuesSummary(startTime, endTime, clientName, reportType) {
   }
 
   // Check processing log for errors
-  let processingLogs = getProcessingLogEntries(startTime, endTime, clientName);
+  let processingLogs = getProcessingLogEntries(startTime, endTime, normalizedClientName);
 
   // Filter by action_type based on reportType
   const actionTypeFilters = {
@@ -566,8 +605,8 @@ function generateIssuesSummary(startTime, endTime, clientName, reportType) {
   }
 
   // Check for missing filter IDs (only for client-specific report types)
-  if (clientName && (reportType === 'all' || reportType === 'pre_meeting_agenda' || reportType === 'meeting_notes')) {
-    const client = getClientByName(clientName);
+  if (normalizedClientName && (reportType === 'all' || reportType === 'pre_meeting_agenda' || reportType === 'meeting_notes')) {
+    const client = getClientByName(normalizedClientName);
     if (client && client.setup_complete) {
       const missingFilters = [];
       if (!client.from_filter_id) missingFilters.push('from_filter_id');
@@ -878,7 +917,10 @@ function getProcessingLogEntries(startTime, endTime, clientName) {
 
   const entries = [];
   for (let i = 1; i < data.length; i++) {
-    const timestamp = new Date(data[i][timestampIdx]);
+    const timestamp = parseProcessingLogTimestamp(data[i][timestampIdx]);
+    if (!timestamp) {
+      continue;
+    }
     if (timestamp >= startTime && timestamp <= endTime) {
       if (clientName && data[i][clientIdIdx] !== clientName) continue;
 
@@ -891,6 +933,29 @@ function getProcessingLogEntries(startTime, endTime, clientName) {
   }
 
   return entries;
+}
+
+/**
+ * Parses Processing_Log timestamps (Date objects or formatted strings).
+ *
+ * @param {Date|string} value - Timestamp value
+ * @returns {Date|null} Parsed Date or null if invalid
+ */
+function parseProcessingLogTimestamp(value) {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (!isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  return null;
 }
 
 /**
@@ -942,8 +1007,9 @@ function getDiagnosticLogEntries(sheetName, startTime, endTime, clientName) {
  */
 function getRecentEmailsFromLabel(labelName, startTime, endTime) {
   try {
-    const startStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'yyyy/MM/dd');
-    const endStr = Utilities.formatDate(endTime, Session.getScriptTimeZone(), 'yyyy/MM/dd');
+    const timezone = getUserTimezone();
+    const startStr = Utilities.formatDate(startTime, timezone, 'yyyy/MM/dd');
+    const endStr = Utilities.formatDate(endTime, timezone, 'yyyy/MM/dd');
 
     const query = `label:"${labelName}" after:${startStr} before:${endStr}`;
     const threads = GmailApp.search(query, 0, 10);
@@ -960,7 +1026,8 @@ function getRecentEmailsFromLabel(labelName, startTime, endTime) {
             from: msg.getFrom(),
             to: msg.getTo(),
             snippet: msg.getPlainBody().substring(0, 150),
-            bodyLength: msg.getPlainBody().length
+            bodyLength: msg.getPlainBody().length,
+            htmlSnippet: msg.getBody().substring(0, 2000)
           });
         }
       });
@@ -983,4 +1050,30 @@ function truncateForReport(text, maxLength) {
   if (!text) return '(empty)';
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '... [truncated]';
+}
+
+/**
+ * Detects replacement characters (U+FFFD) in a string.
+ * @param {string} text - Text to analyze
+ * @returns {{hasReplacement: boolean, count: number, firstIndex: number|null}}
+ */
+function analyzeReplacementCharacters(text) {
+  if (!text) {
+    return { hasReplacement: false, count: 0, firstIndex: null };
+  }
+
+  const replacementChar = '\uFFFD';
+  let count = 0;
+  let firstIndex = null;
+
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === replacementChar) {
+      count += 1;
+      if (firstIndex === null) {
+        firstIndex = i;
+      }
+    }
+  }
+
+  return { hasReplacement: count > 0, count: count, firstIndex: firstIndex };
 }

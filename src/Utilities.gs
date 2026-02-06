@@ -20,11 +20,7 @@ function formatDate(date) {
     return '';
   }
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
+  return Utilities.formatDate(date, getUserTimezone(), 'yyyy-MM-dd');
 }
 
 /**
@@ -38,8 +34,7 @@ function formatDateLong(date) {
     return '';
   }
 
-  const options = { year: 'numeric', month: 'long', day: 'numeric' };
-  return date.toLocaleDateString('en-US', options);
+  return Utilities.formatDate(date, getUserTimezone(), 'MMMM d, yyyy');
 }
 
 /**
@@ -53,10 +48,9 @@ function formatDateShort(date) {
     return '';
   }
 
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const month = months[date.getMonth()];
-  const day = date.getDate();
+  const timezone = getUserTimezone();
+  const month = Utilities.formatDate(date, timezone, 'MMM');
+  const day = parseInt(Utilities.formatDate(date, timezone, 'd'), 10);
   const ordinal = getOrdinalSuffix(day);
 
   return `${month} ${day}${ordinal}`;
@@ -85,14 +79,7 @@ function formatTime(date) {
     return '';
   }
 
-  let hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-
-  hours = hours % 12;
-  hours = hours ? hours : 12; // 0 should be 12
-
-  return `${hours}:${minutes} ${ampm}`;
+  return Utilities.formatDate(date, getUserTimezone(), 'h:mm a');
 }
 
 /**
@@ -190,20 +177,7 @@ function getEndOfWeek() {
  */
 function getHumanReadableTimestamp() {
   const date = new Date();
-
-  // Format options for EST
-  const options = {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZoneName: 'short'
-  };
-
-  return date.toLocaleString('en-US', options);
+  return Utilities.formatDate(date, getUserTimezone(), 'MMM d, yyyy h:mm a z');
 }
 
 /**
@@ -386,6 +360,113 @@ function escapeHtml(text) {
 function stripHtml(html) {
   if (!html) return '';
   return html.replace(/<[^>]*>/g, '').trim();
+}
+
+/**
+ * Encodes non-BMP characters (e.g., many emoji) as numeric HTML entities.
+ *
+ * @param {string} text - Text to encode
+ * @returns {string} Text with non-BMP characters encoded
+ */
+function encodeNonBmpCharacters(text) {
+  if (!text) return text || '';
+  return text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(match) {
+    const codePoint = match.codePointAt(0);
+    if (!codePoint) {
+      return match;
+    }
+    return `&#x${codePoint.toString(16).toUpperCase()};`;
+  });
+}
+
+/**
+ * Ensures HTML email bodies include UTF-8 charset metadata.
+ *
+ * @param {string} htmlBody - HTML email body
+ * @param {Object} [options] - Options (title)
+ * @returns {string} HTML with charset metadata
+ */
+function ensureHtmlEmailBody(htmlBody, options) {
+  let body = htmlBody || '';
+  const title = options && options.title ? escapeHtml(encodeNonBmpCharacters(options.title)) : '';
+  const hasCharset = body.match(/<meta[^>]+charset/i);
+
+  if (!hasCharset) {
+    if (!body.match(/<html/i)) {
+      const titleTag = title ? `<title>${title}</title>\n` : '';
+      body = '<!DOCTYPE html>\n' +
+        '<html>\n' +
+        '<head>\n' +
+        '<meta charset="UTF-8">\n' +
+        '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n' +
+        titleTag +
+        '</head>\n' +
+        '<body>\n' +
+        body +
+        '\n</body>\n' +
+        '</html>';
+    } else if (body.match(/<head[^>]*>/i)) {
+      body = body.replace(/<head[^>]*>/i, function(match) {
+        return match + '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">';
+      });
+    } else {
+      const titleTag = title ? `<title>${title}</title>\n` : '';
+      body = body.replace(/<html[^>]*>/i, function(match) {
+        return match +
+          '\n<head>\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n' +
+          titleTag +
+          '</head>';
+      });
+    }
+  }
+
+  return body;
+}
+
+/**
+ * Sends a UTF-8 HTML email with standardized encoding metadata.
+ *
+ * @param {string} to - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} htmlBody - HTML email body
+ * @param {Object} [options] - Options (plainText, cc, bcc, title)
+ */
+function sendHtmlEmail(to, subject, htmlBody, options) {
+  const normalizedBody = encodeNonBmpCharacters(htmlBody);
+  const title = options && options.title ? options.title : subject;
+  const body = ensureHtmlEmailBody(normalizedBody, { title: title });
+  const sendOptions = {
+    htmlBody: body,
+    charset: 'UTF-8'
+  };
+
+  if (options && options.cc) {
+    sendOptions.cc = options.cc;
+  }
+
+  if (options && options.bcc) {
+    sendOptions.bcc = options.bcc;
+  }
+
+  GmailApp.sendEmail(to, subject, options && options.plainText ? options.plainText : 'This email requires HTML support.', sendOptions);
+}
+
+/**
+ * Creates a UTF-8 HTML draft with standardized encoding metadata.
+ *
+ * @param {string} to - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} htmlBody - HTML email body
+ * @param {Object} [options] - Options (plainText, title)
+ * @returns {GoogleAppsScript.Gmail.GmailDraft} Draft instance
+ */
+function createHtmlDraft(to, subject, htmlBody, options) {
+  const normalizedBody = encodeNonBmpCharacters(htmlBody);
+  const title = options && options.title ? options.title : subject;
+  const body = ensureHtmlEmailBody(normalizedBody, { title: title });
+  return GmailApp.createDraft(to, subject, options && options.plainText ? options.plainText : '', {
+    htmlBody: body
+  });
 }
 
 /**
@@ -898,7 +979,61 @@ function runInteractiveSetup(ui, ss, props) {
   props.setProperty('DOC_NAME_TEMPLATE', docTemplate);
   Logger.log(`Set DOC_NAME_TEMPLATE: ${docTemplate}`);
 
-  // Step 9: Check Advanced Services
+  // Step 9: Configure National Weather Service (US)
+  const nwsEnableResponse = ui.alert(
+    'National Weather Service (US)',
+    'The National Weather Service provides a public weather API with no key required.\n\nEnable NWS weather integration?',
+    ui.ButtonSet.YES_NO
+  );
+
+  const nwsEnabled = nwsEnableResponse === ui.Button.YES;
+  props.setProperty('NWS_WEATHER_ENABLED', nwsEnabled ? 'true' : 'false');
+
+  if (nwsEnabled) {
+    const stateResponse = ui.prompt(
+      'Primary Weather State',
+      'Enter the two-letter state abbreviation for your primary weather location (e.g., CA, NY):',
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (stateResponse.getSelectedButton() === ui.Button.CANCEL) {
+      ui.alert('Setup cancelled.');
+      return;
+    }
+
+    const state = stateResponse.getResponseText().trim().toUpperCase();
+
+    const cityResponse = ui.prompt(
+      'Primary Weather City',
+      'Enter the city name for your primary weather location (e.g., Seattle, Austin):',
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (cityResponse.getSelectedButton() === ui.Button.CANCEL) {
+      ui.alert('Setup cancelled.');
+      return;
+    }
+
+    const city = cityResponse.getResponseText().trim();
+    const geocodeResult = geocodeCityState(state, city);
+
+    if (geocodeResult && geocodeResult.latitude && geocodeResult.longitude) {
+      props.setProperty('NWS_WEATHER_STATE', normalizeStateInput(state));
+      props.setProperty('NWS_WEATHER_CITY', geocodeResult.city || city);
+      props.setProperty('NWS_WEATHER_LAT', geocodeResult.latitude.toString());
+      props.setProperty('NWS_WEATHER_LON', geocodeResult.longitude.toString());
+      props.setProperty('USER_LOCATION', `${geocodeResult.city || city}, ${normalizeStateInput(state)}`);
+      Logger.log(`Set NWS location: ${geocodeResult.city || city}, ${normalizeStateInput(state)}`);
+    } else {
+      ui.alert(
+        'Location Not Found',
+        'The state/city combination could not be geocoded.\n\nYou can set it later in Settings > General.',
+        ui.ButtonSet.OK
+      );
+    }
+  }
+
+  // Step 10: Check Advanced Services
   const serviceStatus = checkAdvancedServices();
 
   if (serviceStatus.missing.length > 0) {
@@ -924,8 +1059,23 @@ function runInteractiveSetup(ui, ss, props) {
   }
 
   // Step 10: Create all sheets
-  ui.alert('Creating Sheets', 'Creating all required sheets...', ui.ButtonSet.OK);
+  const existingSheets = getExistingSheetNames(ss, getRequiredSheetNames());
+  if (existingSheets.length > 0) {
+    const proceed = ui.alert(
+      'Existing Sheets Detected',
+      'The following sheets already exist and will be preserved:\n\n' +
+      existingSheets.join('\n') +
+      '\n\nContinue setup and create any missing sheets?',
+      ui.ButtonSet.OK_CANCEL
+    );
 
+    if (proceed !== ui.Button.OK) {
+      ui.alert('Setup cancelled.');
+      return;
+    }
+  }
+
+  ui.alert('Creating Sheets', 'Creating all required sheets...', ui.ButtonSet.OK);
   createAllSheets(ss);
 
   // Step 11: Set up triggers
@@ -979,6 +1129,11 @@ function runStandaloneSetup(props) {
     Logger.log('- BUSINESS_HOURS_START: Start hour 0-23 (default: 8)');
     Logger.log('- BUSINESS_HOURS_END: End hour 0-24 (default: 18)');
     Logger.log('- DOC_NAME_TEMPLATE: Doc naming template (default: "Client Notes - {client_name}")');
+    Logger.log('- NWS_WEATHER_ENABLED: "true" to enable National Weather Service forecasts');
+    Logger.log('- NWS_WEATHER_STATE: Two-letter state code for NWS location');
+    Logger.log('- NWS_WEATHER_CITY: City name for NWS location');
+    Logger.log('- NWS_WEATHER_LAT: Latitude for NWS location');
+    Logger.log('- NWS_WEATHER_LON: Longitude for NWS location');
     throw new Error('SPREADSHEET_ID is required. See logs for instructions.');
   }
 
@@ -1011,6 +1166,13 @@ function runStandaloneSetup(props) {
     Logger.log('Set default DOC_NAME_TEMPLATE: Client Notes - {client_name}');
   } else {
     Logger.log(`Using DOC_NAME_TEMPLATE: ${props.getProperty('DOC_NAME_TEMPLATE')}`);
+  }
+
+  if (!props.getProperty('NWS_WEATHER_ENABLED')) {
+    props.setProperty('NWS_WEATHER_ENABLED', 'false');
+    Logger.log('Set default NWS_WEATHER_ENABLED: false');
+  } else {
+    Logger.log(`Using NWS_WEATHER_ENABLED: ${props.getProperty('NWS_WEATHER_ENABLED')}`);
   }
 
   // Log optional integrations status
@@ -1049,6 +1211,10 @@ function runStandaloneSetup(props) {
   Logger.log('');
   Logger.log('Creating sheets...');
   const ss = SpreadsheetApp.openById(spreadsheetId);
+  const existingSheets = getExistingSheetNames(ss, getRequiredSheetNames());
+  if (existingSheets.length > 0) {
+    Logger.log(`Existing sheets detected (will be preserved): ${existingSheets.join(', ')}`);
+  }
   createAllSheets(ss);
   Logger.log('Sheets created.');
 
@@ -1158,6 +1324,34 @@ function createAllSheets(ss) {
   createJsonFormatsSheet(ss);
 
   Logger.log('All sheets created.');
+}
+
+/**
+ * Returns the list of required sheet names for setup.
+ *
+ * @returns {string[]} Sheet names
+ */
+function getRequiredSheetNames() {
+  return [
+    'Client_Registry',
+    'Generated_Agendas',
+    'Processing_Log',
+    'Unmatched',
+    'Folders',
+    'Prompts',
+    'JSON_Formats'
+  ];
+}
+
+/**
+ * Returns existing sheet names from a list.
+ *
+ * @param {Spreadsheet} ss - The spreadsheet object
+ * @param {string[]} sheetNames - Names to check
+ * @returns {string[]} Existing sheet names
+ */
+function getExistingSheetNames(ss, sheetNames) {
+  return sheetNames.filter(name => ss.getSheetByName(name));
 }
 
 /**
@@ -2063,6 +2257,16 @@ function getSettingsForEditor() {
     AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0',
     DAILY_BRIEFING_LABEL: props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily',
     WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly',
+    DAILY_OUTLOOK_SCHEDULE: props.getProperty('DAILY_OUTLOOK_SCHEDULE') || 'day_of',
+    USER_LOCATION: props.getProperty('USER_LOCATION') || props.getProperty('DAILY_OUTLOOK_LOCATION') || '',
+    USER_TIMEZONE: props.getProperty('USER_TIMEZONE') || Session.getScriptTimeZone(),
+    WEATHER_API_KEY: props.getProperty('WEATHER_API_KEY') || '',
+    NWS_WEATHER_ENABLED: props.getProperty('NWS_WEATHER_ENABLED') || 'false',
+    NWS_WEATHER_STATE: props.getProperty('NWS_WEATHER_STATE') || '',
+    NWS_WEATHER_CITY: props.getProperty('NWS_WEATHER_CITY') || '',
+    NWS_WEATHER_LAT: props.getProperty('NWS_WEATHER_LAT') || '',
+    NWS_WEATHER_LON: props.getProperty('NWS_WEATHER_LON') || '',
+    TRAVEL_WEATHER_ENABLED: props.getProperty('TRAVEL_WEATHER_ENABLED') || 'false',
     DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false'
   };
 }
@@ -2160,6 +2364,42 @@ function saveSettingsFromEditor(settings) {
     props.setProperty('FATHOM_WEBHOOK_SECRET', settings.FATHOM_WEBHOOK_SECRET);
   }
 
+  if (settings.WEATHER_API_KEY) {
+    props.setProperty('WEATHER_API_KEY', settings.WEATHER_API_KEY);
+  }
+
+  if (settings.NWS_WEATHER_ENABLED !== undefined) {
+    props.setProperty('NWS_WEATHER_ENABLED', settings.NWS_WEATHER_ENABLED);
+  }
+
+  if (settings.NWS_WEATHER_STATE !== undefined) {
+    props.setProperty('NWS_WEATHER_STATE', settings.NWS_WEATHER_STATE);
+  }
+
+  if (settings.NWS_WEATHER_CITY !== undefined) {
+    props.setProperty('NWS_WEATHER_CITY', settings.NWS_WEATHER_CITY);
+  }
+
+  if (settings.NWS_WEATHER_LAT !== undefined) {
+    props.setProperty('NWS_WEATHER_LAT', settings.NWS_WEATHER_LAT);
+  }
+
+  if (settings.NWS_WEATHER_LON !== undefined) {
+    props.setProperty('NWS_WEATHER_LON', settings.NWS_WEATHER_LON);
+  }
+
+  if (settings.TRAVEL_WEATHER_ENABLED !== undefined) {
+    props.setProperty('TRAVEL_WEATHER_ENABLED', settings.TRAVEL_WEATHER_ENABLED);
+  }
+
+  if (settings.USER_LOCATION !== undefined) {
+    props.setProperty('USER_LOCATION', settings.USER_LOCATION);
+  }
+
+  if (settings.USER_TIMEZONE !== undefined) {
+    props.setProperty('USER_TIMEZONE', settings.USER_TIMEZONE);
+  }
+
   // Track if subject template changed (for filter update)
   const oldSubjectTemplate = props.getProperty('MEETING_SUBJECT_TEMPLATE');
   const subjectTemplateChanged = settings.MEETING_SUBJECT_TEMPLATE &&
@@ -2199,6 +2439,11 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.WEEKLY_BRIEFING_LABEL) {
     props.setProperty('WEEKLY_BRIEFING_LABEL', settings.WEEKLY_BRIEFING_LABEL);
+  }
+
+  if (settings.DAILY_OUTLOOK_SCHEDULE) {
+    props.setProperty('DAILY_OUTLOOK_SCHEDULE', settings.DAILY_OUTLOOK_SCHEDULE);
+    updateDailyOutlookTrigger();
   }
 
   // Diagnostic mode setting (allow true/false)

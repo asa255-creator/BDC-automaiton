@@ -102,6 +102,12 @@
       margin-right: 4px;
     }
 
+    .help-text {
+      font-size: 12px;
+      color: #5f6368;
+      margin-top: 6px;
+    }
+
     .loading {
       display: none;
       text-align: center;
@@ -162,10 +168,13 @@
     </div>
 
     <div class="section">
-      <label>Client (optional - leave blank for all clients)</label>
+      <label id="clientLabel">Client (optional - leave blank for all clients)</label>
       <select id="clientSelect">
         <option value="">All Clients</option>
       </select>
+      <div class="help-text" id="clientHelp">
+        Applies to client-specific reports (agenda, meeting notes, etc). Daily/Weekly Briefing reports ignore this.
+      </div>
     </div>
 
     <div class="section">
@@ -223,6 +232,8 @@
       });
     });
 
+    document.getElementById('reportType').addEventListener('change', updateClientFilterState);
+
     function populateClients(clients) {
       const select = document.getElementById('clientSelect');
       clients.forEach(client => {
@@ -231,6 +242,26 @@
         option.textContent = client;
         select.appendChild(option);
       });
+    }
+
+    function isClientFilterApplicable(reportType) {
+      return reportType !== 'daily_briefing' && reportType !== 'weekly_briefing';
+    }
+
+    function updateClientFilterState() {
+      const reportType = document.getElementById('reportType').value;
+      const clientSelect = document.getElementById('clientSelect');
+      const clientHelp = document.getElementById('clientHelp');
+      const applicable = isClientFilterApplicable(reportType);
+
+      clientSelect.disabled = !applicable;
+
+      if (!applicable) {
+        clientSelect.value = '';
+        clientHelp.textContent = 'Daily/Weekly Briefing reports are not client-specific. Client filter disabled.';
+      } else {
+        clientHelp.textContent = 'Applies to client-specific reports (agenda, meeting notes, etc).';
+      }
     }
 
     function generateReport() {
@@ -255,8 +286,10 @@
       }
 
       // Get client and report type
-      const clientName = document.getElementById('clientSelect').value;
       const reportType = document.getElementById('reportType').value;
+      const clientName = isClientFilterApplicable(reportType)
+        ? document.getElementById('clientSelect').value
+        : '';
 
       // Build criteria
       const criteria = {
@@ -339,6 +372,7 @@
       document.getElementById('formSection').style.display = 'block';
       document.getElementById('issuesText').value = '';
       document.getElementById('reportText').value = '';
+      updateClientFilterState();
     }
 
     function formatDateTimeLocal(date) {
@@ -349,6 +383,8 @@
       const minutes = String(date.getMinutes()).padStart(2, '0');
       return `${year}-${month}-${day}T${hours}:${minutes}`;
     }
+
+    updateClientFilterState();
   </script>
 </body>
 </html>
