@@ -274,6 +274,15 @@ function generateBugReport(criteria) {
               report.push('');
               report.push('Content Preview:');
               report.push(truncateForReport(parsedResponse.content[0].text, 300));
+              const replacementInfo = analyzeReplacementCharacters(parsedResponse.content[0].text);
+              if (replacementInfo.hasReplacement) {
+                report.push('');
+                report.push(`⚠️ Replacement Characters Detected: ${replacementInfo.count}`);
+                report.push(`First Occurrence Offset: ${replacementInfo.firstIndex}`);
+              } else {
+                report.push('');
+                report.push('✅ No replacement characters detected in preview.');
+              }
             }
           }
 
@@ -393,6 +402,13 @@ function generateBugReport(criteria) {
             if ((reportType === 'daily_briefing' || reportType === 'weekly_briefing') && email.htmlSnippet) {
               report.push('HTML Preview:');
               report.push(truncateForReport(email.htmlSnippet, 1000));
+              const emailReplacementInfo = analyzeReplacementCharacters(email.htmlSnippet);
+              if (emailReplacementInfo.hasReplacement) {
+                report.push(`⚠️ Replacement Characters Detected: ${emailReplacementInfo.count}`);
+                report.push(`First Occurrence Offset: ${emailReplacementInfo.firstIndex}`);
+              } else {
+                report.push('✅ No replacement characters detected in HTML preview.');
+              }
             }
             report.push('```');
             report.push('');
@@ -1034,4 +1050,30 @@ function truncateForReport(text, maxLength) {
   if (!text) return '(empty)';
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '... [truncated]';
+}
+
+/**
+ * Detects replacement characters (U+FFFD) in a string.
+ * @param {string} text - Text to analyze
+ * @returns {{hasReplacement: boolean, count: number, firstIndex: number|null}}
+ */
+function analyzeReplacementCharacters(text) {
+  if (!text) {
+    return { hasReplacement: false, count: 0, firstIndex: null };
+  }
+
+  const replacementChar = '\uFFFD';
+  let count = 0;
+  let firstIndex = null;
+
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === replacementChar) {
+      count += 1;
+      if (firstIndex === null) {
+        firstIndex = i;
+      }
+    }
+  }
+
+  return { hasReplacement: count > 0, count: count, firstIndex: firstIndex };
 }
