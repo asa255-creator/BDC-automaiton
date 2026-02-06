@@ -791,82 +791,89 @@ Thanks,
 
           const settings = result.settings || {};
           updateLoadingStatus('Applying settings...');
-          function setValueIfPresent(id, value) {
-            const el = document.getElementById(id);
-            if (el) {
-              el.value = value;
+          try {
+            function setValueIfPresent(id, value) {
+              const el = document.getElementById(id);
+              if (el) {
+                el.value = value;
+              }
             }
+
+            // General tab
+            document.getElementById('user_name').value = settings.USER_NAME || '';
+            document.getElementById('user_location').value = settings.USER_LOCATION || '';
+            document.getElementById('user_timezone').value = settings.USER_TIMEZONE || '';
+            document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
+            document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
+            document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
+            document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
+            setValueIfPresent('log_max_processing', settings.LOG_MAX_PROCESSING || '1000');
+            setValueIfPresent('log_max_unmatched', settings.LOG_MAX_UNMATCHED || '1000');
+            setValueIfPresent('log_max_processed_fathom', settings.LOG_MAX_PROCESSED_FATHOM || '1000');
+            setValueIfPresent('log_max_generated_agendas', settings.LOG_MAX_GENERATED_AGENDAS || '1000');
+            setValueIfPresent('log_max_api_request', settings.LOG_MAX_API_REQUEST || '1000');
+            setValueIfPresent('log_max_api_response', settings.LOG_MAX_API_RESPONSE || '1000');
+            setValueIfPresent('log_max_data_collection', settings.LOG_MAX_DATA_COLLECTION || '1000');
+            setValueIfPresent('log_max_agenda_trace', settings.LOG_MAX_AGENDA_TRACE || '1000');
+            setValueIfPresent('log_max_notes_trace', settings.LOG_MAX_NOTES_TRACE || '1000');
+            setValueIfPresent('log_max_doc_append', settings.LOG_MAX_DOC_APPEND || '1000');
+
+            // Email Templates tab
+            document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
+            document.getElementById('meeting_signature').value = settings.MEETING_SIGNATURE || 'Did I miss anything?\n\nThanks,\n{user_name}';
+            document.getElementById('agenda_subject_template').value = settings.AGENDA_SUBJECT_TEMPLATE || 'Agenda: {client_name} - {meeting_title} ({date})';
+
+            // Integrations tab
+            document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
+            document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
+            document.getElementById('fathom_keep_links').checked = settings.FATHOM_KEEP_LINKS === 'true';
+            document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
+            document.getElementById('weather_api_key').value = settings.WEATHER_API_KEY || '';
+            document.getElementById('nws_enabled').checked = settings.NWS_WEATHER_ENABLED === 'true';
+            document.getElementById('travel_weather_enabled').checked = settings.TRAVEL_WEATHER_ENABLED === 'true';
+            weatherLocationSettings = {
+              state: settings.NWS_WEATHER_STATE || '',
+              city: settings.NWS_WEATHER_CITY || '',
+              latitude: settings.NWS_WEATHER_LAT || '',
+              longitude: settings.NWS_WEATHER_LON || ''
+            };
+            applyWeatherLocationSettings();
+            document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
+            document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
+            document.getElementById('claude_agenda_max_tokens').value = settings.CLAUDE_AGENDA_MAX_TOKENS || '4000';
+            document.getElementById('claude_daily_brief_max_tokens').value = settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS || '4000';
+            document.getElementById('claude_weekly_brief_max_tokens').value = settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS || '8000';
+            document.getElementById('claude_summary_max_tokens').value = settings.CLAUDE_SUMMARY_MAX_TOKENS || '2000';
+
+            // Schedule tab
+            document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
+            document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
+            document.getElementById('daily_outlook_schedule').value = settings.DAILY_OUTLOOK_SCHEDULE || 'day_of';
+
+            // Set label dropdowns after they're populated
+            setTimeout(function() {
+              setLabelDropdown('daily_label', settings.DAILY_BRIEFING_LABEL || 'Brief: Daily');
+              setLabelDropdown('weekly_label', settings.WEEKLY_BRIEFING_LABEL || 'Brief: Weekly');
+            }, 500);
+
+            // Update status badges
+            updateBadge('fathomStatus', settings.FATHOM_API_KEY);
+            updateBadge('fathomWebhookStatus', settings.FATHOM_WEBHOOK_SECRET);
+            updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
+            updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
+            updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
+            updateBadge('nwsStatus', settings.NWS_WEATHER_ENABLED === 'true');
+
+            // Show content
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            advanceLoading();
+          } catch (applyError) {
+            if (loadingTitle) {
+              loadingTitle.textContent = 'Error applying settings';
+            }
+            updateLoadingStatus(applyError.message || 'Unknown error while applying settings.');
           }
-
-          // General tab
-          document.getElementById('user_name').value = settings.USER_NAME || '';
-          document.getElementById('user_location').value = settings.USER_LOCATION || '';
-          document.getElementById('user_timezone').value = settings.USER_TIMEZONE || '';
-          document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
-          document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
-          document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
-          document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
-          setValueIfPresent('log_max_processing', settings.LOG_MAX_PROCESSING || '1000');
-          setValueIfPresent('log_max_unmatched', settings.LOG_MAX_UNMATCHED || '1000');
-          setValueIfPresent('log_max_processed_fathom', settings.LOG_MAX_PROCESSED_FATHOM || '1000');
-          setValueIfPresent('log_max_generated_agendas', settings.LOG_MAX_GENERATED_AGENDAS || '1000');
-          setValueIfPresent('log_max_api_request', settings.LOG_MAX_API_REQUEST || '1000');
-          setValueIfPresent('log_max_api_response', settings.LOG_MAX_API_RESPONSE || '1000');
-          setValueIfPresent('log_max_data_collection', settings.LOG_MAX_DATA_COLLECTION || '1000');
-          setValueIfPresent('log_max_agenda_trace', settings.LOG_MAX_AGENDA_TRACE || '1000');
-          setValueIfPresent('log_max_notes_trace', settings.LOG_MAX_NOTES_TRACE || '1000');
-          setValueIfPresent('log_max_doc_append', settings.LOG_MAX_DOC_APPEND || '1000');
-
-          // Email Templates tab
-          document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
-          document.getElementById('meeting_signature').value = settings.MEETING_SIGNATURE || 'Did I miss anything?\n\nThanks,\n{user_name}';
-          document.getElementById('agenda_subject_template').value = settings.AGENDA_SUBJECT_TEMPLATE || 'Agenda: {client_name} - {meeting_title} ({date})';
-
-          // Integrations tab
-          document.getElementById('fathom_key').value = settings.FATHOM_API_KEY || '';
-          document.getElementById('fathom_webhook_secret').value = settings.FATHOM_WEBHOOK_SECRET || '';
-          document.getElementById('fathom_keep_links').checked = settings.FATHOM_KEEP_LINKS === 'true';
-          document.getElementById('hubspot_key').value = settings.HUBSPOT_API_KEY || '';
-          document.getElementById('weather_api_key').value = settings.WEATHER_API_KEY || '';
-          document.getElementById('nws_enabled').checked = settings.NWS_WEATHER_ENABLED === 'true';
-          document.getElementById('travel_weather_enabled').checked = settings.TRAVEL_WEATHER_ENABLED === 'true';
-          weatherLocationSettings = {
-            state: settings.NWS_WEATHER_STATE || '',
-            city: settings.NWS_WEATHER_CITY || '',
-            latitude: settings.NWS_WEATHER_LAT || '',
-            longitude: settings.NWS_WEATHER_LON || ''
-          };
-          applyWeatherLocationSettings();
-          document.getElementById('todoist_token').value = settings.TODOIST_API_TOKEN || '';
-          document.getElementById('claude_key').value = settings.CLAUDE_API_KEY || '';
-          document.getElementById('claude_agenda_max_tokens').value = settings.CLAUDE_AGENDA_MAX_TOKENS || '4000';
-          document.getElementById('claude_daily_brief_max_tokens').value = settings.CLAUDE_DAILY_BRIEF_MAX_TOKENS || '4000';
-          document.getElementById('claude_weekly_brief_max_tokens').value = settings.CLAUDE_WEEKLY_BRIEF_MAX_TOKENS || '8000';
-          document.getElementById('claude_summary_max_tokens').value = settings.CLAUDE_SUMMARY_MAX_TOKENS || '2000';
-
-          // Schedule tab
-          document.getElementById('hours_start').value = settings.BUSINESS_HOURS_START || '8';
-          document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
-          document.getElementById('daily_outlook_schedule').value = settings.DAILY_OUTLOOK_SCHEDULE || 'day_of';
-
-          // Set label dropdowns after they're populated
-          setTimeout(function() {
-            setLabelDropdown('daily_label', settings.DAILY_BRIEFING_LABEL || 'Brief: Daily');
-            setLabelDropdown('weekly_label', settings.WEEKLY_BRIEFING_LABEL || 'Brief: Weekly');
-          }, 500);
-
-          // Update status badges
-          updateBadge('fathomStatus', settings.FATHOM_API_KEY);
-          updateBadge('fathomWebhookStatus', settings.FATHOM_WEBHOOK_SECRET);
-          updateBadge('hubspotStatus', settings.HUBSPOT_API_KEY);
-          updateBadge('todoistStatus', settings.TODOIST_API_TOKEN);
-          updateBadge('claudeStatus', settings.CLAUDE_API_KEY);
-          updateBadge('nwsStatus', settings.NWS_WEATHER_ENABLED === 'true');
-
-          // Show content
-          document.getElementById('loading').style.display = 'none';
-          document.getElementById('content').style.display = 'block';
-          advanceLoading();
         })
         .withFailureHandler(function(error) {
           if (loadingTitle) {
