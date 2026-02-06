@@ -363,6 +363,92 @@ function stripHtml(html) {
 }
 
 /**
+ * Ensures HTML email bodies include UTF-8 charset metadata.
+ *
+ * @param {string} htmlBody - HTML email body
+ * @param {Object} [options] - Options (title)
+ * @returns {string} HTML with charset metadata
+ */
+function ensureHtmlEmailBody(htmlBody, options) {
+  let body = htmlBody || '';
+  const title = options && options.title ? escapeHtml(options.title) : '';
+  const hasCharset = body.match(/<meta[^>]+charset/i);
+
+  if (!hasCharset) {
+    if (!body.match(/<html/i)) {
+      const titleTag = title ? `<title>${title}</title>\n` : '';
+      body = '<!DOCTYPE html>\n' +
+        '<html>\n' +
+        '<head>\n' +
+        '<meta charset="UTF-8">\n' +
+        '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n' +
+        titleTag +
+        '</head>\n' +
+        '<body>\n' +
+        body +
+        '\n</body>\n' +
+        '</html>';
+    } else if (body.match(/<head[^>]*>/i)) {
+      body = body.replace(/<head[^>]*>/i, function(match) {
+        return match + '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">';
+      });
+    } else {
+      const titleTag = title ? `<title>${title}</title>\n` : '';
+      body = body.replace(/<html[^>]*>/i, function(match) {
+        return match +
+          '\n<head>\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n' +
+          titleTag +
+          '</head>';
+      });
+    }
+  }
+
+  return body;
+}
+
+/**
+ * Sends a UTF-8 HTML email with standardized encoding metadata.
+ *
+ * @param {string} to - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} htmlBody - HTML email body
+ * @param {Object} [options] - Options (plainText, cc, bcc, title)
+ */
+function sendHtmlEmail(to, subject, htmlBody, options) {
+  const body = ensureHtmlEmailBody(htmlBody, { title: options && options.title ? options.title : subject });
+  const sendOptions = {
+    htmlBody: body,
+    charset: 'UTF-8'
+  };
+
+  if (options && options.cc) {
+    sendOptions.cc = options.cc;
+  }
+
+  if (options && options.bcc) {
+    sendOptions.bcc = options.bcc;
+  }
+
+  GmailApp.sendEmail(to, subject, options && options.plainText ? options.plainText : 'This email requires HTML support.', sendOptions);
+}
+
+/**
+ * Creates a UTF-8 HTML draft with standardized encoding metadata.
+ *
+ * @param {string} to - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} htmlBody - HTML email body
+ * @param {Object} [options] - Options (plainText, title)
+ * @returns {GoogleAppsScript.Gmail.GmailDraft} Draft instance
+ */
+function createHtmlDraft(to, subject, htmlBody, options) {
+  const body = ensureHtmlEmailBody(htmlBody, { title: options && options.title ? options.title : subject });
+  return GmailApp.createDraft(to, subject, options && options.plainText ? options.plainText : '', {
+    htmlBody: body
+  });
+}
+
+/**
  * Capitalizes the first letter of a string.
  *
  * @param {string} str - String to capitalize

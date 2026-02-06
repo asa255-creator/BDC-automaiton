@@ -905,32 +905,7 @@ function sendAgendaEmail(event, client, agendaContent, traceId, isTruncated) {
     agenda_content: warningBanner + agendaContent
   });
 
-  // Ensure proper UTF-8 encoding by adding meta tag if not present
-  if (!body.match(/<meta[^>]+charset/i)) {
-    // If body doesn't have HTML structure, wrap it
-    if (!body.match(/<html/i)) {
-      body = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-</head>
-<body>
-${body}
-</body>
-</html>`;
-    } else {
-      // Insert meta tag in existing HTML
-      body = body.replace(/<head[^>]*>/i, match => {
-        return match + '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">';
-      });
-    }
-  }
-
-  GmailApp.sendEmail(userEmail, subject, '', {
-    htmlBody: body,
-    charset: 'UTF-8'
-  });
+  sendHtmlEmail(userEmail, subject, body);
 
   Logger.log(`Sent agenda email for: ${event.getTitle()}`);
 

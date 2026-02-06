@@ -213,19 +213,6 @@ function createMeetingSummaryDraft(payload, client) {
   }
   body += `</div>`;
 
-  // Ensure proper UTF-8 encoding by wrapping in HTML structure with charset meta tags
-  const fullHtmlBody = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-<title>Meeting Summary</title>
-</head>
-<body>
-${body}
-</body>
-</html>`;
-
   // Get current user's email to exclude from recipients
   const myEmail = (Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || '').toLowerCase();
 
@@ -240,9 +227,7 @@ ${body}
     : myEmail; // Fallback to own email if no other participants
 
   // Create draft with proper UTF-8 encoding
-  const draft = GmailApp.createDraft(toAddress, subject, '', {
-    htmlBody: fullHtmlBody
-  });
+  const draft = createHtmlDraft(toAddress, subject, body, { title: 'Meeting Summary' });
 
   Logger.log(`Created draft with ID: ${draft.getId()}`);
 

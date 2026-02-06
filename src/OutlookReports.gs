@@ -1275,36 +1275,7 @@ function isTaskOverdue(task, referenceDate) {
  */
 function sendOutlookEmail(subject, htmlBody, labelName) {
   const userEmail = getCurrentUserEmail();
-
-  // Ensure proper UTF-8 encoding by adding meta tag if not present
-  let body = htmlBody;
-  if (!body.match(/<meta[^>]+charset/i)) {
-    // If body doesn't have HTML structure, wrap it
-    // Use string concatenation instead of template literals to preserve UTF-8
-    if (!body.match(/<html/i)) {
-      body = '<!DOCTYPE html>\n' +
-             '<html>\n' +
-             '<head>\n' +
-             '<meta charset="UTF-8">\n' +
-             '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n' +
-             '</head>\n' +
-             '<body>\n' +
-             body +
-             '\n</body>\n' +
-             '</html>';
-    } else {
-      // Insert meta tag in existing HTML
-      body = body.replace(/<head[^>]*>/i, function(match) {
-        return match + '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">';
-      });
-    }
-  }
-
-  // Send email with explicit UTF-8 encoding and plain text fallback
-  GmailApp.sendEmail(userEmail, subject, 'This email requires HTML support.', {
-    htmlBody: body,
-    charset: 'utf-8'
-  });
+  sendHtmlEmail(userEmail, subject, htmlBody);
 
   // Apply label to the sent email
   Utilities.sleep(2000); // Wait for email to be sent
