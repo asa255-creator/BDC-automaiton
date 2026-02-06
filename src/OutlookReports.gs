@@ -2,7 +2,7 @@
  * OutlookReports.gs - Daily and Weekly Outlook Logic
  *
  * This module generates daily and weekly outlook reports:
- * - Daily outlook: Runs at 7:00 AM every day
+ * - Daily outlook: Runs at the configured time every day
  * - Weekly outlook: Runs at 7:00 AM every Monday
  *
  * Reports include:
@@ -19,7 +19,7 @@
 
 /**
  * Generates and sends the daily outlook report.
- * Called at 7:00 AM daily.
+ * Called at the configured time daily.
  * Uses Claude AI to generate strategic briefing from all data.
  */
 function generateDailyOutlook() {

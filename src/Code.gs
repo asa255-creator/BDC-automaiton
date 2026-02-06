@@ -184,7 +184,7 @@ function verifyFathomWebhookSignature(e, secret) {
  * - Google Drive folder sync: daily at 5:30 AM
  * - Label and filter creation: daily at 6:00 AM
  * - Client onboarding check: daily at 6:30 AM
- * - Daily outlook: daily at 7:00 AM
+ * - Daily outlook: daily at the configured time
  * - Weekly outlook: weekly on Monday at 7:00 AM
  * - Sent meeting summary monitor: every 10 minutes
  * - Fathom API polling: every 30 minutes
@@ -265,16 +265,12 @@ function removeAllTriggers() {
 function createDailyOutlookTrigger() {
   removeDailyOutlookTrigger();
 
-  const schedule = getDailyOutlookSchedule();
+  const triggerTime = getDailyOutlookTriggerTime();
   const trigger = ScriptApp.newTrigger('runDailyOutlook')
     .timeBased()
     .everyDays(1);
 
-  if (schedule === DAILY_OUTLOOK_SCHEDULES.NIGHT_BEFORE) {
-    trigger.atHour(20);
-  } else {
-    trigger.atHour(7);
-  }
+  trigger.atHour(triggerTime.hour).nearMinute(triggerTime.minute);
 
   trigger.create();
 }
@@ -428,7 +424,7 @@ function runAgendaGeneration() {
 
 /**
  * Handler for daily outlook trigger.
- * Runs at 7:00 AM daily.
+ * Runs at the configured time daily.
  */
 function runDailyOutlook() {
   try {

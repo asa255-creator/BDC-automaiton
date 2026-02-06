@@ -2288,7 +2288,8 @@ function getSettingsForEditor() {
     AUTO_MARK_READ_AFTER_DAYS: props.getProperty('AUTO_MARK_READ_AFTER_DAYS') || '0',
     DAILY_BRIEFING_LABEL: props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily',
     WEEKLY_BRIEFING_LABEL: props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly',
-    DAILY_OUTLOOK_SCHEDULE: props.getProperty('DAILY_OUTLOOK_SCHEDULE') || 'day_of',
+    DAILY_OUTLOOK_DAY: getDailyOutlookSchedule(),
+    DAILY_OUTLOOK_TIME: getDailyOutlookTime(),
     USER_LOCATION: props.getProperty('USER_LOCATION') || props.getProperty('DAILY_OUTLOOK_LOCATION') || '',
     USER_TIMEZONE: props.getProperty('USER_TIMEZONE') || Session.getScriptTimeZone(),
     WEATHER_API_KEY: props.getProperty('WEATHER_API_KEY') || '',
@@ -2528,8 +2529,24 @@ function saveSettingsFromEditor(settings) {
     props.setProperty('WEEKLY_BRIEFING_LABEL', settings.WEEKLY_BRIEFING_LABEL);
   }
 
+  let dailyOutlookUpdated = false;
+
+  if (settings.DAILY_OUTLOOK_DAY) {
+    props.setProperty('DAILY_OUTLOOK_DAY', settings.DAILY_OUTLOOK_DAY);
+    dailyOutlookUpdated = true;
+  }
+
+  if (settings.DAILY_OUTLOOK_TIME) {
+    props.setProperty('DAILY_OUTLOOK_TIME', settings.DAILY_OUTLOOK_TIME);
+    dailyOutlookUpdated = true;
+  }
+
   if (settings.DAILY_OUTLOOK_SCHEDULE) {
     props.setProperty('DAILY_OUTLOOK_SCHEDULE', settings.DAILY_OUTLOOK_SCHEDULE);
+    dailyOutlookUpdated = true;
+  }
+
+  if (dailyOutlookUpdated) {
     updateDailyOutlookTrigger();
   }
 

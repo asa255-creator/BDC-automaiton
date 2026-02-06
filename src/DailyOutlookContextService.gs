@@ -20,7 +20,8 @@ function getDailyOutlookLocation() {
 function getDailyOutlookLogContext(triggerDate) {
   const schedule = getDailyOutlookSchedule();
   const reportDate = getDailyOutlookReportDate(triggerDate);
+  const time = getDailyOutlookTime();
   const location = getDailyOutlookLocation() || 'unset';
 
-  return `schedule=${schedule}, report_date=${formatDate(reportDate)}, location=${location}`;
+  return `schedule=${schedule}, time=${time}, report_date=${formatDate(reportDate)}, location=${location}`;
 }
