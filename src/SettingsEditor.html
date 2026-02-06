@@ -732,6 +732,18 @@ Thanks,
         loadingTitle.textContent = 'Loading settings...';
       }
       updateLoadingStatus('Fetching weather locations...');
+      let weatherTimedOut = false;
+      const weatherTimeoutId = setTimeout(function() {
+        if (!weatherLocationsLoaded) {
+          weatherTimedOut = true;
+          weatherLocationsLoaded = true;
+          weatherLocationOptions = [];
+          populateWeatherStateDropdown();
+          applyWeatherLocationSettings();
+          advanceLoading();
+          updateLoadingStatus('Weather locations timed out. Continuing without weather options.');
+        }
+      }, 8000);
 
       setTimeout(function() {
         if (document.getElementById('content').style.display === 'none') {
@@ -745,8 +757,11 @@ Thanks,
           populateWeatherStateDropdown();
           weatherLocationsLoaded = true;
           applyWeatherLocationSettings();
-          advanceLoading();
-          updateLoadingStatus('Loading Gmail labels...');
+          if (!weatherTimedOut) {
+            clearTimeout(weatherTimeoutId);
+            advanceLoading();
+            updateLoadingStatus('Loading Gmail labels...');
+          }
         })
         .withFailureHandler(function(error) {
           console.error('Failed to load weather location options:', error);
@@ -754,8 +769,11 @@ Thanks,
           populateWeatherStateDropdown();
           weatherLocationsLoaded = true;
           applyWeatherLocationSettings();
-          advanceLoading();
-          updateLoadingStatus('Loading Gmail labels (weather failed)...');
+          if (!weatherTimedOut) {
+            clearTimeout(weatherTimeoutId);
+            advanceLoading();
+            updateLoadingStatus('Loading Gmail labels (weather failed)...');
+          }
         })
         .getWeatherLocationOptions();
 
