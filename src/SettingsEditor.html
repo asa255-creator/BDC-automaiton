@@ -717,6 +717,13 @@ Thanks,
       // Load settings
       google.script.run
         .withSuccessHandler(function(settings) {
+          function setValueIfPresent(id, value) {
+            const el = document.getElementById(id);
+            if (el) {
+              el.value = value;
+            }
+          }
+
           // General tab
           document.getElementById('user_name').value = settings.USER_NAME || '';
           document.getElementById('user_location').value = settings.USER_LOCATION || '';
@@ -725,16 +732,16 @@ Thanks,
           document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
           document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
           document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
-          document.getElementById('log_max_processing').value = settings.LOG_MAX_PROCESSING || '1000';
-          document.getElementById('log_max_unmatched').value = settings.LOG_MAX_UNMATCHED || '1000';
-          document.getElementById('log_max_processed_fathom').value = settings.LOG_MAX_PROCESSED_FATHOM || '1000';
-          document.getElementById('log_max_generated_agendas').value = settings.LOG_MAX_GENERATED_AGENDAS || '1000';
-          document.getElementById('log_max_api_request').value = settings.LOG_MAX_API_REQUEST || '1000';
-          document.getElementById('log_max_api_response').value = settings.LOG_MAX_API_RESPONSE || '1000';
-          document.getElementById('log_max_data_collection').value = settings.LOG_MAX_DATA_COLLECTION || '1000';
-          document.getElementById('log_max_agenda_trace').value = settings.LOG_MAX_AGENDA_TRACE || '1000';
-          document.getElementById('log_max_notes_trace').value = settings.LOG_MAX_NOTES_TRACE || '1000';
-          document.getElementById('log_max_doc_append').value = settings.LOG_MAX_DOC_APPEND || '1000';
+          setValueIfPresent('log_max_processing', settings.LOG_MAX_PROCESSING || '1000');
+          setValueIfPresent('log_max_unmatched', settings.LOG_MAX_UNMATCHED || '1000');
+          setValueIfPresent('log_max_processed_fathom', settings.LOG_MAX_PROCESSED_FATHOM || '1000');
+          setValueIfPresent('log_max_generated_agendas', settings.LOG_MAX_GENERATED_AGENDAS || '1000');
+          setValueIfPresent('log_max_api_request', settings.LOG_MAX_API_REQUEST || '1000');
+          setValueIfPresent('log_max_api_response', settings.LOG_MAX_API_RESPONSE || '1000');
+          setValueIfPresent('log_max_data_collection', settings.LOG_MAX_DATA_COLLECTION || '1000');
+          setValueIfPresent('log_max_agenda_trace', settings.LOG_MAX_AGENDA_TRACE || '1000');
+          setValueIfPresent('log_max_notes_trace', settings.LOG_MAX_NOTES_TRACE || '1000');
+          setValueIfPresent('log_max_doc_append', settings.LOG_MAX_DOC_APPEND || '1000');
 
           // Email Templates tab
           document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
@@ -959,6 +966,14 @@ Thanks,
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
 
+        function getValueIfPresent(id, fallback) {
+          const el = document.getElementById(id);
+          if (!el) {
+            return fallback;
+          }
+          return el.value.trim() || fallback;
+        }
+
         const settings = {
         // General
         USER_NAME: document.getElementById('user_name').value.trim(),
@@ -968,16 +983,16 @@ Thanks,
         DIAGNOSTIC_MODE: document.getElementById('diagnostic_mode').checked ? 'true' : 'false',
         INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
         AUTO_MARK_READ_AFTER_DAYS: document.getElementById('auto_mark_read_days').value.trim() || '0',
-        LOG_MAX_PROCESSING: document.getElementById('log_max_processing').value.trim() || '1000',
-        LOG_MAX_UNMATCHED: document.getElementById('log_max_unmatched').value.trim() || '1000',
-        LOG_MAX_PROCESSED_FATHOM: document.getElementById('log_max_processed_fathom').value.trim() || '1000',
-        LOG_MAX_GENERATED_AGENDAS: document.getElementById('log_max_generated_agendas').value.trim() || '1000',
-        LOG_MAX_API_REQUEST: document.getElementById('log_max_api_request').value.trim() || '1000',
-        LOG_MAX_API_RESPONSE: document.getElementById('log_max_api_response').value.trim() || '1000',
-        LOG_MAX_DATA_COLLECTION: document.getElementById('log_max_data_collection').value.trim() || '1000',
-        LOG_MAX_AGENDA_TRACE: document.getElementById('log_max_agenda_trace').value.trim() || '1000',
-        LOG_MAX_NOTES_TRACE: document.getElementById('log_max_notes_trace').value.trim() || '1000',
-        LOG_MAX_DOC_APPEND: document.getElementById('log_max_doc_append').value.trim() || '1000',
+        LOG_MAX_PROCESSING: getValueIfPresent('log_max_processing', '1000'),
+        LOG_MAX_UNMATCHED: getValueIfPresent('log_max_unmatched', '1000'),
+        LOG_MAX_PROCESSED_FATHOM: getValueIfPresent('log_max_processed_fathom', '1000'),
+        LOG_MAX_GENERATED_AGENDAS: getValueIfPresent('log_max_generated_agendas', '1000'),
+        LOG_MAX_API_REQUEST: getValueIfPresent('log_max_api_request', '1000'),
+        LOG_MAX_API_RESPONSE: getValueIfPresent('log_max_api_response', '1000'),
+        LOG_MAX_DATA_COLLECTION: getValueIfPresent('log_max_data_collection', '1000'),
+        LOG_MAX_AGENDA_TRACE: getValueIfPresent('log_max_agenda_trace', '1000'),
+        LOG_MAX_NOTES_TRACE: getValueIfPresent('log_max_notes_trace', '1000'),
+        LOG_MAX_DOC_APPEND: getValueIfPresent('log_max_doc_append', '1000'),
         // Email Templates
         MEETING_SUBJECT_TEMPLATE: document.getElementById('meeting_subject_template').value.trim(),
         MEETING_SIGNATURE: document.getElementById('meeting_signature').value,
