@@ -261,7 +261,7 @@ function logUnmatched(itemType, itemDetails, participantEmails) {
     ? participantEmails.join(', ')
     : participantEmails;
 
-  sheet.appendRow([
+  insertLogRow(sheet, CONFIG.SHEETS.UNMATCHED, [
     timestamp,
     itemType,
     itemDetails,

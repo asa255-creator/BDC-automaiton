@@ -287,7 +287,7 @@ function logAPIRequest(apiName, endpoint, method, headers, payload, context) {
     // Sanitize headers to remove sensitive data for logging
     const sanitizedHeaders = sanitizeHeaders(headers);
 
-    sheet.appendRow([
+    insertLogRow(sheet, CONFIG.SHEETS.API_REQUEST_LOG, [
       new Date().toISOString(),
       requestId,
       apiName,
@@ -334,7 +334,7 @@ function logAPIResponse(requestId, apiName, statusCode, headers, responseBody, p
        'Response_Body', 'Parse_Success', 'Extracted_Data', 'Error_Message', 'Duration_MS']
     );
 
-    sheet.appendRow([
+    insertLogRow(sheet, CONFIG.SHEETS.API_RESPONSE_LOG, [
       new Date().toISOString(),
       requestId || '',
       apiName,
@@ -383,7 +383,7 @@ function logDataCollection(clientId, eventId, source, queryDetails, items, sampl
     const itemCount = items ? items.length : 0;
     const isEmpty = !items || items.length === 0;
 
-    sheet.appendRow([
+    insertLogRow(sheet, CONFIG.SHEETS.DATA_COLLECTION_LOG, [
       new Date().toISOString(),
       clientId || '',
       eventId || '',
@@ -446,7 +446,7 @@ function logAgendaStep(traceId, event, client, stepNumber, stepName, status, det
        'Step_Number', 'Step_Name', 'Step_Status', 'Step_Details', 'Data_Summary', 'Duration_MS']
     );
 
-    sheet.appendRow([
+    insertLogRow(sheet, CONFIG.SHEETS.AGENDA_GENERATION_TRACE, [
       traceId,
       new Date().toISOString(),
       event ? event.getId() : '',
@@ -511,7 +511,7 @@ function logNotesAppendStep(traceId, client, messageId, docId, stepNumber, stepN
        'Step_Number', 'Step_Name', 'Step_Status', 'Step_Details', 'Content_Length', 'Duration_MS']
     );
 
-    sheet.appendRow([
+    insertLogRow(sheet, CONFIG.SHEETS.NOTES_APPEND_TRACE, [
       traceId,
       new Date().toISOString(),
       client ? client.client_name : '',
@@ -565,7 +565,7 @@ function logDocAppend(client, docId, docUrl, contentType, content, success, erro
     const contentPreview = content ? content.substring(0, 200) : '';
     const contentLength = content ? content.length : 0;
 
-    sheet.appendRow([
+    insertLogRow(sheet, CONFIG.SHEETS.DOC_APPEND_LOG, [
       new Date().toISOString(),
       client ? client.client_name : '',
       docId || '',

@@ -296,6 +296,63 @@
           </div>
         </div>
 
+        <div class="section-title">Log Retention</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Log Row Limits</div>
+          <div class="setting-description">New log entries are inserted at the top (row 2). Set max rows to keep per log sheet (0 = unlimited).</div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">Processing Log</div>
+              <input type="number" id="log_max_processing" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Unmatched Log</div>
+              <input type="number" id="log_max_unmatched" min="0" placeholder="1000">
+            </div>
+          </div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">Processed Fathom Meetings</div>
+              <input type="number" id="log_max_processed_fathom" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Generated Agendas</div>
+              <input type="number" id="log_max_generated_agendas" min="0" placeholder="1000">
+            </div>
+          </div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">API Request Log</div>
+              <input type="number" id="log_max_api_request" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">API Response Log</div>
+              <input type="number" id="log_max_api_response" min="0" placeholder="1000">
+            </div>
+          </div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">Data Collection Log</div>
+              <input type="number" id="log_max_data_collection" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Agenda Generation Trace</div>
+              <input type="number" id="log_max_agenda_trace" min="0" placeholder="1000">
+            </div>
+          </div>
+          <div class="input-row" style="margin-top: 8px;">
+            <div class="input-col">
+              <div class="setting-description">Notes Append Trace</div>
+              <input type="number" id="log_max_notes_trace" min="0" placeholder="1000">
+            </div>
+            <div class="input-col">
+              <div class="setting-description">Doc Append Log</div>
+              <input type="number" id="log_max_doc_append" min="0" placeholder="1000">
+            </div>
+          </div>
+        </div>
+
         <div class="section-title">Email Inbox Management</div>
 
         <div class="setting-group">
@@ -668,6 +725,16 @@ Thanks,
           document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
           document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
           document.getElementById('auto_mark_read_days').value = settings.AUTO_MARK_READ_AFTER_DAYS || '0';
+          document.getElementById('log_max_processing').value = settings.LOG_MAX_PROCESSING || '1000';
+          document.getElementById('log_max_unmatched').value = settings.LOG_MAX_UNMATCHED || '1000';
+          document.getElementById('log_max_processed_fathom').value = settings.LOG_MAX_PROCESSED_FATHOM || '1000';
+          document.getElementById('log_max_generated_agendas').value = settings.LOG_MAX_GENERATED_AGENDAS || '1000';
+          document.getElementById('log_max_api_request').value = settings.LOG_MAX_API_REQUEST || '1000';
+          document.getElementById('log_max_api_response').value = settings.LOG_MAX_API_RESPONSE || '1000';
+          document.getElementById('log_max_data_collection').value = settings.LOG_MAX_DATA_COLLECTION || '1000';
+          document.getElementById('log_max_agenda_trace').value = settings.LOG_MAX_AGENDA_TRACE || '1000';
+          document.getElementById('log_max_notes_trace').value = settings.LOG_MAX_NOTES_TRACE || '1000';
+          document.getElementById('log_max_doc_append').value = settings.LOG_MAX_DOC_APPEND || '1000';
 
           // Email Templates tab
           document.getElementById('meeting_subject_template').value = settings.MEETING_SUBJECT_TEMPLATE || 'Team {client_name} - Meeting notes from "{meeting_title}" {date}';
@@ -901,6 +968,16 @@ Thanks,
         DIAGNOSTIC_MODE: document.getElementById('diagnostic_mode').checked ? 'true' : 'false',
         INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
         AUTO_MARK_READ_AFTER_DAYS: document.getElementById('auto_mark_read_days').value.trim() || '0',
+        LOG_MAX_PROCESSING: document.getElementById('log_max_processing').value.trim() || '1000',
+        LOG_MAX_UNMATCHED: document.getElementById('log_max_unmatched').value.trim() || '1000',
+        LOG_MAX_PROCESSED_FATHOM: document.getElementById('log_max_processed_fathom').value.trim() || '1000',
+        LOG_MAX_GENERATED_AGENDAS: document.getElementById('log_max_generated_agendas').value.trim() || '1000',
+        LOG_MAX_API_REQUEST: document.getElementById('log_max_api_request').value.trim() || '1000',
+        LOG_MAX_API_RESPONSE: document.getElementById('log_max_api_response').value.trim() || '1000',
+        LOG_MAX_DATA_COLLECTION: document.getElementById('log_max_data_collection').value.trim() || '1000',
+        LOG_MAX_AGENDA_TRACE: document.getElementById('log_max_agenda_trace').value.trim() || '1000',
+        LOG_MAX_NOTES_TRACE: document.getElementById('log_max_notes_trace').value.trim() || '1000',
+        LOG_MAX_DOC_APPEND: document.getElementById('log_max_doc_append').value.trim() || '1000',
         // Email Templates
         MEETING_SUBJECT_TEMPLATE: document.getElementById('meeting_subject_template').value.trim(),
         MEETING_SIGNATURE: document.getElementById('meeting_signature').value,
