@@ -192,6 +192,25 @@
       background: #fce8e6;
       color: #c5221f;
     }
+    .loading-progress {
+      width: 240px;
+      height: 6px;
+      background: #e8eaed;
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 12px auto 0;
+    }
+    .loading-progress-bar {
+      width: 0%;
+      height: 100%;
+      background: #1a73e8;
+      transition: width 0.3s ease;
+    }
+    .loading-detail {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #5f6368;
+    }
     .section-title {
       font-size: 13px;
       font-weight: 500;
@@ -207,7 +226,13 @@
   </style>
 </head>
 <body>
-  <div id="loading" class="loading">Loading settings...</div>
+  <div id="loading" class="loading">
+    <div id="loadingTitle">Loading settings...</div>
+    <div class="loading-progress">
+      <div id="loadingProgress" class="loading-progress-bar"></div>
+    </div>
+    <div id="loadingDetail" class="loading-detail">Starting up…</div>
+  </div>
 
   <div id="content" style="display: none;">
     <div id="statusMessage" class="status-message"></div>
@@ -683,12 +708,45 @@ Thanks,
     };
 
     function loadSettings() {
+      const loadingTitle = document.getElementById('loadingTitle');
+      const loadingDetail = document.getElementById('loadingDetail');
+      const loadingProgress = document.getElementById('loadingProgress');
+      let completedSteps = 0;
+      const totalSteps = 3;
+
+      function updateLoadingStatus(message) {
+        if (loadingDetail) {
+          loadingDetail.textContent = message;
+        }
+      }
+
+      function advanceLoading() {
+        completedSteps += 1;
+        if (loadingProgress) {
+          const percent = Math.min(100, Math.round((completedSteps / totalSteps) * 100));
+          loadingProgress.style.width = `${percent}%`;
+        }
+      }
+
+      if (loadingTitle) {
+        loadingTitle.textContent = 'Loading settings...';
+      }
+      updateLoadingStatus('Fetching weather locations...');
+
+      setTimeout(function() {
+        if (document.getElementById('content').style.display === 'none') {
+          updateLoadingStatus('Still loading... check authorization prompts or view Apps Script logs for errors.');
+        }
+      }, 10000);
+
       google.script.run
         .withSuccessHandler(function(options) {
           weatherLocationOptions = options || [];
           populateWeatherStateDropdown();
           weatherLocationsLoaded = true;
           applyWeatherLocationSettings();
+          advanceLoading();
+          updateLoadingStatus('Loading Gmail labels...');
         })
         .withFailureHandler(function(error) {
           console.error('Failed to load weather location options:', error);
@@ -696,6 +754,8 @@ Thanks,
           populateWeatherStateDropdown();
           weatherLocationsLoaded = true;
           applyWeatherLocationSettings();
+          advanceLoading();
+          updateLoadingStatus('Loading Gmail labels (weather failed)...');
         })
         .getWeatherLocationOptions();
 
@@ -706,17 +766,22 @@ Thanks,
         .withSuccessHandler(function(labels) {
           allLabels = labels || [];
           populateLabelDropdowns();
+          advanceLoading();
+          updateLoadingStatus('Fetching settings...');
         })
         .withFailureHandler(function(error) {
           console.error('Failed to load labels:', error);
           allLabels = [];
           populateLabelDropdowns();
+          advanceLoading();
+          updateLoadingStatus('Fetching settings (labels failed)...');
         })
         .getAllGmailLabelsForSettings();
 
       // Load settings
       google.script.run
         .withSuccessHandler(function(settings) {
+          updateLoadingStatus('Applying settings...');
           function setValueIfPresent(id, value) {
             const el = document.getElementById(id);
             if (el) {
@@ -792,9 +857,13 @@ Thanks,
           // Show content
           document.getElementById('loading').style.display = 'none';
           document.getElementById('content').style.display = 'block';
+          advanceLoading();
         })
         .withFailureHandler(function(error) {
-          document.getElementById('loading').innerHTML = 'Error loading settings: ' + error.message;
+          if (loadingTitle) {
+            loadingTitle.textContent = 'Error loading settings';
+          }
+          updateLoadingStatus(error.message || 'Unknown error. Check Apps Script logs for details.');
         })
         .getSettingsForEditor();
     }
