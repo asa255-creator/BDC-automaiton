@@ -12,6 +12,57 @@ const DAILY_OUTLOOK_DEFAULT_TIME = '07:00';
 const DAILY_OUTLOOK_LEGACY_NIGHT_TIME = '20:00';
 
 /**
+ * Parses a time setting from 24-hour (HH:mm) or 12-hour (h:mm AM/PM) input.
+ *
+ * @param {string} rawTime - Raw time setting
+ * @returns {{hour: number, minute: number}|null} Parsed time parts
+ */
+function parseDailyOutlookTime(rawTime) {
+  if (!rawTime) {
+    return null;
+  }
+
+  const value = String(rawTime).trim();
+  const militaryMatch = /^(\d{1,2}):(\d{2})$/.exec(value);
+  if (militaryMatch) {
+    const hour = parseInt(militaryMatch[1], 10);
+    const minute = parseInt(militaryMatch[2], 10);
+    if (!Number.isNaN(hour) && !Number.isNaN(minute) && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return { hour, minute };
+    }
+  }
+
+  const meridiemMatch = /^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/.exec(value);
+  if (meridiemMatch) {
+    let hour = parseInt(meridiemMatch[1], 10);
+    const minute = parseInt(meridiemMatch[2], 10);
+    const meridiem = meridiemMatch[3].toUpperCase();
+
+    if (!Number.isNaN(hour) && !Number.isNaN(minute) && hour >= 1 && hour <= 12 && minute >= 0 && minute <= 59) {
+      if (meridiem === 'AM' && hour === 12) {
+        hour = 0;
+      } else if (meridiem === 'PM' && hour !== 12) {
+        hour += 12;
+      }
+      return { hour, minute };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Converts hour/minute to normalized HH:mm format.
+ *
+ * @param {number} hour - 24-hour value
+ * @param {number} minute - Minute value
+ * @returns {string} Normalized time
+ */
+function formatDailyOutlookTime(hour, minute) {
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+/**
  * Returns the configured schedule for daily outlook generation.
  *
  * @returns {string} Schedule value
@@ -39,8 +90,9 @@ function getDailyOutlookSchedule() {
 function getDailyOutlookTime() {
   const props = PropertiesService.getScriptProperties();
   const timeSetting = props.getProperty('DAILY_OUTLOOK_TIME');
-  if (timeSetting) {
-    return timeSetting;
+  const parsedTime = parseDailyOutlookTime(timeSetting);
+  if (parsedTime) {
+    return formatDailyOutlookTime(parsedTime.hour, parsedTime.minute);
   }
 
   const legacy = props.getProperty('DAILY_OUTLOOK_SCHEDULE');
@@ -57,27 +109,12 @@ function getDailyOutlookTime() {
  * @returns {{hour: number, minute: number}} Trigger time parts
  */
 function getDailyOutlookTriggerTime() {
-  const timeSetting = getDailyOutlookTime();
-  const match = /^(\d{1,2}):(\d{2})$/.exec(timeSetting);
-  if (!match) {
+  const parsedTime = parseDailyOutlookTime(getDailyOutlookTime());
+  if (!parsedTime) {
     return { hour: 7, minute: 0 };
   }
 
-  const hour = parseInt(match[1], 10);
-  const minute = parseInt(match[2], 10);
-
-  if (Number.isNaN(hour) || Number.isNaN(minute) || hour < 0 || hour > 23) {
-    return { hour: 7, minute: 0 };
-  }
-
-  const validMinutes = [0, 15, 30, 45];
-  const normalizedMinute = validMinutes.includes(minute)
-    ? minute
-    : validMinutes.reduce((closest, candidate) => (
-      Math.abs(candidate - minute) < Math.abs(closest - minute) ? candidate : closest
-    ), validMinutes[0]);
-
-  return { hour, minute: normalizedMinute };
+  return parsedTime;
 }
 
 /**
