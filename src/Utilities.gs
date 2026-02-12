@@ -2382,8 +2382,24 @@ function getSettingsEditorDiagnostics() {
   ];
   const missingFunctions = [];
 
+  function hasFunction(functionName) {
+    if (typeof globalThis !== 'undefined' && typeof globalThis[functionName] === 'function') {
+      return true;
+    }
+
+    if (typeof this !== 'undefined' && typeof this[functionName] === 'function') {
+      return true;
+    }
+
+    try {
+      return typeof eval(functionName) === 'function';
+    } catch (error) {
+      return false;
+    }
+  }
+
   requiredFunctions.forEach(function(functionName) {
-    if (typeof globalThis[functionName] !== 'function') {
+    if (!hasFunction(functionName)) {
       missingFunctions.push(functionName);
     }
   });

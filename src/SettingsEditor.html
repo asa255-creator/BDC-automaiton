@@ -632,7 +632,7 @@ Thanks,
             </div>
             <div class="input-col">
               <div class="setting-description">Time</div>
-              <input type="time" id="daily_outlook_time" step="900">
+              <input type="time" id="daily_outlook_time" step="60">
             </div>
           </div>
         </div>
@@ -968,7 +968,6 @@ Thanks,
             reportLoadingFailure('Settings editor diagnostics', { message: result.message }, {
               title: 'Missing Apps Script functions'
             });
-            return;
           }
           startLoadingSteps();
         })
