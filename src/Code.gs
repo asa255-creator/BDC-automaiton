@@ -56,6 +56,36 @@ function doGet(e) {
 }
 
 /**
+ * Extracts the actual Fathom meeting payload from webhook envelopes.
+ *
+ * @param {Object} payload - Raw JSON body
+ * @returns {Object} Most likely meeting payload object
+ */
+function extractFathomWebhookPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return payload;
+  }
+
+  if (payload.meeting_title || payload.title || payload.default_summary || payload.calendar_invitees) {
+    return payload;
+  }
+
+  if (payload.data && typeof payload.data === 'object') {
+    return payload.data;
+  }
+
+  if (payload.meeting && typeof payload.meeting === 'object') {
+    return payload.meeting;
+  }
+
+  if (payload.event && payload.event.data && typeof payload.event.data === 'object') {
+    return payload.event.data;
+  }
+
+  return payload;
+}
+
+/**
  * Handles HTTP POST requests to the Web App.
  * Primary endpoint for Fathom webhook integration.
  *
@@ -90,10 +120,13 @@ function doPost(e) {
       logProcessing('WEBHOOK_NO_SECRET', null, 'No webhook secret configured - skipping signature verification', 'info');
     }
 
-    let payload = JSON.parse(e.postData.contents);
+    const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '{}';
+    const parsedPayload = JSON.parse(rawBody);
+    let payload = extractFathomWebhookPayload(parsedPayload);
 
     // Log payload summary for debugging
-    logProcessing('WEBHOOK_PAYLOAD', null, `Processing meeting: ${payload.meeting_title || payload.title || 'Unknown'}`, 'info');
+    const payloadKeys = payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 12).join(', ') : 'n/a';
+    logProcessing('WEBHOOK_PAYLOAD', null, `Processing meeting: ${payload && (payload.meeting_title || payload.title) ? (payload.meeting_title || payload.title) : 'Unknown'} (keys: ${payloadKeys})`, 'info');
 
     // Normalize webhook payload to ensure consistent format
     // Fathom webhooks might have different field names than API responses
@@ -316,6 +349,19 @@ function createFathomPollingTrigger() {
     .create();
 
   Logger.log('Fathom polling trigger created');
+}
+
+/**
+ * Ensures there is a polling trigger for Fathom automation.
+ */
+function ensureFathomPollingTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  const hasPollingTrigger = triggers.some(trigger => trigger.getHandlerFunction() === 'runFathomPolling');
+
+  if (!hasPollingTrigger) {
+    createFathomPollingTrigger();
+    logProcessing('FATHOM_POLL', null, 'No polling trigger found; recreated runFathomPolling trigger', 'warning');
+  }
 }
 
 /**
