@@ -2426,6 +2426,9 @@ function saveSettingsFromEditor(settings) {
   // Only update settings that have values (don't clear existing ones if left blank)
   if (settings.FATHOM_API_KEY) {
     props.setProperty('FATHOM_API_KEY', settings.FATHOM_API_KEY);
+    if (typeof ensureFathomPollingTrigger === 'function') {
+      ensureFathomPollingTrigger();
+    }
   }
 
   if (settings.HUBSPOT_API_KEY) {
@@ -2578,6 +2581,11 @@ function saveSettingsFromEditor(settings) {
 
   if (dailyOutlookUpdated) {
     updateDailyOutlookTrigger();
+  }
+
+  const configuredFathomKey = props.getProperty('FATHOM_API_KEY');
+  if (configuredFathomKey && typeof ensureFathomPollingTrigger === 'function') {
+    ensureFathomPollingTrigger();
   }
 
   // Diagnostic mode setting (allow true/false)

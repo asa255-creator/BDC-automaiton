@@ -438,7 +438,7 @@ function normalizeFathomPayload(payload) {
     action_items: payload.action_items || [],
     participants: payload.participants || payload.attendees || [],
     fathom_url: payload.fathom_url || payload.url || payload.share_url || null,
-    meeting_id: payload.meeting_id || payload.id || null
+    meeting_id: payload.meeting_id || payload.id || payload.recording_id || null
   };
 }
 
@@ -502,6 +502,15 @@ function convertFathomMeetingToPayload(fathomMeeting) {
     }
   }
 
+  let meetingId = fathomMeeting.id || fathomMeeting.meeting_id || fathomMeeting.recording_id || null;
+  if (!meetingId) {
+    const meetingUrl = fathomMeeting.url || fathomMeeting.share_url || '';
+    const urlMatch = /\/calls\/(\d+)/.exec(meetingUrl);
+    if (urlMatch && urlMatch[1]) {
+      meetingId = urlMatch[1];
+    }
+  }
+
   return {
     meeting_title: fathomMeeting.title || fathomMeeting.meeting_title || 'Untitled Meeting',
     meeting_date: fathomMeeting.created_at || fathomMeeting.scheduled_start_time || new Date().toISOString(),
@@ -509,7 +518,8 @@ function convertFathomMeetingToPayload(fathomMeeting) {
     summary: summaryText,
     action_items: fathomMeeting.action_items || [],
     participants: participants,
-    fathom_url: fathomMeeting.url || fathomMeeting.share_url || null
+    fathom_url: fathomMeeting.url || fathomMeeting.share_url || null,
+    meeting_id: meetingId
   };
 }
 
