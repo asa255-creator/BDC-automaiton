@@ -48,8 +48,9 @@ function generateDailyOutlook() {
   // Send email
   const props = PropertiesService.getScriptProperties();
   const dailyLabel = props.getProperty('DAILY_BRIEFING_LABEL') || 'Brief: Daily';
+  const dailyCc = props.getProperty('DAILY_OUTLOOK_CC_EMAIL') || '';
   const subject = `Daily Outlook - ${formatDate(reportDate)}`;
-  sendOutlookEmail(subject, htmlReport, dailyLabel);
+  sendOutlookEmail(subject, htmlReport, dailyLabel, dailyCc);
 
   Logger.log('Daily outlook sent');
 }
@@ -589,8 +590,9 @@ function generateWeeklyOutlook() {
   // Send email
   const props = PropertiesService.getScriptProperties();
   const weeklyLabel = props.getProperty('WEEKLY_BRIEFING_LABEL') || 'Brief: Weekly';
+  const weeklyCc = props.getProperty('WEEKLY_OUTLOOK_CC_EMAIL') || '';
   const subject = `Weekly Outlook - Week of ${formatDate(today)}`;
-  sendOutlookEmail(subject, htmlReport, weeklyLabel);
+  sendOutlookEmail(subject, htmlReport, weeklyLabel, weeklyCc);
 
   Logger.log('Weekly outlook sent');
 }
@@ -1273,9 +1275,10 @@ function isTaskOverdue(task, referenceDate) {
  * @param {string} htmlBody - HTML email body
  * @param {string} labelName - Label to apply
  */
-function sendOutlookEmail(subject, htmlBody, labelName) {
+function sendOutlookEmail(subject, htmlBody, labelName, ccEmail) {
   const userEmail = getCurrentUserEmail();
-  sendHtmlEmail(userEmail, subject, htmlBody);
+  const emailOptions = ccEmail ? { cc: ccEmail } : undefined;
+  sendHtmlEmail(userEmail, subject, htmlBody, emailOptions);
 
   // Apply label to the sent email
   Utilities.sleep(2000); // Wait for email to be sent
