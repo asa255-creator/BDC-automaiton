@@ -2296,6 +2296,7 @@ function getSettingsForEditor() {
       : (props.getProperty('DAILY_OUTLOOK_TIME') || '07:00'),
     USER_LOCATION: props.getProperty('USER_LOCATION') || props.getProperty('DAILY_OUTLOOK_LOCATION') || '',
     USER_TIMEZONE: props.getProperty('USER_TIMEZONE') || Session.getScriptTimeZone(),
+    SECONDARY_CALENDAR_ID: props.getProperty('SECONDARY_CALENDAR_ID') || '',
     WEATHER_API_KEY: props.getProperty('WEATHER_API_KEY') || '',
     NWS_WEATHER_ENABLED: props.getProperty('NWS_WEATHER_ENABLED') || 'false',
     NWS_WEATHER_STATE: props.getProperty('NWS_WEATHER_STATE') || '',
@@ -2522,6 +2523,10 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.USER_TIMEZONE !== undefined) {
     props.setProperty('USER_TIMEZONE', settings.USER_TIMEZONE);
+  }
+
+  if (settings.SECONDARY_CALENDAR_ID !== undefined) {
+    props.setProperty('SECONDARY_CALENDAR_ID', settings.SECONDARY_CALENDAR_ID);
   }
 
   // Track if subject template changed (for filter update)
@@ -2856,6 +2861,47 @@ function testHubSpotAPI(apiKey) {
     return {
       success: false,
       message: `✗ Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Tests whether the configured secondary calendar ID is accessible.
+ *
+ * @param {string} calendarId - Secondary calendar ID
+ * @returns {Object} Result with success status and message
+ */
+function testSecondaryCalendarAccess(calendarId) {
+  const trimmedId = (calendarId || '').trim();
+  if (!trimmedId) {
+    return {
+      success: false,
+      message: '✗ Please provide a calendar ID.'
+    };
+  }
+
+  try {
+    const calendar = CalendarApp.getCalendarById(trimmedId);
+    if (!calendar) {
+      return {
+        success: false,
+        message: '✗ Calendar not found or not shared with this account.'
+      };
+    }
+
+    const now = new Date();
+    const weekOut = new Date(now);
+    weekOut.setDate(weekOut.getDate() + 7);
+
+    const upcomingEvents = calendar.getEvents(now, weekOut);
+    return {
+      success: true,
+      message: `✓ Connected to "${calendar.getName()}". Found ${upcomingEvents.length} event(s) in the next 7 days.`
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `✗ Unable to access calendar: ${error.message}`
     };
   }
 }
