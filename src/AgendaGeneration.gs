@@ -1210,12 +1210,11 @@ function recordGeneratedAgenda(event, client) {
  * @returns {CalendarEvent[]} Array of calendar events
  */
 function getTodaysRemainingEvents() {
-  const calendar = CalendarApp.getDefaultCalendar();
   const now = new Date();
   const endOfDay = new Date(now);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const events = calendar.getEvents(now, endOfDay);
+  const events = getEventsFromConfiguredCalendars(now, endOfDay);
 
   // Filter out all-day events only
   return events.filter(event => {
@@ -1229,12 +1228,11 @@ function getTodaysRemainingEvents() {
  * @returns {CalendarEvent[]} Array of calendar events
  */
 function getWeekEvents() {
-  const calendar = CalendarApp.getDefaultCalendar();
   const now = new Date();
   const endOfWeek = new Date(now);
   endOfWeek.setDate(endOfWeek.getDate() + 7);
 
-  const events = calendar.getEvents(now, endOfWeek);
+  const events = getEventsFromConfiguredCalendars(now, endOfWeek);
 
   return events.filter(event => !event.isAllDayEvent());
 }

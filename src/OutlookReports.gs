@@ -324,14 +324,13 @@ function compileDailyData(date) {
   const primaryLocation = getPrimaryWeatherLocationDetails();
   data.weather = getDailyOutlookWeather(date, primaryLocation);
 
-  // Get today's events
-  const calendar = CalendarApp.getDefaultCalendar();
+  // Get today's events from primary + optional secondary calendar
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const events = calendar.getEvents(startOfDay, endOfDay);
+  const events = getEventsFromConfiguredCalendars(startOfDay, endOfDay);
   const travelWeatherEnabled = props.getProperty('TRAVEL_WEATHER_ENABLED') === 'true';
   if (travelWeatherEnabled) {
     const secondaryLocation = getSecondaryWeatherLocationFromCalendar(events);
@@ -930,12 +929,11 @@ function compileWeeklyData(startDate) {
     };
   }
 
-  // Get week's events
-  const calendar = CalendarApp.getDefaultCalendar();
+  // Get week's events from primary + optional secondary calendar
   const endOfWeek = new Date(startDate);
   endOfWeek.setDate(endOfWeek.getDate() + 7);
 
-  const events = calendar.getEvents(startDate, endOfWeek);
+  const events = getEventsFromConfiguredCalendars(startDate, endOfWeek);
 
   // Process events
   for (const event of events) {

@@ -603,6 +603,7 @@ Add your first client to `Client_Registry`:
 | `AUTO_MARK_READ_AFTER_DAYS` | Number | `0` | Auto-mark old emails read (0=disabled) |
 | `BUSINESS_HOURS_START` | Number | `8` | Agenda generation start hour |
 | `BUSINESS_HOURS_END` | Number | `18` | Agenda generation end hour |
+| `SECONDARY_CALENDAR_ID` | String | (blank) | Optional shared calendar ID scanned after primary calendar |
 | `NWS_WEATHER_ENABLED` | Boolean | `false` | Enable National Weather Service forecasts |
 | `NWS_WEATHER_STATE` | String | (blank) | Primary weather state (US) |
 | `NWS_WEATHER_CITY` | String | (blank) | Primary weather city |

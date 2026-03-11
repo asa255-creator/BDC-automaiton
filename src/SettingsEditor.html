@@ -303,6 +303,15 @@
           <input type="text" id="user_timezone" placeholder="America/New_York">
         </div>
 
+        <div class="setting-group">
+          <div class="setting-label">Secondary Calendar ID (Optional)</div>
+          <div class="setting-description">If you have access to a second shared calendar, add its calendar ID to include its events in agenda/outlook scans.</div>
+          <input type="text" id="secondary_calendar_id" placeholder="team-calendar@group.calendar.google.com">
+          <button class="btn btn-secondary" style="margin-top: 8px;" onclick="testSecondaryCalendarConnection()">Test Calendar Access</button>
+          <div id="secondaryCalendarTestStatus" style="margin-top: 8px; font-size: 12px;"></div>
+          <div class="placeholder-hint">Note: This cannot auto-send access requests. The calendar owner must share it with this user first.</div>
+        </div>
+
         <div class="section-title">Document Settings</div>
 
         <div class="setting-group">
@@ -877,6 +886,7 @@ Thanks,
               document.getElementById('user_name').value = settings.USER_NAME || '';
               document.getElementById('user_location').value = settings.USER_LOCATION || '';
               document.getElementById('user_timezone').value = settings.USER_TIMEZONE || '';
+              document.getElementById('secondary_calendar_id').value = settings.SECONDARY_CALENDAR_ID || '';
               document.getElementById('doc_template').value = settings.DOC_NAME_TEMPLATE || 'Client Notes - {client_name}';
               document.getElementById('diagnostic_mode').checked = settings.DIAGNOSTIC_MODE === 'true';
               document.getElementById('include_unread_emails').checked = settings.INCLUDE_UNREAD_EMAILS === 'true';
@@ -1157,6 +1167,7 @@ Thanks,
         USER_NAME: document.getElementById('user_name').value.trim(),
         USER_LOCATION: document.getElementById('user_location').value.trim(),
         USER_TIMEZONE: document.getElementById('user_timezone').value.trim(),
+        SECONDARY_CALENDAR_ID: document.getElementById('secondary_calendar_id').value.trim(),
         DOC_NAME_TEMPLATE: document.getElementById('doc_template').value.trim(),
         DIAGNOSTIC_MODE: document.getElementById('diagnostic_mode').checked ? 'true' : 'false',
         INCLUDE_UNREAD_EMAILS: document.getElementById('include_unread_emails').checked ? 'true' : 'false',
@@ -1358,6 +1369,31 @@ Thanks,
           statusEl.style.color = '#ea4335';
         })
         .testHubSpotAPI(apiKey);
+    }
+
+    function testSecondaryCalendarConnection() {
+      const statusEl = document.getElementById('secondaryCalendarTestStatus');
+      const calendarId = document.getElementById('secondary_calendar_id').value.trim();
+
+      if (!calendarId) {
+        statusEl.textContent = 'Please enter a secondary calendar ID first';
+        statusEl.style.color = '#ea4335';
+        return;
+      }
+
+      statusEl.textContent = 'Testing calendar access...';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          statusEl.textContent = result.message;
+          statusEl.style.color = result.success ? '#34a853' : '#ea4335';
+        })
+        .withFailureHandler(function(error) {
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = '#ea4335';
+        })
+        .testSecondaryCalendarAccess(calendarId);
     }
   </script>
 </body>
