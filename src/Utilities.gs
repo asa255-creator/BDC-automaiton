@@ -2303,7 +2303,10 @@ function getSettingsForEditor() {
     NWS_WEATHER_LAT: props.getProperty('NWS_WEATHER_LAT') || '',
     NWS_WEATHER_LON: props.getProperty('NWS_WEATHER_LON') || '',
     TRAVEL_WEATHER_ENABLED: props.getProperty('TRAVEL_WEATHER_ENABLED') || 'false',
-    DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false'
+    DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false',
+    DAILY_OUTLOOK_CC_EMAIL: props.getProperty('DAILY_OUTLOOK_CC_EMAIL') || '',
+    WEEKLY_OUTLOOK_CC_EMAIL: props.getProperty('WEEKLY_OUTLOOK_CC_EMAIL') || '',
+    AGENDA_CC_EMAIL: props.getProperty('AGENDA_CC_EMAIL') || ''
   };
 
   const logConfig = getLogRetentionConfig();
@@ -2560,6 +2563,19 @@ function saveSettingsFromEditor(settings) {
 
   if (settings.WEEKLY_BRIEFING_LABEL) {
     props.setProperty('WEEKLY_BRIEFING_LABEL', settings.WEEKLY_BRIEFING_LABEL);
+  }
+
+  // CC email settings (allow empty string to clear/disable)
+  if (settings.DAILY_OUTLOOK_CC_EMAIL !== undefined) {
+    props.setProperty('DAILY_OUTLOOK_CC_EMAIL', settings.DAILY_OUTLOOK_CC_EMAIL);
+  }
+
+  if (settings.WEEKLY_OUTLOOK_CC_EMAIL !== undefined) {
+    props.setProperty('WEEKLY_OUTLOOK_CC_EMAIL', settings.WEEKLY_OUTLOOK_CC_EMAIL);
+  }
+
+  if (settings.AGENDA_CC_EMAIL !== undefined) {
+    props.setProperty('AGENDA_CC_EMAIL', settings.AGENDA_CC_EMAIL);
   }
 
   let dailyOutlookUpdated = false;

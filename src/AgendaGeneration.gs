@@ -905,7 +905,9 @@ function sendAgendaEmail(event, client, agendaContent, traceId, isTruncated) {
     agenda_content: warningBanner + agendaContent
   });
 
-  sendHtmlEmail(userEmail, subject, body);
+  const agendaCc = PropertiesService.getScriptProperties().getProperty('AGENDA_CC_EMAIL') || '';
+  const agendaEmailOptions = agendaCc ? { cc: agendaCc } : undefined;
+  sendHtmlEmail(userEmail, subject, body, agendaEmailOptions);
 
   Logger.log(`Sent agenda email for: ${event.getTitle()}`);
 

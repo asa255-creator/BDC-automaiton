@@ -637,7 +637,26 @@ Thanks,
           </div>
         </div>
 
-        
+        <div class="section-title">CC Email Recipients</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Daily Outlook CC Email</div>
+          <div class="setting-description">Optionally CC a second address on daily outlook emails. Leave blank to disable.</div>
+          <input type="email" id="daily_outlook_cc" placeholder="e.g. colleague@example.com" style="width: 100%;">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Weekly Outlook CC Email</div>
+          <div class="setting-description">Optionally CC a second address on weekly outlook emails. Leave blank to disable.</div>
+          <input type="email" id="weekly_outlook_cc" placeholder="e.g. colleague@example.com" style="width: 100%;">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Pre-Meeting Agenda CC Email</div>
+          <div class="setting-description">Optionally CC a second address on pre-meeting agenda emails. Leave blank to disable.</div>
+          <input type="email" id="agenda_cc" placeholder="e.g. colleague@example.com" style="width: 100%;">
+        </div>
+
       </div>
     </div>
 
@@ -924,6 +943,9 @@ Thanks,
               document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
               document.getElementById('daily_outlook_day').value = settings.DAILY_OUTLOOK_DAY || 'day_of';
               document.getElementById('daily_outlook_time').value = settings.DAILY_OUTLOOK_TIME || '07:00';
+              document.getElementById('daily_outlook_cc').value = settings.DAILY_OUTLOOK_CC_EMAIL || '';
+              document.getElementById('weekly_outlook_cc').value = settings.WEEKLY_OUTLOOK_CC_EMAIL || '';
+              document.getElementById('agenda_cc').value = settings.AGENDA_CC_EMAIL || '';
 
               // Set label dropdowns after they're populated
               setTimeout(function() {
@@ -1199,7 +1221,10 @@ Thanks,
         DAILY_BRIEFING_LABEL: document.getElementById('daily_label').value.trim(),
         WEEKLY_BRIEFING_LABEL: document.getElementById('weekly_label').value.trim(),
         DAILY_OUTLOOK_DAY: document.getElementById('daily_outlook_day').value,
-        DAILY_OUTLOOK_TIME: document.getElementById('daily_outlook_time').value || '07:00'
+        DAILY_OUTLOOK_TIME: document.getElementById('daily_outlook_time').value || '07:00',
+        DAILY_OUTLOOK_CC_EMAIL: document.getElementById('daily_outlook_cc').value.trim(),
+        WEEKLY_OUTLOOK_CC_EMAIL: document.getElementById('weekly_outlook_cc').value.trim(),
+        AGENDA_CC_EMAIL: document.getElementById('agenda_cc').value.trim()
       };
 
       google.script.run
