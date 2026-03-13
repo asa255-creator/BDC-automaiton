@@ -57,6 +57,12 @@ function createTodoistTasksWithAssignees(actionItems, client) {
   }
 
   const projectId = client.todoist_project_id;
+
+  if (!projectId) {
+    logProcessing('TODOIST', client.client_name, 'No Todoist project ID configured for client', 'warning');
+    return;
+  }
+
   let createdCount = 0;
 
   for (const item of actionItems) {
@@ -97,7 +103,12 @@ function createTodoistTasksWithAssignees(actionItems, client) {
         const assigneeInfo = item.assignee_name ? ` (assigned to ${item.assignee_name})` : '';
         logProcessing('TODOIST', client.client_name, `Created task: ${item.title}${assigneeInfo}`, 'success');
       } else {
-        logProcessing('TODOIST', client.client_name, `Failed to create task: ${responseCode}`, 'error');
+        const responseText = response.getContentText();
+        const detail = responseText ? responseText.substring(0, 300) : '';
+        const hint = responseCode === 410
+          ? ' (project may be deleted/archived or inaccessible)'
+          : '';
+        logProcessing('TODOIST', client.client_name, `Failed to create task: ${responseCode}${hint}${detail ? ` | ${detail}` : ''}`, 'error');
       }
 
     } catch (error) {
@@ -105,7 +116,8 @@ function createTodoistTasksWithAssignees(actionItems, client) {
     }
   }
 
-  logProcessing('TODOIST', client.client_name, `Created ${createdCount}/${actionItems.length} tasks`, 'success');
+  const summaryStatus = createdCount === actionItems.length ? 'success' : 'warning';
+  logProcessing('TODOIST', client.client_name, `Created ${createdCount}/${actionItems.length} tasks`, summaryStatus);
 }
 
 /**
