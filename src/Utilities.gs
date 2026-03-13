@@ -2307,7 +2307,11 @@ function getSettingsForEditor() {
     DIAGNOSTIC_MODE: props.getProperty('DIAGNOSTIC_MODE') || 'false',
     DAILY_OUTLOOK_CC_EMAIL: props.getProperty('DAILY_OUTLOOK_CC_EMAIL') || '',
     WEEKLY_OUTLOOK_CC_EMAIL: props.getProperty('WEEKLY_OUTLOOK_CC_EMAIL') || '',
-    AGENDA_CC_EMAIL: props.getProperty('AGENDA_CC_EMAIL') || ''
+    AGENDA_CC_EMAIL: props.getProperty('AGENDA_CC_EMAIL') || '',
+    AGENDA_GENERATION_ENABLED: props.getProperty('AGENDA_GENERATION_ENABLED') || 'true',
+    AGENDA_GENERATION_DISABLED_CLIENTS: props.getProperty('AGENDA_GENERATION_DISABLED_CLIENTS') || '',
+    DAILY_BRIEFING_FOLDER_URL: props.getProperty('DAILY_BRIEFING_FOLDER_URL') || 'https://drive.google.com/drive/folders/1FNVZvLAexuVQfP6Pj-RFJLPF88nS9ym6',
+    DAILY_BRIEFING_DOC_NAME_TEMPLATE: props.getProperty('DAILY_BRIEFING_DOC_NAME_TEMPLATE') || 'Daily Briefing Notes - {date}'
   };
 
   const logConfig = getLogRetentionConfig();
@@ -2583,6 +2587,22 @@ function saveSettingsFromEditor(settings) {
     props.setProperty('AGENDA_CC_EMAIL', settings.AGENDA_CC_EMAIL);
   }
 
+  if (settings.AGENDA_GENERATION_ENABLED !== undefined) {
+    props.setProperty('AGENDA_GENERATION_ENABLED', settings.AGENDA_GENERATION_ENABLED);
+  }
+
+  if (settings.AGENDA_GENERATION_DISABLED_CLIENTS !== undefined) {
+    props.setProperty('AGENDA_GENERATION_DISABLED_CLIENTS', settings.AGENDA_GENERATION_DISABLED_CLIENTS);
+  }
+
+  if (settings.DAILY_BRIEFING_FOLDER_URL !== undefined) {
+    props.setProperty('DAILY_BRIEFING_FOLDER_URL', settings.DAILY_BRIEFING_FOLDER_URL);
+  }
+
+  if (settings.DAILY_BRIEFING_DOC_NAME_TEMPLATE !== undefined) {
+    props.setProperty('DAILY_BRIEFING_DOC_NAME_TEMPLATE', settings.DAILY_BRIEFING_DOC_NAME_TEMPLATE);
+  }
+
   let dailyOutlookUpdated = false;
 
   if (settings.DAILY_OUTLOOK_DAY) {
@@ -2637,6 +2657,84 @@ function saveSettingsFromEditor(settings) {
   }
 
   return { success: true };
+}
+
+
+/**
+ * Creates and sends a sample meeting summary email with one action item for Todoist pipeline testing.
+ * Targets the "Internal" client and applies that client's Meeting Summaries label.
+ *
+ * @returns {Object} Result with success flag and message
+ */
+function createSampleSummaryEmailForTodoistTest() {
+  try {
+    const clients = getClientRegistry();
+    const internalClient = clients.find(client =>
+      client.client_name && client.client_name.toLowerCase() === 'internal'
+    );
+
+    if (!internalClient) {
+      return {
+        success: false,
+        message: 'Client "Internal" was not found in Client_Registry.'
+      };
+    }
+
+    const userEmail = getCurrentUserEmail();
+    const testId = Utilities.getUuid().split('-')[0];
+    const meetingDate = formatDateShort(new Date());
+    const subject = `Team ${internalClient.client_name} - Meeting notes from "Sample Math Meeting" ${meetingDate} [TEST-${testId}]`;
+
+    const htmlBody =
+      '<p>Team Internal -</p>' +
+      `<p>Here are the notes from "Sample Math Meeting" on ${meetingDate}.</p>` +
+      '<h3>Summary</h3>' +
+      '<p>This is a sample summary email generated for testing Todoist action item creation.</p>' +
+      '<h3>Action Items</h3>' +
+      '<ol>' +
+      '<li>Follow up with internal stakeholder on algebra deliverables by next Friday.</li>' +
+      '</ol>';
+
+    sendHtmlEmail(userEmail, subject, htmlBody, {
+      plainText: [
+        'Team Internal -',
+        '',
+        `Here are the notes from "Sample Math Meeting" on ${meetingDate}.`,
+        '',
+        'Summary',
+        'This is a sample summary email generated for testing Todoist action item creation.',
+        '',
+        'Action Items',
+        '1. Follow up with internal stakeholder on algebra deliverables by next Friday.'
+      ].join('\n')
+    });
+
+    Utilities.sleep(2000);
+
+    const query = `from:me to:${userEmail} subject:"TEST-${testId}" newer_than:1h`;
+    const threads = GmailApp.search(query, 0, 1);
+
+    if (threads.length === 0) {
+      return {
+        success: false,
+        message: 'Sample email was sent but could not be found for labeling. Check Sent Mail.'
+      };
+    }
+
+    const labelName = internalClient.meeting_summaries_label || `Client: ${internalClient.client_name}/Meeting Summaries`;
+    const label = createLabelIfNotExists(labelName);
+    threads[0].addLabel(label);
+
+    return {
+      success: true,
+      message: `Sample summary sent and labeled (${labelName}). The 10-minute monitor will process it for Todoist task creation.`
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `Failed to create sample summary email: ${error.message}`
+    };
+  }
 }
 
 /**

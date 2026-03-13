@@ -51,6 +51,7 @@ function generateDailyOutlook() {
   const dailyCc = props.getProperty('DAILY_OUTLOOK_CC_EMAIL') || '';
   const subject = `Daily Outlook - ${formatDate(reportDate)}`;
   sendOutlookEmail(subject, htmlReport, dailyLabel, dailyCc);
+  createDailyBriefingDoc(subject, htmlReport, reportDate);
 
   Logger.log('Daily outlook sent');
 }
@@ -1288,6 +1289,112 @@ function sendOutlookEmail(subject, htmlBody, labelName, ccEmail) {
     const label = createLabelIfNotExists(labelName);
     threads[0].addLabel(label);
   }
+}
+
+/**
+ * Creates a Google Doc copy of the daily briefing in a configured Drive folder.
+ *
+ * @param {string} subject - Briefing subject line
+ * @param {string} htmlBody - Briefing HTML content
+ * @param {Date} reportDate - Date represented by the briefing
+ */
+function createDailyBriefingDoc(subject, htmlBody, reportDate) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const folderUrl = (props.getProperty('DAILY_BRIEFING_FOLDER_URL') || '').trim();
+
+    if (!folderUrl) {
+      Logger.log('Daily briefing doc folder URL is empty; skipping doc creation');
+      return;
+    }
+
+    const folderId = extractDriveFolderId(folderUrl);
+    if (!folderId) {
+      Logger.log(`Invalid daily briefing folder URL: ${folderUrl}`);
+      return;
+    }
+
+    const folder = DriveApp.getFolderById(folderId);
+    const docName = buildDailyBriefingDocName(reportDate || new Date());
+    const doc = DocumentApp.create(docName);
+    const body = doc.getBody();
+    body.clear();
+    body.appendParagraph(subject).setHeading(DocumentApp.ParagraphHeading.HEADING1);
+    body.appendParagraph('');
+    body.appendParagraph(convertBriefingHtmlToDocText(htmlBody || ''));
+    doc.saveAndClose();
+
+    const file = DriveApp.getFileById(doc.getId());
+    folder.addFile(file);
+    DriveApp.getRootFolder().removeFile(file);
+    Logger.log(`Daily briefing doc created: ${docName}`);
+  } catch (error) {
+    Logger.log(`Failed to create daily briefing doc: ${error.message}`);
+  }
+}
+
+
+/**
+ * Builds the daily briefing doc name using a configurable template.
+ *
+ * @param {Date} reportDate - Date represented by the briefing
+ * @returns {string} Document name
+ */
+function buildDailyBriefingDocName(reportDate) {
+  const props = PropertiesService.getScriptProperties();
+  const template = (props.getProperty('DAILY_BRIEFING_DOC_NAME_TEMPLATE') || 'Daily Briefing Notes - {date}').trim();
+  const safeTemplate = template || 'Daily Briefing Notes - {date}';
+  return safeTemplate.replace(/\{date\}/g, formatDate(reportDate || new Date()));
+}
+
+/**
+ * Converts briefing HTML into cleaner plaintext for Google Docs.
+ *
+ * @param {string} html - Briefing HTML
+ * @returns {string} Plaintext formatted for docs
+ */
+function convertBriefingHtmlToDocText(html) {
+  if (!html) {
+    return '';
+  }
+
+  let text = html;
+  text = text.replace(/<br\s*\/?\s*>/gi, '\n');
+  text = text.replace(/<\/p>/gi, '\n\n');
+  text = text.replace(/<p[^>]*>/gi, '');
+  text = text.replace(/<li[^>]*>/gi, '• ');
+  text = text.replace(/<\/li>/gi, '\n');
+  text = text.replace(/<\/?h[1-6][^>]*>/gi, '\n');
+
+  text = stripHtml(text);
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  return text.trim();
+}
+
+/**
+ * Extracts a Drive folder ID from either a folder URL or a raw ID.
+ *
+ * @param {string} folderUrlOrId - Drive folder URL or ID
+ * @returns {string} Drive folder ID or empty string when invalid
+ */
+function extractDriveFolderId(folderUrlOrId) {
+  if (!folderUrlOrId) {
+    return '';
+  }
+
+  const trimmed = folderUrlOrId.trim();
+  const folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch && folderMatch[1]) {
+    return folderMatch[1];
+  }
+
+  const idOnlyMatch = trimmed.match(/^[a-zA-Z0-9_-]{20,}$/);
+  if (idOnlyMatch) {
+    return trimmed;
+  }
+
+  return '';
 }
 
 /**

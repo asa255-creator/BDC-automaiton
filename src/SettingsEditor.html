@@ -646,6 +646,32 @@ Thanks,
           </div>
         </div>
 
+        <div class="section-title">Agenda Generation Controls</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Generate Meeting Agendas</div>
+          <div class="setting-description">Turn off to disable automated pre-meeting agenda generation for all clients.</div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <input type="checkbox" id="agenda_generation_enabled" style="width: auto;">
+            <span>Enable automated agenda generation</span>
+          </label>
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Disable Agenda Generation for Specific Clients</div>
+          <div class="setting-description">Optional comma-separated list of client names to skip (exact names from Client_Registry).</div>
+          <input type="text" id="agenda_generation_disabled_clients" placeholder="e.g. Acme Corp, Example Client" style="width: 100%;">
+        </div>
+
+        <div class="section-title">Todoist Action Item Test</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Create Sample Email with One Action Item</div>
+          <div class="setting-description">Sends a labeled test summary email for the Internal client so the summary monitor can create Todoist tasks.</div>
+          <button class="btn btn-secondary" id="sampleSummaryBtn" onclick="createSampleSummaryEmail()" style="margin-top: 8px;">Create Sample Email</button>
+          <div id="sampleSummaryStatus" class="setting-description" style="margin-top: 8px; color: #666;"></div>
+        </div>
+
         <div class="section-title">CC Email Recipients</div>
 
         <div class="setting-group">
@@ -664,6 +690,20 @@ Thanks,
           <div class="setting-label">Pre-Meeting Agenda CC Email</div>
           <div class="setting-description">Optionally CC a second address on pre-meeting agenda emails. Leave blank to disable.</div>
           <input type="email" id="agenda_cc" placeholder="e.g. colleague@example.com" style="width: 100%;">
+        </div>
+
+        <div class="section-title">Briefing Docs</div>
+
+        <div class="setting-group">
+          <div class="setting-label">Add Daily Briefing to Folder</div>
+          <div class="setting-description">Create a Google Doc copy of each daily briefing in this folder. Leave blank to disable.</div>
+          <input type="url" id="daily_briefing_folder_url" placeholder="https://drive.google.com/drive/folders/1FNVZvLAexuVQfP6Pj-RFJLPF88nS9ym6" style="width: 100%;">
+        </div>
+
+        <div class="setting-group">
+          <div class="setting-label">Daily Briefing Doc Name Format</div>
+          <div class="setting-description">Optional naming pattern for briefing docs. Use {date} for the briefing date. Leave blank for default.</div>
+          <input type="text" id="daily_briefing_doc_name_template" placeholder="Daily Briefing Notes - {date}" style="width: 100%;">
         </div>
 
       </div>
@@ -953,9 +993,13 @@ Thanks,
               document.getElementById('hours_end').value = settings.BUSINESS_HOURS_END || '18';
               document.getElementById('daily_outlook_day').value = settings.DAILY_OUTLOOK_DAY || 'day_of';
               document.getElementById('daily_outlook_time').value = settings.DAILY_OUTLOOK_TIME || '07:00';
+              document.getElementById('agenda_generation_enabled').checked = settings.AGENDA_GENERATION_ENABLED !== 'false';
+              document.getElementById('agenda_generation_disabled_clients').value = settings.AGENDA_GENERATION_DISABLED_CLIENTS || '';
               document.getElementById('daily_outlook_cc').value = settings.DAILY_OUTLOOK_CC_EMAIL || '';
               document.getElementById('weekly_outlook_cc').value = settings.WEEKLY_OUTLOOK_CC_EMAIL || '';
               document.getElementById('agenda_cc').value = settings.AGENDA_CC_EMAIL || '';
+              document.getElementById('daily_briefing_folder_url').value = settings.DAILY_BRIEFING_FOLDER_URL || 'https://drive.google.com/drive/folders/1FNVZvLAexuVQfP6Pj-RFJLPF88nS9ym6';
+              document.getElementById('daily_briefing_doc_name_template').value = settings.DAILY_BRIEFING_DOC_NAME_TEMPLATE || 'Daily Briefing Notes - {date}';
 
               // Set label dropdowns after they're populated
               setTimeout(function() {
@@ -1233,9 +1277,13 @@ Thanks,
         WEEKLY_BRIEFING_LABEL: document.getElementById('weekly_label').value.trim(),
         DAILY_OUTLOOK_DAY: document.getElementById('daily_outlook_day').value,
         DAILY_OUTLOOK_TIME: document.getElementById('daily_outlook_time').value || '07:00',
+        AGENDA_GENERATION_ENABLED: document.getElementById('agenda_generation_enabled').checked ? 'true' : 'false',
+        AGENDA_GENERATION_DISABLED_CLIENTS: document.getElementById('agenda_generation_disabled_clients').value.trim(),
         DAILY_OUTLOOK_CC_EMAIL: document.getElementById('daily_outlook_cc').value.trim(),
         WEEKLY_OUTLOOK_CC_EMAIL: document.getElementById('weekly_outlook_cc').value.trim(),
-        AGENDA_CC_EMAIL: document.getElementById('agenda_cc').value.trim()
+        AGENDA_CC_EMAIL: document.getElementById('agenda_cc').value.trim(),
+        DAILY_BRIEFING_FOLDER_URL: document.getElementById('daily_briefing_folder_url').value.trim(),
+        DAILY_BRIEFING_DOC_NAME_TEMPLATE: document.getElementById('daily_briefing_doc_name_template').value.trim()
       };
 
       google.script.run
@@ -1269,6 +1317,37 @@ Thanks,
           saveBtn.textContent = 'Save Changes';
         })
         .saveSettingsFromEditor(settings);
+    }
+
+    function createSampleSummaryEmail() {
+      const btn = document.getElementById('sampleSummaryBtn');
+      const statusEl = document.getElementById('sampleSummaryStatus');
+
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+      statusEl.textContent = '';
+      statusEl.style.color = '#666';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false;
+          btn.textContent = 'Create Sample Email';
+
+          if (result && result.success) {
+            statusEl.style.color = '#0f9d58';
+            statusEl.textContent = result.message || 'Sample email created successfully.';
+          } else {
+            statusEl.style.color = '#d93025';
+            statusEl.textContent = (result && result.message) || 'Failed to create sample email.';
+          }
+        })
+        .withFailureHandler(function(error) {
+          btn.disabled = false;
+          btn.textContent = 'Create Sample Email';
+          statusEl.style.color = '#d93025';
+          statusEl.textContent = 'Error: ' + error.message;
+        })
+        .createSampleSummaryEmailForTodoistTest();
     }
 
     function updateFilters() {
