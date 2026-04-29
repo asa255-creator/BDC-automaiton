@@ -19,6 +19,11 @@
 function generateAgendas() {
   logProcessing('AGENDA_GEN', null, 'Starting agenda generation scan', 'info');
 
+  if (!isAgendaGenerationGloballyEnabled()) {
+    logProcessing('AGENDA_GEN', null, 'Agenda generation is disabled in settings', 'info');
+    return;
+  }
+
   // Get today's remaining calendar events
   const events = getTodaysRemainingEvents();
 
@@ -63,6 +68,11 @@ function processEventForAgenda(event) {
   }
 
   logProcessing('AGENDA_GEN', client.client_name, `Matched event "${eventTitle}" to client`, 'info');
+
+  if (isAgendaGenerationDisabledForClient(client.client_name)) {
+    logProcessing('AGENDA_GEN', client.client_name, `Agenda generation disabled for client: ${client.client_name}`, 'info');
+    return;
+  }
 
   // Ensure running meeting notes doc is attached to the event
   if (client.google_doc_url) {
@@ -135,6 +145,41 @@ function generateAgendaForEvent(event, client) {
     `Generated agenda for: ${event.getTitle()}`,
     'success'
   );
+}
+
+
+/**
+ * Checks whether agenda generation is globally enabled.
+ *
+ * @returns {boolean} True when enabled
+ */
+function isAgendaGenerationGloballyEnabled() {
+  const enabled = PropertiesService.getScriptProperties().getProperty('AGENDA_GENERATION_ENABLED');
+  return enabled !== 'false';
+}
+
+/**
+ * Checks whether agenda generation is disabled for a specific client name.
+ *
+ * @param {string} clientName - Client name to check
+ * @returns {boolean} True when disabled for client
+ */
+function isAgendaGenerationDisabledForClient(clientName) {
+  if (!clientName) {
+    return false;
+  }
+
+  const rawList = PropertiesService.getScriptProperties().getProperty('AGENDA_GENERATION_DISABLED_CLIENTS') || '';
+  if (!rawList.trim()) {
+    return false;
+  }
+
+  const disabledClients = rawList
+    .split(',')
+    .map(name => name.trim().toLowerCase())
+    .filter(Boolean);
+
+  return disabledClients.includes(clientName.trim().toLowerCase());
 }
 
 // ============================================================================

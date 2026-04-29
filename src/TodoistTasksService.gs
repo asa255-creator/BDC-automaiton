@@ -2,6 +2,63 @@
  * TodoistTasksService.gs - Todoist API integrations.
  */
 
+
+/**
+ * Returns Todoist API base URLs in fallback order.
+ * Some workspaces now require /api/v1 while others still use /rest/v2.
+ *
+ * @returns {string[]} Base URLs
+ */
+function getTodoistApiBaseUrls() {
+  return [
+    'https://api.todoist.com/api/v1',
+    'https://api.todoist.com/rest/v2'
+  ];
+}
+
+/**
+ * Executes a Todoist API request with base URL fallback.
+ *
+ * @param {string} path - Endpoint path starting with /
+ * @param {Object} options - UrlFetchApp options
+ * @returns {{response: Object|null, responseCode: number, responseText: string, baseUrl: string}}
+ */
+function fetchTodoistWithFallback(path, options) {
+  const bases = getTodoistApiBaseUrls();
+  let lastResponse = null;
+
+  for (const baseUrl of bases) {
+    const response = UrlFetchApp.fetch(`${baseUrl}${path}`, options);
+    const responseCode = response.getResponseCode();
+    const responseText = response.getContentText() || '';
+
+    lastResponse = {
+      response: response,
+      responseCode: responseCode,
+      responseText: responseText,
+      baseUrl: baseUrl
+    };
+
+    if (responseCode === 200) {
+      return lastResponse;
+    }
+
+    // Try fallback base URL when endpoint appears deprecated/unavailable.
+    if (responseCode === 404 || responseCode === 410) {
+      continue;
+    }
+
+    return lastResponse;
+  }
+
+  return lastResponse || {
+    response: null,
+    responseCode: 0,
+    responseText: '',
+    baseUrl: ''
+  };
+}
+
 /**
  * Fetches collaborators for a Todoist project.
  *
@@ -16,8 +73,6 @@ function fetchProjectCollaborators(projectId) {
   }
 
   try {
-    const url = `https://api.todoist.com/rest/v2/projects/${projectId}/collaborators`;
-
     const options = {
       method: 'GET',
       headers: {
@@ -26,15 +81,15 @@ function fetchProjectCollaborators(projectId) {
       muteHttpExceptions: true
     };
 
-    const response = UrlFetchApp.fetch(url, options);
-    const responseCode = response.getResponseCode();
+    const result = fetchTodoistWithFallback(`/projects/${projectId}/collaborators`, options);
 
-    if (responseCode !== 200) {
-      logProcessing('TODOIST', null, `Failed to fetch collaborators: ${responseCode}`, 'error');
+    if (result.responseCode !== 200) {
+      const detail = result.responseText ? result.responseText.substring(0, 300) : '';
+      logProcessing('TODOIST', null, `Failed to fetch collaborators: ${result.responseCode}${detail ? ` | ${detail}` : ''}`, 'error');
       return [];
     }
 
-    return JSON.parse(response.getContentText());
+    return JSON.parse(result.responseText);
 
   } catch (error) {
     logProcessing('TODOIST', null, `Error fetching collaborators: ${error.message}`, 'error');
@@ -57,12 +112,16 @@ function createTodoistTasksWithAssignees(actionItems, client) {
   }
 
   const projectId = client.todoist_project_id;
+
+  if (!projectId) {
+    logProcessing('TODOIST', client.client_name, 'No Todoist project ID configured for client', 'warning');
+    return;
+  }
+
   let createdCount = 0;
 
   for (const item of actionItems) {
     try {
-      const url = 'https://api.todoist.com/rest/v2/tasks';
-
       const payload = {
         content: item.title || item.description.substring(0, 100),
         description: item.description,
@@ -89,15 +148,19 @@ function createTodoistTasksWithAssignees(actionItems, client) {
         muteHttpExceptions: true
       };
 
-      const response = UrlFetchApp.fetch(url, options);
-      const responseCode = response.getResponseCode();
+      const result = fetchTodoistWithFallback('/tasks', options);
+      const responseCode = result.responseCode;
 
       if (responseCode === 200) {
         createdCount++;
         const assigneeInfo = item.assignee_name ? ` (assigned to ${item.assignee_name})` : '';
         logProcessing('TODOIST', client.client_name, `Created task: ${item.title}${assigneeInfo}`, 'success');
       } else {
-        logProcessing('TODOIST', client.client_name, `Failed to create task: ${responseCode}`, 'error');
+        const detail = result.responseText ? result.responseText.substring(0, 300) : '';
+        const hint = responseCode === 410
+          ? ' (project may be deleted/archived or inaccessible)'
+          : '';
+        logProcessing('TODOIST', client.client_name, `Failed to create task: ${responseCode}${hint}${detail ? ` | ${detail}` : ''}`, 'error');
       }
 
     } catch (error) {
@@ -105,7 +168,8 @@ function createTodoistTasksWithAssignees(actionItems, client) {
     }
   }
 
-  logProcessing('TODOIST', client.client_name, `Created ${createdCount}/${actionItems.length} tasks`, 'success');
+  const summaryStatus = createdCount === actionItems.length ? 'success' : 'warning';
+  logProcessing('TODOIST', client.client_name, `Created ${createdCount}/${actionItems.length} tasks`, summaryStatus);
 }
 
 /**
@@ -148,8 +212,6 @@ function createTodoistTasks(actionItems, client) {
  * @param {string} clientName - Client name for task content
  */
 function createTodoistTask(apiToken, projectId, item, clientName) {
-  const url = 'https://api.todoist.com/rest/v2/tasks';
-
   const taskContent = `[${clientName}] ${item.description}`;
 
   const payload = {
@@ -172,11 +234,11 @@ function createTodoistTask(apiToken, projectId, item, clientName) {
     muteHttpExceptions: true
   };
 
-  const response = UrlFetchApp.fetch(url, options);
-  const responseCode = response.getResponseCode();
+  const result = fetchTodoistWithFallback('/tasks', options);
 
-  if (responseCode !== 200) {
-    throw new Error(`Todoist API error: ${responseCode}`);
+  if (result.responseCode !== 200) {
+    const detail = result.responseText ? ` | ${result.responseText.substring(0, 200)}` : '';
+    throw new Error(`Todoist API error: ${result.responseCode}${detail}`);
   }
 
   Logger.log(`Created Todoist task: ${taskContent}`);
@@ -196,8 +258,6 @@ function fetchTodoistTasks(projectId) {
     return [];
   }
 
-  const url = `https://api.todoist.com/rest/v2/tasks?project_id=${projectId}`;
-
   const options = {
     method: 'GET',
     headers: {
@@ -207,15 +267,14 @@ function fetchTodoistTasks(projectId) {
   };
 
   try {
-    const response = UrlFetchApp.fetch(url, options);
-    const responseCode = response.getResponseCode();
+    const result = fetchTodoistWithFallback(`/tasks?project_id=${encodeURIComponent(projectId)}`, options);
 
-    if (responseCode !== 200) {
-      Logger.log(`Todoist API error: ${responseCode}`);
+    if (result.responseCode !== 200) {
+      Logger.log(`Todoist API error: ${result.responseCode}`);
       return [];
     }
 
-    return JSON.parse(response.getContentText());
+    return JSON.parse(result.responseText);
   } catch (error) {
     Logger.log(`Failed to fetch Todoist tasks: ${error.message}`);
     return [];
