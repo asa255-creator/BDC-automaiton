@@ -124,6 +124,23 @@ function doPost(e) {
     const parsedPayload = JSON.parse(rawBody);
     let payload = extractFathomWebhookPayload(parsedPayload);
 
+    // Detect Fathom's new minimal webhook format: { recording_id, url, share_url, type }
+    // In this format Fathom only sends a notification — full meeting data must be fetched via API.
+    const isMinimalWebhook = payload && payload.recording_id &&
+      !payload.meeting_title && !payload.title && !payload.default_summary && !payload.calendar_invitees;
+
+    if (isMinimalWebhook) {
+      logProcessing('WEBHOOK_PAYLOAD', null, `Received minimal webhook (recording_id=${payload.recording_id}, type=${payload.type}) — fetching full meeting data from API`, 'info');
+      try {
+        payload = fetchFathomMeetingByRecordingId(payload.recording_id);
+      } catch (fetchErr) {
+        logProcessing('WEBHOOK_ERROR', null, `Failed to fetch meeting ${parsedPayload.recording_id}: ${fetchErr.message}`, 'error');
+        return ContentService
+          .createTextOutput(JSON.stringify({ status: 'error', message: `Could not fetch meeting data: ${fetchErr.message}` }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
     // Log payload summary for debugging
     const payloadKeys = payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 12).join(', ') : 'n/a';
     logProcessing('WEBHOOK_PAYLOAD', null, `Processing meeting: ${payload && (payload.meeting_title || payload.title) ? (payload.meeting_title || payload.title) : 'Unknown'} (keys: ${payloadKeys})`, 'info');

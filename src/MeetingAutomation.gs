@@ -284,6 +284,68 @@ function getPendingDraftsList() {
 // ============================================================================
 
 /**
+ * Fetches full meeting data from Fathom API for a specific recording ID.
+ * Used when Fathom sends the new minimal webhook format (recording_id + type only)
+ * and we need to retrieve the full meeting content separately.
+ *
+ * Tries GET /meetings/{id} first, then falls back to searching the recent meetings
+ * list for a matching recording_id.
+ *
+ * @param {string|number} recordingId - The recording ID from the webhook payload
+ * @returns {Object} The full meeting data from Fathom
+ */
+function fetchFathomMeetingByRecordingId(recordingId) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('FATHOM_API_KEY');
+
+  if (!apiKey) {
+    throw new Error('Fathom API key not configured. Add it in Settings.');
+  }
+
+  const headers = { 'X-Api-Key': apiKey, 'Content-Type': 'application/json' };
+  const baseUrl = 'https://api.fathom.ai/external/v1';
+  const params = 'include_transcript=true&include_summary=true&include_action_items=true';
+
+  // Try direct single-meeting endpoint first
+  try {
+    const singleUrl = `${baseUrl}/meetings/${recordingId}?${params}`;
+    const resp = UrlFetchApp.fetch(singleUrl, { method: 'GET', headers: headers, muteHttpExceptions: true });
+    if (resp.getResponseCode() === 200) {
+      const meeting = JSON.parse(resp.getContentText());
+      if (meeting && (meeting.id || meeting.title)) {
+        logProcessing('FATHOM_API', null, `Fetched meeting ${recordingId} via direct endpoint`, 'info');
+        return meeting;
+      }
+    }
+  } catch (e) {
+    // fall through to list search
+  }
+
+  // Fall back: search recent meetings list for matching recording_id
+  const listUrl = `${baseUrl}/meetings?${params}&limit=20`;
+  const listResp = UrlFetchApp.fetch(listUrl, { method: 'GET', headers: headers, muteHttpExceptions: true });
+
+  if (listResp.getResponseCode() !== 200) {
+    throw new Error(`Fathom API error (${listResp.getResponseCode()}) fetching meeting ${recordingId}`);
+  }
+
+  const data = JSON.parse(listResp.getContentText());
+  const meetings = data.items || (Array.isArray(data) ? data : []);
+  const normalizedTarget = String(recordingId).trim();
+
+  const match = meetings.find(m => {
+    return String(m.id || '').trim() === normalizedTarget ||
+           String(m.recording_id || '').trim() === normalizedTarget;
+  });
+
+  if (!match) {
+    throw new Error(`Meeting ${recordingId} not found in recent Fathom meetings list`);
+  }
+
+  logProcessing('FATHOM_API', null, `Found meeting ${recordingId} via list search: ${match.title || 'Unknown'}`, 'info');
+  return match;
+}
+
+/**
  * Fetches the latest meeting from Fathom API.
  * This is used for testing the webhook processing without waiting for a real meeting.
  *
