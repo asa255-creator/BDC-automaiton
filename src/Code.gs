@@ -70,6 +70,7 @@ function extractFathomWebhookPayload(payload) {
     return payload;
   }
 
+  // Unwrap common Fathom envelope formats
   if (payload.data && typeof payload.data === 'object') {
     return payload.data;
   }
@@ -78,10 +79,20 @@ function extractFathomWebhookPayload(payload) {
     return payload.meeting;
   }
 
+  // Fathom sometimes wraps in "call" or "recording" keys
+  if (payload.call && typeof payload.call === 'object') {
+    return payload.call;
+  }
+
+  if (payload.recording && typeof payload.recording === 'object') {
+    return payload.recording;
+  }
+
   if (payload.event && payload.event.data && typeof payload.event.data === 'object') {
     return payload.event.data;
   }
 
+  // Preserve top-level type/recording_id/id for minimal-webhook detection
   return payload;
 }
 
@@ -122,22 +133,37 @@ function doPost(e) {
 
     const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '{}';
     const parsedPayload = JSON.parse(rawBody);
+
+    // Log raw payload keys to help diagnose format changes
+    const rawKeys = parsedPayload && typeof parsedPayload === 'object' ? Object.keys(parsedPayload).join(', ') : 'n/a';
+    logProcessing('WEBHOOK_RAW', null, `Raw webhook keys: ${rawKeys}`, 'info');
+
     let payload = extractFathomWebhookPayload(parsedPayload);
 
-    // Detect Fathom's new minimal webhook format: { recording_id, url, share_url, type }
-    // In this format Fathom only sends a notification — full meeting data must be fetched via API.
-    const isMinimalWebhook = payload && payload.recording_id &&
-      !payload.meeting_title && !payload.title && !payload.default_summary && !payload.calendar_invitees;
+    // Detect Fathom's minimal webhook format — only a notification with an ID, no meeting content.
+    // Handles both recording_id and bare id fields (Fathom has used both across versions).
+    const notificationId = payload && (payload.recording_id || payload.id);
+    const hasContent = payload && (payload.meeting_title || payload.title || payload.default_summary || payload.calendar_invitees);
+    const isMinimalWebhook = notificationId && !hasContent;
 
     if (isMinimalWebhook) {
-      logProcessing('WEBHOOK_PAYLOAD', null, `Received minimal webhook (recording_id=${payload.recording_id}, type=${payload.type}) — fetching full meeting data from API`, 'info');
+      const fetchId = payload.recording_id || payload.id;
+      logProcessing('WEBHOOK_PAYLOAD', null, `Received minimal webhook (id=${fetchId}, type=${payload.type}) — fetching full meeting data from API`, 'info');
       try {
-        payload = fetchFathomMeetingByRecordingId(payload.recording_id);
+        payload = fetchFathomMeetingByRecordingId(fetchId);
       } catch (fetchErr) {
-        logProcessing('WEBHOOK_ERROR', null, `Failed to fetch meeting ${parsedPayload.recording_id}: ${fetchErr.message}`, 'error');
-        return ContentService
-          .createTextOutput(JSON.stringify({ status: 'error', message: `Could not fetch meeting data: ${fetchErr.message}` }))
-          .setMimeType(ContentService.MimeType.JSON);
+        // API fetch failed (Fathom may have changed their format again).
+        // Fall back: create a draft with what we have so nothing is lost.
+        logProcessing('WEBHOOK_WARN', null, `Could not fetch full meeting data (id=${fetchId}): ${fetchErr.message} — creating placeholder draft`, 'warning');
+        payload = {
+          meeting_title: payload.title || `Meeting (ID: ${fetchId})`,
+          meeting_date: new Date().toISOString(),
+          summary: `Fathom sent a notification for meeting ID ${fetchId} but the full details could not be retrieved automatically.\n\nError: ${fetchErr.message}\n\nPlease check Fathom for the full meeting notes.`,
+          action_items: [],
+          participants: [],
+          fathom_url: payload.url || payload.share_url || null,
+          meeting_id: fetchId
+        };
       }
     }
 
@@ -511,6 +537,49 @@ function runWeeklyOutlook() {
     logProcessing('WEEKLY_OUTLOOK', null, 'Weekly outlook generated', 'success');
   } catch (error) {
     logProcessing('WEEKLY_OUTLOOK', null, `Error: ${error.message}`, 'error');
+  }
+}
+
+// ============================================================================
+// MORNING SWEEP
+// ============================================================================
+
+/**
+ * Morning sweep — runs daily via time-based trigger (Calendar checker script).
+ * Wraps the core daily tasks with exponential-backoff retry to survive transient
+ * Google "Error code INTERNAL" storage failures that occasionally occur at night.
+ */
+function morningSweep() {
+  const maxAttempts = 3;
+  const baseDelayMs = 5000; // 5 s, 10 s, 20 s
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      logProcessing('MORNING_SWEEP', null, `Starting morning sweep (attempt ${attempt}/${maxAttempts})`, 'info');
+
+      // Core morning tasks
+      syncLabelsAndFilters();
+      processNewClients();
+      runDailyOutlook();
+
+      logProcessing('MORNING_SWEEP', null, 'Morning sweep completed successfully', 'success');
+      return; // success — stop retrying
+    } catch (error) {
+      const isTransient = error.message && (
+        error.message.indexOf('INTERNAL') !== -1 ||
+        error.message.indexOf('storage') !== -1 ||
+        error.message.indexOf('server error') !== -1
+      );
+
+      if (attempt < maxAttempts && isTransient) {
+        const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+        logProcessing('MORNING_SWEEP', null, `Transient error on attempt ${attempt}: ${error.message} — retrying in ${delayMs / 1000}s`, 'warning');
+        Utilities.sleep(delayMs);
+      } else {
+        logProcessing('MORNING_SWEEP', null, `Morning sweep failed after ${attempt} attempt(s): ${error.message}`, 'error');
+        throw error; // let Apps Script log it in the failure email
+      }
+    }
   }
 }
 
